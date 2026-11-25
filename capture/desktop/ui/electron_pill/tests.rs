@@ -86,7 +86,7 @@ fn command(revision: u64, action: &str) -> Command {
     Command {
         revision,
         action: action.into(),
-        target: None,
+        ..Default::default()
     }
 }
 #[test]
@@ -307,16 +307,16 @@ fn electron_pill_expired_command_returns_fresh_actionable_readback_without_dispa
         9,
         true,
     );
-    assert!(view.consume(command(9, "finish"), false).is_none());
+    assert!(view.consume(command(9, "finish"), false, 0).is_none());
     assert_eq!(view.revision, 10);
     assert!(view.notice.is_some());
-    assert!(view.consume(command(9, "cancel"), true).is_none());
+    assert!(view.consume(command(9, "cancel"), true, 0).is_none());
     assert_eq!(
         view.revision, 10,
         "old commands cannot consume a new capture's revision"
     );
     assert!(matches!(
-        view.consume(command(10, "finish"), true),
+        view.consume(command(10, "finish"), true, 0),
         Some(PillAction::Finish)
     ));
     assert!(view.notice.is_none());

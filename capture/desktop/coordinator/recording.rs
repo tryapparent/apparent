@@ -512,7 +512,7 @@ impl ApparentCoordinator {
 
     #[cfg(target_os = "linux")]
     fn discard_failed_screen_start(&mut self) -> bool {
-        self.discard_failed_screen_start_notifying(crate::capture::desktop::linux::shell::notify)
+        self.discard_failed_screen_start_notifying(crate::composition::record_error::show)
     }
 
     #[cfg(target_os = "linux")]
@@ -528,7 +528,7 @@ impl ApparentCoordinator {
             if self.active_recording.is_none() {
                 notify(
                     "Screen recording could not start",
-                    "Try again and choose the screen under Outputs if the sharing dialog appears. No recording was saved.",
+                    "No recording was saved. Choose a screen under Outputs.",
                 );
                 if let Some(id) = failed_id {
                     self.agent_captures.set(&id, "failed", None, Some("start_failed"));

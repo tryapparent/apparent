@@ -134,6 +134,7 @@ export function createPill(kernel: Kernel) {
         sharing_online: facts.sharingOnline,
         microphone_problem: facts.microphoneProblem,
         audio_problem: facts.audioProblem,
+        screen_starting: facts.screenStarting ?? false,
       }),
       facts,
       completion,

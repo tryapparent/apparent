@@ -231,7 +231,7 @@ app.whenReady().then(()=>{
     if(pending||staging)throw Error('Pill action pending');
     if(typeof drop!=='boolean' || drop && action!=='paste')throw Error('Invalid paste gesture');
     const confirming=action==='confirm-public-link'||action==='cancel-public-link';
-    const message=protocol.command(current,revision,confirming?'copy-link':action);
+    const message=protocol.command(current,revision,confirming?'copy-link':action,capture);
     if(confirming&&sharingConfirmation!==revision)throw Error('Sharing confirmation expired');
     if(action==='cancel-public-link'){setSharingConfirmation(null);return {cancelled:true};}
     if(action==='confirm-public-link'){setSharingConfirmation(null);message.action='copy-public-link';}
@@ -239,7 +239,7 @@ app.whenReady().then(()=>{
       setSharingConfirmation(revision);return {confirmationRequired:true};
     } else setSharingConfirmation(null);
     if(drop){
-      if(!pasteGesture || pasteGesture.revision!==revision || Date.now()>pasteGesture.until)throw Error('Paste gesture expired');
+      if(pasteGesture?.revision!==revision || Date.now()>pasteGesture.until)throw Error('Paste gesture expired');
       const dip=screen.getCursorScreenPoint();
       const point=process.platform==='linux'?screen.dipToScreenPoint(dip):dip;
       message.target=[point.x,point.y];

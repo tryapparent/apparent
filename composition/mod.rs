@@ -1,5 +1,8 @@
 pub(crate) use crate::permission_admission::repair as permission_repair;
 pub(crate) mod cli;
+#[cfg(target_os = "linux")]
+#[path = "../engine/native/desktop/record_start_error.rs"]
+pub(crate) mod record_error;
 
 mod preferences {
     use anyhow::{Context, Result, ensure};

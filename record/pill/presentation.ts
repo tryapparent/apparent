@@ -21,6 +21,7 @@ export type Facts = Readonly<{
   micWarning: string | null;
   audioIssue: string | null;
   microphoneProblem: boolean;
+  screenStarting?: boolean;
   audioProblem: boolean;
 }>;
 
@@ -43,7 +44,7 @@ export type Surface =
         finish_primary: boolean;
       }
     >
-  | Tag<"ProcessingSurface">
+  | Tag<"StartingSurface" | "ProcessingSurface">
   | Readonly<
       Tag<"CompletedSurface"> & {
         paste: boolean;
@@ -66,6 +67,7 @@ export type SurfaceFacts = Readonly<
     sharing_online: boolean;
     microphone_problem: boolean;
     audio_problem: boolean;
+    screen_starting: boolean;
   }
 >;
 
@@ -127,6 +129,11 @@ export function presentation(
       if (surface.can_record) control("record", "Record", true, false, true);
       control("cancel", "Cancel");
       return { ...result, phase: "selecting", label: "Choose what to record" };
+    case "StartingSurface":
+      control("whiteboard", "Whiteboard", false);
+      control("finish", "Finish", false);
+      control("cancel", "Cancel");
+      return { ...result, phase: "recording", label: "Starting recording…", warning: null };
     case "RecordingSurface":
       if (surface.no_words)
         result.warning = [result.warning, "No words recognized yet"]

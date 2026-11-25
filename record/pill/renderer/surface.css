@@ -40,6 +40,11 @@
   .pill .input-bloom { color:CanvasText; }
 }
 .pill .indicator.processing { width:20px;height:20px;border-radius:0;background:transparent;color:var(--apparent-primary); }
+.pill .pill-stop:disabled:has(.indicator.starting) { opacity:1; }
+.pill .indicator.starting { width:14px;height:14px;border-radius:0;background:transparent;color:var(--apparent-signal); }
+@media(prefers-color-scheme:dark) {
+  .pill .indicator.starting { color:var(--apparent-lilac); }
+}
 @keyframes pill-spin { to { transform:rotate(360deg); } }
 @media(prefers-reduced-motion:no-preference){
   .pill:not([data-reduced=true]) .indicator.processing { animation:pill-spin 1s linear infinite; }
@@ -73,7 +78,7 @@
 .pill-notes:focus-visible { outline:2px solid var(--apparent-brand-foreground);outline-offset:-4px; }
 
 @media(prefers-reduced-motion:no-preference) {
-  .pill:not([data-reduced=true]) .indicator.processing { animation: pill-processing-spin 1s linear infinite!important; }
+  .pill:not([data-reduced=true]) .indicator:is(.starting,.processing) { animation: pill-processing-spin 1s linear infinite!important; }
 }
 @keyframes pill-processing-spin { to { transform:rotate(360deg); } }
 /* Accepted live-text study: fixed controls, inset shallow layer, newest words. */

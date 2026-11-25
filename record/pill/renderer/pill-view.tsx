@@ -114,6 +114,7 @@ export function PillSurface({
   const recording = view.phase === "recording";
   const microphoneInput = recording ? view.inputWaveform : null;
   const finish = recording ? view.actions.find((action) => action.id === "finish") : undefined;
+  const starting = finish?.enabled === false;
   const isClose = (id: string) => id === "cancel" || id === "dismiss";
   const controls = view.actions
     .filter((action) => action.id !== "notes" && action !== finish)
@@ -125,14 +126,14 @@ export function PillSurface({
       controls[inspectIndex],
       controls[pasteIndex],
     ];
-  const showDoodles = recording && !practiceExample;
+  const showDoodles = !starting && recording && !practiceExample;
   return (
     <main
       data-revision={view.revision}
       className="pill apparent-theme"
       aria-label={view.phase === "selecting" ? view.label : undefined}
       data-phase={view.phase}
-      data-reduced={view.reducedMotion}
+      data-reduced={view.reducedMotion || reduced}
       data-warning={view.warning !== null}
       data-live={view.phase === "recording" && !!view.transcript}
     >
@@ -178,11 +179,15 @@ export function PillSurface({
                     className="pill-stop"
                     data-action="finish"
                     aria-label={finish.label}
-                    title="Finish recording"
+                    title={starting ? view.label : "Finish recording"}
                     disabled={!finish.enabled || pending || controlsDisabled}
                     onClick={() => onAction(finish.id)}
                   >
-                    <span className="indicator recording" aria-hidden="true" />
+                    {starting ? (
+                      <LoaderCircle className="indicator starting" aria-hidden="true" />
+                    ) : (
+                      <span className="indicator recording" aria-hidden="true" />
+                    )}
                   </Button>
                 ) : uploading ? (
                   <LoaderCircle
@@ -209,7 +214,7 @@ export function PillSurface({
                 )}
               </span>
               {recording ? (
-                <span className="sr-only" role="status">Recording</span>
+                <span className="sr-only" role="status">{view.label}</span>
               ) : (
                 <span className="clock" role={view.phase === "completed" ? "status" : undefined}>
                   {view.phase === "processing" ? "Processing…" : view.label}
