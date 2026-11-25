@@ -179,10 +179,15 @@ async function visibleFrame(
   }, "painted recording marker");
 }
 
-function launch(setup: Setup, directory: string) {
+function launch(setup: Setup, directory: string, diagnostic: boolean) {
   const child = spawn(
     setup.runtime,
-    ["--no-sandbox", "--ozone-platform=x11", setup.host],
+    [
+      "--no-sandbox",
+      "--ozone-platform=x11",
+      ...(diagnostic ? ["--enable-logging=stderr"] : []),
+      setup.host,
+    ],
     {
       cwd: setup.app,
       env: {
@@ -297,6 +302,7 @@ export async function attempt(
   mode: "cold" | "warm",
   directory: string,
   display?: ReturnType<typeof watchDisplay>,
+  diagnostic = false,
 ) {
   mkdirSync(directory, { mode: 0o700 });
   writeFileSync(join(directory, "config.json"), "{}", { mode: 0o600 });
@@ -307,7 +313,7 @@ export async function attempt(
     );
   const id = randomUUID();
   const spawned = performance.now();
-  const runtime = launch(setup, directory);
+  const runtime = launch(setup, directory, diagnostic);
   try {
     if (mode === "warm") {
       sendState(runtime, 1, "hidden");
@@ -402,6 +408,30 @@ export async function attempt(
           }
         : null,
     };
+  } catch (error) {
+    writeFileSync(
+      join(directory, "failure.json"),
+      JSON.stringify({
+        id,
+        mode,
+        diagnostic,
+        reason: error instanceof Error ? error.message : String(error),
+        replyTimeline: runtime.replies.map(({ value, at }) => ({
+          elapsedMs: at - spawned,
+          ready: value.ready,
+          activated: value.activated,
+          revision: value.revision,
+          frame: Boolean(value.frame),
+        })),
+        sampleCount: display?.frames.length ?? 0,
+        visibleMarkerObserved:
+          display?.frames.some(({ marker }) => marker) ?? false,
+        childExitCode: runtime.child.exitCode,
+        childSignal: runtime.child.signalCode,
+      }),
+      { mode: 0o600 },
+    );
+    throw error;
   } finally {
     await shutDown(runtime.child);
   }

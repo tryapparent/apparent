@@ -46,6 +46,10 @@ the comparison and raw attempts, including the millis needed by the existing
 `score/frontier.ts` ledger. Its decision and active-effort rules are unchanged.
 Local and old Clanker timings are diagnostic history.
 
+If Start fails before creating a comparison, it keeps the fixture's IPC and
+frame evidence and tries one unscored cold launch with Chromium logging.
+The diagnostic artifacts do not qualify the failed batch.
+
 The Stop fixture is generated before the timer. FFmpeg supplies the movie and
 eSpeak NG supplies Record's existing synthetic narration script. The replay
 uses the actual whole-file Parakeet route and finalization, publication and
