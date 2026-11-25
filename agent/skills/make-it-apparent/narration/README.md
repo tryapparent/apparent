@@ -3,7 +3,7 @@
 Use Apparent's installed Kokoro narrator (`bm_fable`). Report setup or synthesis failures before proposing another voice. Keep Flite, espeak, cloud TTS and transcription models out of this route.
 
 - **Bundle export:** check `apparent export --help`, then use `apparent export "$bundle" --narration "$cues" --out "$movie" --fps 30` with private absolute paths. Follow the [cue schema](../../../../capture/engine/docs/export-and-retention.md#local-narration) in exported-video milliseconds. Shorten text or extend slots as needed. Respect `experiments.exportNarration: false` and preserve the source bundle and config.
-- **Explainer without a bundle:** use the [standalone narrator](../../../../capture/agent/narrator/README.md#worker-protocol-and-offline-behavior) per plain-text cue. Require successful synthesis to a fresh private path and validate each WAV before aligning visuals and captions to it.
+- **Explainer without a bundle:** render the diagrams with a local editor or renderer and synthesize each plain-text cue with the separately provisioned [standalone narrator](../../../../capture/agent/narrator/README.md#worker-protocol-and-offline-behavior). The installed Apparent CLI has no `trace` subcommand. Run the narrator readiness check below, then synthesize to a fresh private path and validate each WAV before aligning visuals and captions to it.
 
 On the target macOS or Linux host run `node capture/agent/scripts/provision-narrator.ts --check` from the checkout. Require validated pinned assets and a synthetic WAV. Follow the [provisioning steps](../../../../capture/agent/narrator/README.md#provision-explicitly) for missing assets or a missing worker, within existing network and build authority. Synthesis is offline after setup.
 
