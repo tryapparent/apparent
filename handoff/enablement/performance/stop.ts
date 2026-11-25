@@ -13,6 +13,7 @@ import policy from "./benchmark.json" with { type: "json" };
 type Evidence = {
   benchmark: string;
   mode: "baseline" | "compare";
+  pressureContract?: string;
   qualified: boolean;
   baselineScore: number;
   score: number;
@@ -151,6 +152,11 @@ await bendScratch(async (destination) => {
     const matched = await evidence(row.comparison);
     assert.equal(matched.mode, "compare");
     assert.ok(baseline, "A frozen baseline is required for comparisons");
+    assert.equal(
+      matched.pressureContract,
+      baseline.pressureContract,
+      "Comparison pressure contract differs from baseline",
+    );
     assert.deepEqual(
       matched.runner,
       baseline.runner,

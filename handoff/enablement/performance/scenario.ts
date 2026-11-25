@@ -28,7 +28,7 @@ type ElectronModule = {
 type ElectronApp = {
   close(): Promise<void>;
   firstWindow(): Promise<Page>;
-  process(): { stdout: NodeJS.ReadableStream };
+  process(): { pid?: number; stdout: NodeJS.ReadableStream };
   waitForEvent(event: "window", options: { timeout: number }): Promise<Page>;
   evaluate<Result>(
     callback: (electron: ElectronModule) => Result,
@@ -71,12 +71,14 @@ export async function scenario({
   warm,
   traced,
   proof,
+  diagnose,
 }: ScenarioDriver & {
   host: string;
   scratch: string;
   warm: boolean;
   traced: boolean;
   proof?: boolean;
+  diagnose?: (stage: string, electron?: number) => Promise<void>;
 }) {
   const cleanup: (() => Promise<void>)[] = [];
   const f = await receiver(
@@ -88,6 +90,7 @@ export async function scenario({
   try {
     f.many();
     await f.save(true);
+    if (diagnose) await diagnose("before-electron-launch");
     const app = await electron.launch({
       executablePath,
       args: [host, "--no-sandbox", "--ozone-platform=x11"],
@@ -128,6 +131,7 @@ export async function scenario({
       }
     });
     const initial = await app.firstWindow();
+    if (diagnose) await diagnose("first-window", app.process().pid);
     const capture = randomUUID();
     const state = (recording: boolean) => ({
       type: "state",
@@ -164,6 +168,8 @@ export async function scenario({
       await expect.poll(() => f.reads).toBe(1);
       await expect.poll(() => f.configReplies).toBe(1);
     }
+    if (diagnose)
+      await diagnose("catalogue-preparation-finished", app.process().pid);
     const replacement = app.waitForEvent("window", { timeout: 10_000 });
     const completion = state(false);
     const completionObservedMs = now();
@@ -183,6 +189,7 @@ export async function scenario({
       );
     await expect.poll(mappedPicker).toBe(true);
     const entryObservationMs = now();
+    if (diagnose) await diagnose("mapped-picker", app.process().pid);
     await publish({ type: "handoff-ready", capture, text: handoff });
     await expect.poll(() => f.reads).toBe(1);
     const before = await calibrate(page);
@@ -193,6 +200,7 @@ export async function scenario({
     const option = page.getByRole("option", { name: /Chosen thread/ });
     await expect(option).toBeEnabled();
     assert.equal(f.calls.length, 0);
+    if (diagnose) await diagnose("picker-presented", app.process().pid);
     if (proof)
       await page.screenshot({ path: join(scratch, capture + "-picker.png") });
 
@@ -202,6 +210,7 @@ export async function scenario({
     await expect(
       page.getByRole("img", { name: "Submitted", exact: true }),
     ).toBeVisible();
+    if (diagnose) await diagnose("submitted-presented", app.process().pid);
     const after = await calibrate(page);
     if (proof)
       await page.screenshot({
@@ -298,6 +307,8 @@ export async function scenario({
         return Number(pss[1]);
       }),
     );
+    if (diagnose)
+      await diagnose("verified-receipt-and-resources", app.process().pid);
     const spans = runtime.spans.filter((span) => span.attempt === capture);
     const dispatch = spans.find(
       (span) =>

@@ -7,7 +7,7 @@
       "userEntryPoint": "Open the destination picker on a completed recording, then select an existing thread.",
       "prerequisites": [
         "Manual performance-benchmark workflow on standard GitHub-hosted Ubuntu 24.04 with published full revision SHAs.",
-        "CPU and storage pressure below the focused benchmark admission thresholds."
+        "Dedicated hosted CPU accounting with unrelated load, guest steal, throttling and I/O below the focused benchmark thresholds."
       ],
       "runner": {
         "path": "handoff/enablement/ci/hosted-performance.ts",
@@ -15,7 +15,7 @@
       },
       "expectedEvidence": [
         "A trusted click, a selectable row, the exact synthetic dispatch payload, an independent receiver acceptance, the durable sent receipt and the visible Submitted indicator.",
-        "Separate fresh and prewarmed catalogue trials, normalized score, matched repeat deltas, CPU, PSS, storage and span attribution."
+        "Separate fresh and prewarmed catalogue trials, normalized score, matched repeat deltas, CPU, PSS, storage, interference and span attribution."
       ],
       "limits": [
         "Runs the production Electron renderer and Handoff code with a synthetic native parent and loopback T3 receiver. Real clipboard, native compositor, OS focus restoration and real T3 acceptance require their existing verification lanes."
