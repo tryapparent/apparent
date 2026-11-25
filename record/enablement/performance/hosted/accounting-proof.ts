@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { hostedAccounting } from "../fixtures/host-accounting.ts";
 import { json, receipt, type HostedJob } from "./job.ts";
-import { runInMeasurementScope } from "./measurement-scope.ts";
+import { runInMeasurementUnit } from "./measurement-unit.ts";
 
 const entry = fileURLToPath(import.meta.url);
 
@@ -20,7 +20,12 @@ function busyFor(milliseconds: number) {
 
 export async function verifyAccounting(job: HostedJob) {
   const isolated = join(job.evidence, "accounting-owned-work.json");
-  runInMeasurementScope(entry, ["sample", isolated], job.env);
+  runInMeasurementUnit(
+    entry,
+    ["sample", isolated],
+    job.env,
+    join(job.evidence, "accounting-owned-work.log"),
+  );
   assert.ok(json(isolated).workloadCpuUs > 100_000);
 
   const outside = spawn(process.execPath, [entry, "outside"], {
@@ -43,7 +48,12 @@ export async function verifyAccounting(job: HostedJob) {
       "utf8",
     ).trim();
     const path = join(job.evidence, "accounting-outside-work.json");
-    runInMeasurementScope(entry, ["sample", path], job.env);
+    runInMeasurementUnit(
+      entry,
+      ["sample", path],
+      job.env,
+      join(job.evidence, "accounting-outside-work.log"),
+    );
     const measured = json(path);
     receipt(path, { ...measured, injectedMembership: membership });
     assert.notEqual(membership, "0::" + measured.scope);

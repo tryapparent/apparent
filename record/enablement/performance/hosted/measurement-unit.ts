@@ -8,11 +8,11 @@ import {
 } from "../fixtures/host-accounting.ts";
 import { command } from "./job.ts";
 
-export function runInMeasurementScope(
+export function runInMeasurementUnit(
   entry: string,
   args: string[],
   env: NodeJS.ProcessEnv,
-  output?: string,
+  output: string,
 ) {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
@@ -26,21 +26,27 @@ export function runInMeasurementScope(
         "Runner CPU quota prevents an equivalent scope",
       );
   }
-  const unit = "apparent-record-bench-" + randomUUID() + ".scope";
+  const unit = "apparent-record-bench-" + randomUUID() + ".service";
+  closeSync(openSync(output, "wx", 0o600));
   const invocation = [
     "-n",
     "/usr/bin/systemd-run",
-    "--scope",
     "--quiet",
+    "--wait",
     "--collect",
+    "--expand-environment=no",
+    "--service-type=exec",
     "--unit=" + unit,
+    "--uid=" + uid,
+    "--gid=" + gid,
+    "--working-directory=" + process.cwd(),
     "--property=CPUAccounting=yes",
+    "--property=NoNewPrivileges=yes",
+    "--property=RuntimeMaxSec=30min",
+    "--property=StandardInput=null",
+    "--property=StandardOutput=append:" + output,
+    "--property=StandardError=inherit",
     "--",
-    "/usr/bin/setpriv",
-    "--reuid=" + uid,
-    "--regid=" + gid,
-    "--init-groups",
-    "--no-new-privs",
     "/usr/bin/env",
     "-i",
     ...Object.entries({
@@ -54,11 +60,5 @@ export function runInMeasurementScope(
     entry,
     ...args,
   ];
-  const outputFd =
-    output === undefined ? undefined : openSync(output, "wx", 0o600);
-  try {
-    command("sudo", invocation, { outputFd });
-  } finally {
-    if (outputFd !== undefined) closeSync(outputFd);
-  }
+  command("sudo", invocation);
 }

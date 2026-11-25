@@ -27,7 +27,7 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
-import { runInMeasurementScope } from "./measurement-scope.ts";
+import { runInMeasurementUnit } from "./measurement-unit.ts";
 import { fixture, model } from "./stop-input.ts";
 import { waterfall } from "./waterfall.ts";
 
@@ -187,7 +187,7 @@ async function run(label: string, other?: string) {
   const ticks = cpuSample();
   const driverBefore = driverCpuSnapshot();
   try {
-    runInMeasurementScope(
+    runInMeasurementUnit(
       runner,
       [
         "--hosted-fixture",

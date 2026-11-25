@@ -123,7 +123,7 @@ export type HostedAccounting = ReturnType<typeof qualifyAccounting>;
 export function hostedAccounting() {
   const unit = process.env.APPARENT_RECORD_HOSTED_SCOPE;
   if (!unit) return undefined;
-  assert.match(unit, /^apparent-record-bench-[a-f0-9-]+\.scope$/);
+  assert.match(unit, /^apparent-record-bench-[a-f0-9-]+\.service$/);
   const { membership, hierarchy } = accountingHierarchy();
   assert.ok(basename(membership) === unit, "Missing owned benchmark cgroup");
   const cpuList = allowedCpuList();
