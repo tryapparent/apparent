@@ -70,7 +70,7 @@ approved frog artwork; no successful status or check timestamp is invented when
 the backend has not supplied one. The GitHub support invitation and project
 links, including Join our Discord, open the browser; Show welcome tour invokes the existing in-app workflow.
 Focused controls own Enter/Space, so a version-copy or tour activation cannot
-also accept an update. Existing native routing and fallbacks are unchanged.
+also accept an update.
 
 Linux update checks converge on the latest published release of the selected
 channel, including from forks, modified builds and newer versions. Stable can
@@ -97,9 +97,7 @@ tracks are Signal when Off and lighter Lilac when On, with Carbon thumbs in
 light mode and white thumbs with a Carbon edge in dark mode. Targets are at
 least 48×44px; utility glyphs remain 16px inside 44px targets. Appearance follows
 the system live and writes no preference. New styles take effect when the
-updated Settings renderer opens; native fallbacks and their routing remain.
-Reverting the renderer/shared CSS restores the prior presentation without
-changing saved settings. No fallback is removed by this styling adoption.
+updated Settings renderer opens.
 
 
 At widths up to 700px, shared Electron Settings places navigation above the
@@ -525,7 +523,7 @@ Recording without speech: `microphoneEnabled` in `~/.config/apparent/config.json
 
 Double-tap Shift for a note at the pointer. Hold Shift to draw. Enter/Attach saves, Shift+Enter inserts a newline, and empty Enter closes without saving or erasing a saved note. Escape or clicking outside closes while keeping a draft for this capture. The counter follows the recording capsule, opens the compact notes list, and counts only durable saves. Notes can be edited or deleted from the list. Finish waits for already submitted saves; a failed receipt retains recording assets for recovery. Drafts are not exported as note metadata or summary text. Linux display video includes the popup while visible, including text not yet attached. This notes surface uses Electron by default; the existing capture controls and platform input adapters remain in use. Packaging includes its runtime. Removing this routing requires restoring an accepted notes surface, not silently dropping typed feedback. See the frontend README for routing and native acceptance gates.
 
-Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. Windows is unsupported; retained code is not a parity target. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; the Linux adapter starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
+Recording › Microphone (`capture/engine/runtime/audio/mic.rs`): `"microphone": {"id","name"}` holds an input id in `~/.config/apparent/config.json`; the name only labels a missing device. Absent = System default. Mac uses CoreAudio UIDs (also `AVCaptureDevice.uniqueID`). Linux with a PulseAudio-compatible server (including PipeWire) and `pactl` lists source names as `pulse:<name>`; `capture/desktop/linux/microphone.rs` opens the chosen source with GStreamer's `pulsesrc`, converting it to 16 kHz mono samples for the same capture buffer and Settings meter. A new capture waits for its first sample before accepting the source; a disconnected or unopenable choice falls back to the Pulse default shown in Settings, then to CPAL only if that default cannot open. It never changes the system default. Linux without a working Pulse server / `pactl` falls back to CPAL's available inputs; this may expose only the shared `default` or `pipewire` device, so distinct microphones cannot be selected there. `mic::Watch` re-lists inputs while Settings is open: CoreAudio listeners on Mac, one-second checks elsewhere. `AudioRecorder` opens the chosen input on its worker thread, otherwise the current system default; a disconnected or unopenable choice remains saved but does not stop a new capture (`mic::Pick` explains the fallback in Settings and `note_pick` logs once). An error partway through a capture keeps samples heard so far. Mac's helper `MicMeter` uses AVCaptureSession; the Linux adapter starts a separate input stream, stops it when leaving Recording, and expires stale level readings after 300 ms. The meter shows input samples, not recognized words or speaker identity; #16 owns no-transcript messaging. `apparent mic list|set <id|default>|watch` reports and changes the same saved selection.
 
 Storage uses the Record pane in the shared Electron Settings window. Change…
 opens the platform folder picker and Reset removes `capturesDir` through the
@@ -586,7 +584,7 @@ coral, and lavender in the artwork are **not new UI or status tokens**.
 
 Launch at login writes `"launchAtLogin": true|false` to `config.json` before changing OS registration; if registration fails, it restores the previous preference. An explicit value is reconciled with `SMAppService.mainApp` (only inside Apparent.app) or Linux XDG autostart on app launch and every two seconds while running; stale Linux launch commands are refreshed when enabled, an absent value leaves existing OS registration alone without querying the OS service, and a disabled/approval-needed OS entry is not forced back on. OS approval is still done in System Settings. There's no Dock icon: gpui 0.2.2 makes the app Regular after launch despite `LSUIElement`, so `ui::stay_out_of_dock` sets Accessory again at the top of `run_app`. The menu keeps Record, Choose What to Record…, Open Latest Capture, Export (flag), Settings…, Check for Updates…, Quit.
 
-Agents › Command-line tool (`composition/command_line.rs`) links the app's own binary as `apparent` without asking for admin or replacing a different program. On Mac it symlinks the real app binary (which is how it finds the helper) into the first writable of `/opt/homebrew/bin`, `/usr/local/bin`, else `~/.local/bin`; Linux's installed AppImage provides a `~/.local/bin/apparent` link. A bare `apparent` from a terminal prints help instead of starting a second app. Agents › Agent skill shows `bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent` (`capture/agent/skills/apparent/SKILL.md`, also printed by `apparent skill`), which is the capture-reading skill. The separate `make-it-apparent` walkthrough is installed explicitly with `bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/make-it-apparent` (README › Agents); the default command does not guarantee its installation. This identity change does not migrate earlier captures, settings, OS permissions, or independently installed commands.
+Agents › Command-line tool (`composition/command_line.rs`) links the app's own binary as `apparent` without asking for admin or replacing a different program. On Mac it symlinks the real app binary (which is how it finds the helper) into the first writable of `/opt/homebrew/bin`, `/usr/local/bin`, else `~/.local/bin`; Linux's installed AppImage provides a `~/.local/bin/apparent` link. A bare `apparent` from a terminal prints help instead of starting a second app. Agents › Agent skill shows `bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent` (`agent/skills/apparent/SKILL.md`, also printed by `apparent skill`), which is the capture-reading skill. The separate `make-it-apparent` walkthrough is installed explicitly with `bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/make-it-apparent` (README › Agents); the default command does not guarantee its installation. This identity change does not migrate earlier captures, settings, OS permissions, or independently installed commands.
 
 Visual handoff prompts ask the agent for verified video proof of complex visible changes when it can record. Old video-proof settings are ignored. The agent should demonstrate a result it can actually see and report if recording is unavailable.
 
@@ -803,14 +801,10 @@ shortcut release, capture-start and remembered-progress acceptance remain requir
 
 General keeps its accepted compact composition in a pane-scoped layout; the
 other Settings panes retain their adopted shared layout and error dialogs.
-General, Agents, Labs, About and adopted Storage share one live Electron window
-and document. Navigation preserves its position and size, switches the current
-pane's bounded capabilities and cancels pending pane work. General's bridge is
-available on entry without restarting Electron. Recording, Permissions and Linux
-Storage retain their native presentation and still cross the presentation boundary.
-Native fallback remains available; rollback restores the previous replacement
-route together with the launch-scoped preload. Donor removal still requires the
-remaining native-pane migration and installed platform acceptance.
+All Settings panes share one Electron window on Linux and macOS. Navigation
+preserves its position and size, switches the pane's bounded capabilities and
+cancels pending pane work. See [Settings composition](../../../composition/settings/README.md)
+for installed routes and recovery.
 
 General opens in packaged Electron by default, independently of Connect card
 visibility. A fresh ordinary Settings session selects General; an existing session retains its pane. App-picker launches still

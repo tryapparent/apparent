@@ -37,8 +37,7 @@ pub enum Pane {
     About,
 }
 
-/// The capture-reading skill source is `capture/agent/skills/apparent/SKILL.md`.
-pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent";
+pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -1262,7 +1262,7 @@ mod tests {
         );
         assert_eq!(
             panel.view(&host).skill_command,
-            "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent"
+            "bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent"
         );
 
         let macos = dir.0.join("Apparent.app/Contents/MacOS");
