@@ -86,10 +86,16 @@ async function launch(t: TestContext, practice: boolean, paper: Paper) {
       reject(error);
     });
   });
-  send({ type: "initial", practice, paper });
   const browser = await chromium.connectOverCDP(await endpoint);
   const home = browser.contexts()[0];
   const page = home.pages()[0] || (await home.waitForEvent("page"));
+  await page.waitForURL("**/index.html");
+  assert.deepEqual(
+    received,
+    [],
+    "Preparing the renderer must not open Whiteboard",
+  );
+  send({ type: "initial", practice, paper });
   await expect(page.getByRole("heading", { name: "Whiteboard" })).toBeVisible();
   await expect.poll(() => received[0]?.type).toBe("ready");
   const edits = () =>
@@ -192,6 +198,7 @@ test("the practice board keeps accepted ink until the user closes it", {
   const { page, home, edits, reply } = await launch(t, true, blank);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByText("Your turn")).toBeVisible();
+  await expect(page.locator(".native-board-coach canvas")).toBeVisible();
   const prompt = page.getByRole("status").locator("span");
   await expect(prompt).toHaveCSS("animation-name", "none");
   assert.equal(

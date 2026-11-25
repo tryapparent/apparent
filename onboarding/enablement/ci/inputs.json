@@ -37,6 +37,7 @@
     "onboarding/renderer/practice-coach.tsx",
     "onboarding/renderer/prompt-motion.css",
     "onboarding/renderer/board-lesson.tsx",
+    "onboarding/renderer/board-lesson.css",
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",
     "onboarding/host/dictation.ts",

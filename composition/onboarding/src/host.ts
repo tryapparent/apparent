@@ -103,6 +103,7 @@ export function start(capabilities: Capabilities) {
       width: 760,
       height: 720,
       show: false,
+      acceptFirstMouse: true,
       frame: false,
       transparent: true,
       resizable: false,
@@ -291,12 +292,15 @@ export function start(capabilities: Capabilities) {
             const reply = practiceHost.accept(v);
             practiceEnabled = true;
             channel.send(reply);
-            if (state) {
+            if (state && state.practice !== reply.stage) {
               state = {
                 ...state,
+                practiceBoard:
+                  state.practice === "board-ink"
+                    ? undefined
+                    : state.practiceBoard,
                 practice: reply.stage,
-                practiceAttempt:
-                  state.practice === reply.stage ? state.practiceAttempt : null,
+                practiceAttempt: null,
               };
               present();
             }

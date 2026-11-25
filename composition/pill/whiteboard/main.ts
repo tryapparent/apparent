@@ -46,7 +46,11 @@ const input = readline.createInterface({
   input: process.stdin,
   crlfDelay: Infinity,
 });
-let initial: Initial | undefined;
+let initialize: (message: Initial) => void;
+const initial = new Promise<Initial>((resolve) => {
+  initialize = resolve;
+});
+let initialized = false;
 let window: BrowserWindow | undefined;
 let sequence = 0;
 let pending: { sequence: number; resolve: (paper: Paper) => void } | undefined;
@@ -72,23 +76,29 @@ function valid(event: IpcMainInvokeEvent) {
   );
 }
 
-async function show() {
+function boardBounds() {
+  const { workArea } = screen.getDisplayNearestPoint(
+    screen.getCursorScreenPoint(),
+  );
+  const width = Math.min(720, workArea.width);
+  const height = Math.min(540, workArea.height);
+  return {
+    x: workArea.x + Math.round((workArea.width - width) / 2),
+    y: workArea.y + Math.round((workArea.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+async function prepare() {
   await app.whenReady();
   app.dock?.hide();
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler(
     (_contents, _permission, reply) => reply(false),
   );
-  const { workArea } = screen.getDisplayNearestPoint(
-    screen.getCursorScreenPoint(),
-  );
-  const width = Math.min(720, workArea.width);
-  const height = Math.min(540, workArea.height);
   const board = new BrowserWindow({
-    x: workArea.x + Math.round((workArea.width - width) / 2),
-    y: workArea.y + Math.round((workArea.height - height) / 2),
-    width,
-    height,
+    ...boardBounds(),
     minWidth: 320,
     minHeight: 280,
     frame: false,
@@ -160,7 +170,10 @@ async function show() {
     },
   );
   ipcMain.on("whiteboard:ready", (event) => {
-    if (valid(event)) board.show();
+    if (initialized && valid(event)) {
+      board.setBounds(boardBounds());
+      board.show();
+    }
   });
   await board.loadURL(page);
 }
@@ -173,9 +186,9 @@ input.on("line", (line) => {
     const message = JSON.parse(line) as Message;
     switch (message.type) {
       case "initial":
-        if (initial) throw Error("Duplicate Whiteboard initialization");
-        initial = message;
-        void show().catch(() => app.exit(1));
+        if (initialized) throw Error("Duplicate Whiteboard initialization");
+        initialized = true;
+        initialize(message);
         break;
       case "paper":
         if (!pending || pending.sequence !== message.sequence)
@@ -184,10 +197,12 @@ input.on("line", (line) => {
         pending = undefined;
         break;
       case "focus":
-        window?.focus();
+        if (!closing && window?.isVisible()) window.focus();
         break;
     }
   } catch {
     app.exit(1);
   }
 });
+
+void prepare().catch(() => app.exit(1));

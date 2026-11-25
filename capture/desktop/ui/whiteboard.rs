@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result, ensure};
 use gpui::{App, Entity};
-use serde_json::json;
+use serde_json::{Value, json};
 
-use super::super::ApparentCoordinator;
+use super::super::{ApparentCoordinator, workflow::electron};
 use std::{
     collections::VecDeque,
     io::{BufRead, BufReader, Read, Write},
@@ -12,48 +12,44 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde_json::Value;
-
-
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
-pub(crate) enum Event {
+enum Event {
     Ready { frame: [f32; 4] },
     Edit { sequence: u32, operation: Edit, point: Option<[f32; 2]> },
 }
 
-pub(crate) struct Window {
-    pub(crate) id: String,
+struct Window {
+    id: String,
     child: Option<crate::capture::ui_process::UiChild>,
     #[cfg(target_os = "linux")]
     pid: u32,
     practice: bool,
     send: SyncSender<Value>,
     events: Receiver<Event>,
-    deadline: Instant,
-    pub(crate) frame: Option<[f32; 4]>,
+    deadline: Option<Instant>,
+    frame: Option<[f32; 4]>,
 }
 
 impl Window {
-    pub(crate) fn launch(mut command: Command, id: String, practice: bool, paper: &Paper) -> Result<Self> {
+    fn launch(mut command: Command) -> Result<Self> {
         let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .spawn()
-            .context("Launch Whiteboard")?;
+            .spawn()?;
         let mut input = child.stdin.take().expect("piped stdin");
         let output = child.stdout.take().expect("piped stdout");
         let (send, messages) = sync_channel::<Value>(4);
         let (deliver, events) = sync_channel(512);
         let window = Self {
-            id,
+            id: crate::shared::ids::make_bundle_id(),
             #[cfg(target_os = "linux")]
             pid: child.id(),
             child: Some(crate::capture::ui_process::UiChild::new(child)),
-            practice,
+            practice: false,
             send,
             events,
-            deadline: Instant::now() + Duration::from_secs(12), frame: None };
+            deadline: None, frame: None };
         std::thread::Builder::new().name("whiteboard-input".into()).spawn(move || {
             for message in messages {
                 if serde_json::to_writer(&mut input, &message).is_err()
@@ -78,28 +74,22 @@ impl Window {
                 }
             }
         })?;
-        window.send(json!({"type": "initial", "practice": practice, "paper": paper}))?;
         Ok(window)
     }
 
-    pub(crate) fn send(&self, message: Value) -> Result<()> {
+    fn send(&self, message: Value) -> Result<()> {
         self.send.try_send(message).map_err(|_| anyhow::anyhow!("Whiteboard receiver unavailable"))
     }
 
-    pub(crate) fn event(&self) -> Result<Option<Event>> {
+    fn event(&self) -> Result<Option<Event>> {
         match self.events.try_recv() {
             Ok(event) => Ok(Some(event)),
             Err(TryRecvError::Empty) => {
-                ensure!(self.frame.is_some() || Instant::now() < self.deadline, "Whiteboard did not become ready");
+                ensure!(self.frame.is_some() || self.deadline.is_none_or(|deadline| Instant::now() < deadline), "Whiteboard did not become ready");
                 Ok(None)
             }
             Err(TryRecvError::Disconnected) => anyhow::bail!("Whiteboard disconnected"),
         }
-    }
-
-    #[cfg(target_os = "linux")]
-    pub(crate) fn pid(&self) -> u32 {
-        self.pid
     }
 }
 
@@ -155,7 +145,7 @@ impl From<Paper> for SavedBoard {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Edit {
+enum Edit {
     Begin,
     Move,
     End,
@@ -192,7 +182,7 @@ struct PaperState {
 }
 
 impl PaperState {
-    pub(crate) fn open(color: [u8; 3]) -> Result<Self> {
+    fn open(color: [u8; 3]) -> Result<Self> {
         Ok(Self {
             saved: SavedBoard { paper: Paper { color, strokes: Vec::new() }, ..SavedBoard::default() },
             visible: false,
@@ -205,7 +195,7 @@ impl PaperState {
         })
     }
 
-    pub(crate) fn edit(&mut self, event: Edit, point: Option<[f32; 2]>, t: u64) -> Result<bool> {
+    fn edit(&mut self, event: Edit, point: Option<[f32; 2]>, t: u64) -> Result<bool> {
         let point = point.filter(|[x, y]| {
             (0.0..PAPER_WIDTH).contains(x) && (0.0..PAPER_HEIGHT).contains(y)
         });
@@ -278,29 +268,30 @@ impl Board {
         *self = Self { color: crate::shared::handoff::pen::rgb(), ..Self::default() };
     }
 
-    fn open(&mut self, practice: bool) -> Result<()> {
-        if let Some(window) = &self.window {
-            return window.send(json!({"type": "focus"}));
-        }
-        let resources = crate::capture::desktop::workflow::electron::resolve()?;
-        let entry = resources.root.join("dist/whiteboard/main.cjs");
-        ensure!(entry.is_file(), "Packaged Whiteboard unavailable");
-        let mut command = std::process::Command::new(&resources.executable);
-        crate::capture::desktop::workflow::electron::configure_sandbox(&mut command, &resources.executable)?;
-        #[cfg(target_os = "linux")]
-        command.arg("--ozone-platform=x11");
+    fn open(&mut self, practice: bool, warm: bool) -> Result<()> {
+        if warm && self.board.is_some() { return Ok(()); }
         let board = match self.board.as_mut() {
             Some(board) => board,
             None => self.board.insert(PaperState::open(self.color)?),
         };
-        let id = crate::shared::ids::make_bundle_id();
-        command.arg(entry);
-        let window = Window::launch(
-            command,
-            id, practice, &board.saved.paper,
-        )?;
+        if self.window.is_none() {
+            let resources = electron::resolve()?;
+            let entry = resources.root.join("dist/whiteboard/main.cjs");
+            ensure!(entry.is_file(), "Packaged Whiteboard unavailable");
+            let mut command = Command::new(&resources.executable);
+            electron::configure_sandbox(&mut command, &resources.executable)?;
+            #[cfg(target_os = "linux")]
+            command.arg("--ozone-platform=x11");
+            command.arg(entry);
+            self.window = Some(Window::launch(command)?);
+        }
+        let window = self.window.as_mut().expect("Whiteboard window");
+        if warm { return Ok(()); }
+        if window.deadline.is_some() { return window.send(json!({"type": "focus"})); }
+        window.send(json!({"type": "initial", "practice": practice, "paper": &board.saved.paper}))?;
+        window.deadline = Some(Instant::now() + Duration::from_secs(12));
+        window.practice = practice;
         board.edit(Edit::Open, None, 0)?;
-        self.window = Some(window);
         Ok(())
     }
 
@@ -345,7 +336,7 @@ impl Board {
                 Some(Event::Ready { frame }) if window.frame.is_none() && frame.iter().all(|n| n.is_finite()) && frame[2] > 0.0 && frame[3] > 0.0 => {
                     window.frame = Some(frame);
                     #[cfg(target_os = "linux")]
-                    super::linux::float_whiteboard(window.pid(), cx);
+                    super::linux::float_whiteboard(window.pid, cx);
                 }
                 Some(Event::Edit { sequence, operation, point }) if window.frame.is_some() => {
                     changed |= board.edit(operation, point, t)?
@@ -378,6 +369,9 @@ pub(in crate::capture::desktop) fn tick(
     cx: &mut gpui::Context<ApparentCoordinator>,
 ) {
     let t = coordinator.active_recording.as_ref().map_or(0, |recording| recording.elapsed_ms());
+    if coordinator.is_recording() && coordinator.onboarding.as_ref().is_some_and(|session| session.local_practice()) {
+        let _ = coordinator.whiteboard.borrow_mut().open(true, true);
+    }
     if coordinator.whiteboard.borrow_mut().tick(cx, t) && coordinator.is_recording() {
         let generation = coordinator.capture_generation;
         cx.spawn(async move |coord, cx| {
@@ -397,7 +391,7 @@ pub(in crate::capture::desktop) fn open(coord: &Entity<ApparentCoordinator>, cx:
             return;
         }
         let practice = coord.onboarding.as_ref().is_some_and(|session| session.practice_active());
-        if let Err(error) = coord.whiteboard.borrow_mut().open(practice).context("Open recording Whiteboard") {
+        if let Err(error) = coord.whiteboard.borrow_mut().open(practice, false).context("Open recording Whiteboard") {
             crate::capture::engine::runtime::apparent_log(format!("{error:#}"));
         }
     });
