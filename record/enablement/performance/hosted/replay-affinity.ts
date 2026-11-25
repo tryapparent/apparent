@@ -11,7 +11,7 @@ export function cpuNumbers(list: string) {
   });
 }
 
-export function stopReplayCpus(
+export function replayCpuPair(
   topology: readonly { cpu: number; siblings: string }[],
   allowed: string,
 ) {
@@ -23,6 +23,6 @@ export function stopReplayCpus(
     siblingGroups.add(siblings);
     cpus.push(cpu);
   }
-  assert.ok(cpus.length >= 2, "Stop needs two distinct runner CPU cores");
+  assert.ok(cpus.length >= 2, "Replay needs two distinct runner CPU cores");
   return cpus.slice(0, 2).join(",");
 }
