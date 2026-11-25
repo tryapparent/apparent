@@ -3,11 +3,14 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
@@ -305,16 +308,20 @@ export async function attempt(
   diagnostic = false,
 ) {
   mkdirSync(directory, { mode: 0o700 });
-  writeFileSync(join(directory, "config.json"), "{}", { mode: 0o600 });
   if (display)
     await until(
       () => (display.frames.at(-1)?.marker === null ? true : undefined),
       "hidden fixture",
     );
   const id = randomUUID();
-  const spawned = performance.now();
-  const runtime = launch(setup, directory, diagnostic);
+  const profile = mkdtempSync(join(tmpdir(), "apparent-dev-pill-profile-"));
+  let launched: ReturnType<typeof launch> | undefined;
+  let spawned = 0;
   try {
+    writeFileSync(join(profile, "config.json"), "{}", { mode: 0o600 });
+    spawned = performance.now();
+    const runtime = launch(setup, profile, diagnostic);
+    launched = runtime;
     if (mode === "warm") {
       sendState(runtime, 1, "hidden");
       await until(
@@ -416,7 +423,7 @@ export async function attempt(
         mode,
         diagnostic,
         reason: error instanceof Error ? error.message : String(error),
-        replyTimeline: runtime.replies.map(({ value, at }) => ({
+        replyTimeline: (launched?.replies ?? []).map(({ value, at }) => ({
           elapsedMs: at - spawned,
           ready: value.ready,
           activated: value.activated,
@@ -426,13 +433,17 @@ export async function attempt(
         sampleCount: display?.frames.length ?? 0,
         visibleMarkerObserved:
           display?.frames.some(({ marker }) => marker) ?? false,
-        childExitCode: runtime.child.exitCode,
-        childSignal: runtime.child.signalCode,
+        childExitCode: launched?.child.exitCode ?? null,
+        childSignal: launched?.child.signalCode ?? null,
       }),
       { mode: 0o600 },
     );
     throw error;
   } finally {
-    await shutDown(runtime.child);
+    try {
+      if (launched) await shutDown(launched.child);
+    } finally {
+      rmSync(profile, { recursive: true, force: true });
+    }
   }
 }

@@ -46,6 +46,12 @@ the comparison and raw attempts, including the millis needed by the existing
 `score/frontier.ts` ledger. Its decision and active-effort rules are unchanged.
 Local and old Clanker timings are diagnostic history.
 
+Start reads and records digests for the staged Electron executable, pill host
+and renderer entry before timing. It waits for quiet CPU and I/O after staging.
+Cold attempts start a new process with a fresh, isolated profile after these
+checks. Disk caches may contain the staged files. Profiles live outside the
+uploaded evidence.
+
 If Start fails before creating a comparison, it keeps the fixture's IPC and
 frame evidence and tries one unscored cold launch with Chromium logging.
 The diagnostic artifacts do not qualify the failed batch.
