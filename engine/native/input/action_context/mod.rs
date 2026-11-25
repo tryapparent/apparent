@@ -137,6 +137,8 @@ fn event_key(event: &InteractionEvent) -> Option<Key> {
 impl SharedCaptureTelemetry {
     pub(super) fn reset_action_context(&self) {
         let enabled = self.probing() && self.capture_mode.load(Ordering::Acquire) <= 1;
+        #[cfg(target_os = "macos")]
+        crate::capture::engine::accessibility::ax::pin_window::begin(enabled);
         *self
             .action_context
             .lock()

@@ -59,10 +59,10 @@ The collector uses a bounded background queue and discards results older than
 50 ms from submission. Work remains off the input sampling path and the bundle
 can be saved when evidence is missing.
 
-## Hyprland pin snapshots
+## Pin snapshots
 
 With **Recording context for agents** enabled, a pin in a live Screen or Area
-recording can add an action-time AT-SPI observation. The row has
+recording can add an action-time accessibility observation on Hyprland or macOS. The row has
 `kind: "stroke"` and an optional `pinWindow` with the pin number, elapsed
 milliseconds from the pin timestamp to the start of the read, a partial-result
 flag, and a bounded list of elements. Each element has a role and can have a
@@ -81,12 +81,16 @@ not query text or value interfaces. The saved summary and clipboard show up to
 four named elements alongside the matching pin and label them as app data.
 Inspect `actionContext[].pinWindow` in the bundle for the rest.
 
-### Verify in an isolated Omarchy desktop
+On macOS the worker matches the accessibility window under the pin to the
+Window Server's window ID, owner, and geometry. Element bounds are in macOS
+points. Allow Accessibility in Privacy & Security before recording.
 
-1. Open a synthetic app exposing a disabled Save button, a checked Auto-save
+### Verify in an isolated native desktop
+
+1. On Hyprland or macOS, open a synthetic app exposing a disabled Save button, a checked Auto-save
    checkbox and a password field with a test value. Enable **Recording context
    for agents** and start a Screen recording.
-2. Place a Shift-click pin inside the window while it stays foreground. Finish
+2. Place a pin inside the window while it stays foreground. Finish
    and inspect the contact sheet, `apparent.json`, `summary.md`, and the copy
    text. Match the pin number and timestamp. Expect Save's disabled and
    Auto-save's checked states even though neither control was clicked. The

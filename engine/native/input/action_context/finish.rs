@@ -68,7 +68,7 @@ impl SharedCaptureTelemetry {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         let mut context = context;
         if self.agent_context.swap(false, Ordering::AcqRel) {
             #[cfg(target_os = "linux")]
@@ -76,7 +76,9 @@ impl SharedCaptureTelemetry {
             #[cfg(not(target_os = "linux"))]
             let hits = crate::capture::engine::accessibility::ax::Prober::shared().finish();
             crate::capture::engine::accessibility::ax::apply(&hits, &mut events, &mut strokes);
-            #[cfg(target_os = "linux")]
+            #[cfg(target_os = "macos")]
+            let pins = crate::capture::engine::accessibility::ax::pin_window::finish();
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
             if let Some(context) = context.as_mut() {
                 context.pin_windows = pins;
             }
