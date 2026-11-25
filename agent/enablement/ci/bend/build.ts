@@ -40,8 +40,10 @@ function compactCircle(text) {
   return labels.join(", ");
 }
 export function handoffLine(kind, clock, number, text, suffix, compact = false) {
-  const render = compact ? kernel.compact_line : kernel.line;
-  return render({ $: kind }, clock, number, compact && kind === "Circle" ? compactCircle(text) : text, suffix);
+  const layout = { $: kind };
+  return compact
+    ? kernel.compact_line(layout, clock, number, kind === "Circle" ? compactCircle(text) : text)
+    : kernel.line(layout, clock, number, text, suffix);
 }
 export function windowSuffix(observations) {
   return kernel.window_suffix(list(JSON.parse(observations).map(observed)));
@@ -49,10 +51,13 @@ export function windowSuffix(observations) {
 export function windowAgrees(observations) {
   return kernel.windows_agree(list(JSON.parse(observations).map(observed))) ? "yes" : "";
 }
-export function windowHeading(observations) {
+export function nearbyWindow(observations, keepTitle = false) {
   const [previous, current] = JSON.parse(observations);
   const window = observed(current);
-  return kernel.window_heading(kernel.same_window(observed(previous), window), window, current.app.toLowerCase());
+  const browser = kernel.browser_suffix(current.app.toLowerCase());
+  const title = kernel.shorten_title(window.title, browser).trim();
+  const site = title.split(/\\s[|•/–—-]\\s/u).at(-1).trim();
+  return kernel.nearby_window(kernel.same_window(observed(previous), window), { ...window, title }, site, browser, keepTitle);
 }
 export function keepFrameHead(compact, scene, empty) {
   return kernel.keep_frame_head(compact, scene, empty) ? "yes" : "";

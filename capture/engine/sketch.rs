@@ -918,7 +918,7 @@ fn summary_markdown_formatted(
         })
     };
     if let Some(texts) = agent_texts {
-        if !compact_agent_context || bundle.action_context.is_empty() {
+        if !compact_agent_context {
             out += crate::capture::agent::context::window_observation_notice(bundle);
         }
         for ((frame, screen_marker, flag), text) in frames().zip(texts) {
@@ -2131,7 +2131,7 @@ mod tests {
         assert!(!summary.contains("No transcript"));
         let pasted = summary_markdown_formatted(&bundle, std::path::Path::new("/b"), true, Some(false));
         assert!(pasted.contains("\n0:04 pressed ⌘K\n"));
-        assert!(pasted.contains("\n0:05 Said: “This row is too dense.”\n"));
+        assert!(pasted.contains("\n0:05 “This row is too dense.”\n"));
 
         let mut text_only = bundle.clone();
         text_only.keyframes.clear();

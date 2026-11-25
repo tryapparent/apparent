@@ -27,14 +27,13 @@ def marked(+number: String, +text: String) -> String:
 def line(+kind: LineKind, clock: String, number: String, text: String, suffix: String) -> String:
   String.append(clock, String.append(label(kind), String.append(marked(number, details(kind, text)), suffix)))
 
-def compact_label(kind: LineKind) -> String:
-  match kind:
-    case Circle{}: " Circled "
-    case Speech{}: " Said: "
-    case _: " "
+def with_text(prefix: String, +text: String) -> String:
+  String.append(prefix, Bool.pick(String, String.eq(text, ""), "", String.append(" ", text)))
 
-def compact_line(+kind: LineKind, clock: String, number: String, text: String, suffix: String) -> String:
-  String.append(clock, String.append(compact_label(kind), String.append(marked(number, details(kind, text)), suffix)))
+def compact_line(+kind: LineKind, clock: String, number: String, text: String) -> String:
+  match kind:
+    case Circle{}: with_text(with_text(String.append(clock, " Circled"), number), text)
+    case _: with_text(clock, marked(number, details(kind, text)))
 
 def keep_frame_head(compact: Bool, scene: Bool, empty: Bool) -> Bool:
   Bool.and(empty, Bool.not(Bool.and(compact, scene)))
@@ -62,10 +61,10 @@ def page_line(clock: String, text: String) -> String:
   String.append(clock, String.append(" ", text))
 
 def page_heading(url: String, +scope: String) -> String:
-  String.append(url, Bool.pick(String, String.eq(scope, ""), "", String.append(" · ", scope)))
+  String.append(url, scope)
 
 def single_page_line(clock: String, text: String, heading: String) -> String:
-  String.append(page_line(clock, text), String.append(" · ", heading))
+  with_text(page_line(clock, text), heading)
 
 type ObservedWindow is Data:
   Known{id: String, app: String, title: String}
@@ -109,9 +108,14 @@ def shorten_if(ends: Bool, +title: String, length: Nat) -> String:
 def shorten_title(+title: String, +suffix: String) -> String:
   shorten_if(Bool.and(String.ends_with(title, suffix), Nat.is_lt(String.length(suffix), String.length(title))), title, String.length(suffix))
 
-def window_heading(same: Bool, window: ObservedWindow, app_lower: String) -> String:
+def nearby_caption(app: String, +title: String, +site: String, browser: String, keep_title: Bool) -> String:
+  Bool.pick(String, Bool.or(keep_title, Bool.or(String.eq(browser, ""), String.eq(site, ""))),
+    Bool.pick(String, String.eq(title, ""), app, title), site)
+
+def nearby_window(same: Bool, window: ObservedWindow, site: String, browser: String, keep_title: Bool) -> String:
   match same window:
-    case False{} Known{_, app, title}: named_window("Nearby: ", app, " · ", shorten_title(title, browser_suffix(app_lower)))
+    case False{} Known{_, app, title}:
+      String.append(" near ", nearby_caption(app, title, site, browser, keep_title))
     case _ _: ""
 
 type OtherLabels is Data:
