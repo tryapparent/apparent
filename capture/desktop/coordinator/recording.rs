@@ -83,7 +83,8 @@ impl ApparentCoordinator {
                 .active_recording
                 .as_ref()
                 .filter(|rec| rec.target.mode != CaptureMode::Device)
-                .map(|_| centre(self.display_rect.map(f64::from))),
+                .map(|_| centre(self.display_rect.map(f64::from)))
+                .or_else(|| self.screen_start_is_pending().then(|| centre(self.display_rect.map(f64::from)))),
             IslandPhase::Selecting { .. } => Some(centre(self.display_rect.map(f64::from))),
             _ => None,
         };
@@ -749,27 +750,6 @@ impl ApparentCoordinator {
         }
     }
 
-    fn present_recording_island(&mut self, cx: &mut Context<Self>) {
-        if !self.lab {
-            crate::capture::desktop::settings::onboarding::Progress::recording_started();
-            if self.onboarding.as_ref().is_some_and(|session| {
-                session.mode() == crate::capture::desktop::settings::onboarding::Mode::Tour
-                    && !session.local_practice()
-            }) {
-                self.cancel_onboarding_editor();
-                self.onboarding = None;
-            }
-        }
-        self.apply_pill_event(PillEvent::CaptureStarted);
-        let entity = cx.entity().clone();
-        cx.defer(move |cx| {
-            close_review_window(cx);
-            close_picker_window(cx);
-            entity.update(cx, |coord, _| coord.ensure_electron_pill());
-        });
-        cx.notify();
-    }
-
     /// `apparent lab pill`: a pretend recording with no capture, microphone, files or overlay, so
     /// the capsule goes through exactly the states a real one does.
     fn start_lab_recording(&mut self, target: TargetInfo, cx: &mut Context<Self>) {
@@ -949,7 +929,10 @@ impl ApparentCoordinator {
 
     fn cancel_capture_attempt(&mut self) {
         #[cfg(target_os = "linux")]
-        { self.shortcut.hold = None; }
+        {
+            self.shortcut.hold = None;
+            self.cancel_pending_screen_start();
+        }
         display_selection::cancel();
         // dismiss_island is a no-op while Hidden: startup failure must revoke the
         // shortcut attempt here, not wait for a visible phase transition.

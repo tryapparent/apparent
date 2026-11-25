@@ -49,11 +49,11 @@
       ],
       "runner": {
         "path": "capture/desktop/ui/frontend/package.json",
-        "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
+        "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. From the repository root, run xvfb-run -a node --test record/pill/enablement/startup.smoke.cts after building the frontend. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
       },
       "expectedEvidence": [
         "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
-        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. In the isolated Hyprland guest, check that the startup and ready rows have the same size and that a physical click on Cancel during the spinner returns the same capture to idle with no saved bundle."
+        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle."
       ],
       "limits": [
         "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."

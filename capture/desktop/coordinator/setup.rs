@@ -19,7 +19,7 @@ impl ApparentCoordinator {
             report_finalizing_generation: None,
             recording_activity_attempted: false,
             pending_finalizers: 0,
-            stopping_source: None,
+            stopping_source: SourceTransition::Idle,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             agent_capture_id: None,
             #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -178,10 +178,6 @@ impl ApparentCoordinator {
         self.active_recording.is_some()
     }
 
-    fn source_is_stopping(&self) -> bool {
-        self.stopping_source.is_some() || (self.lab && self.is_processing())
-    }
-
     pub fn is_processing(&self) -> bool {
         matches!(self.island_phase, IslandPhase::Processing)
     }
@@ -235,7 +231,9 @@ impl ApparentCoordinator {
                 capture_id: None,
             };
         }
-        let phase = if let Some(recording) = &self.active_recording {
+        let phase = if self.screen_start_is_pending() {
+            Phase::Starting
+        } else if let Some(recording) = &self.active_recording {
             match &recording.source {
                 CaptureSource::Screen { session, .. } if !session.has_frames() => Phase::Starting,
                 CaptureSource::Phone(session) if !session.has_recording() => Phase::Starting,
@@ -498,14 +496,6 @@ impl ApparentCoordinator {
     fn defer_update_restart(&self, event: &crate::capture::desktop::settings::Event) -> bool {
         matches!(event, crate::capture::desktop::settings::Event::Action(crate::capture::desktop::settings::Action::UpdateNow))
             && self.capture_busy()
-    }
-
-    pub(crate) fn capture_busy(&self) -> bool {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
-        if self.agent_capture_id.is_some() || display_selection::pending() { return true; }
-        self.pending_finalizers > 0 || self.lab || self.active_recording.is_some()
-            || self.is_selecting() || self.is_processing() || self.iphone_preview.is_some()
-            || self.recording_shortcut_key
     }
 
     fn capture_finalizer_started(&mut self) {

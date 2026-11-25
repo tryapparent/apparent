@@ -22,6 +22,8 @@ use super::chooser_storage::Promotion;
 use crate::capture::engine::runtime::audio::audio::PreparedAudio;
 
 pub(crate) enum StartError {
+    #[cfg(target_os = "linux")]
+    Cancelled,
     MicrophoneIntent(std::io::Error),
     Audio(anyhow::Error),
     Screen(anyhow::Error),
@@ -210,6 +212,7 @@ impl ScreenCaptureSession {
         microphone: bool,
         stream_admission: Option<LocalStreamAdmission>,
         #[cfg(target_os = "linux")] preparation: StartPreparation,
+        #[cfg(target_os = "linux")] pending_cancellation: Option<&std::sync::atomic::AtomicBool>,
         #[cfg(any(target_os = "macos", target_os = "linux"))] prepared_source: Option<
             PreparedSource,
         >,
@@ -253,6 +256,13 @@ impl ScreenCaptureSession {
         start_metric("audio_start_ms", stage);
         if let Some(trace) = startup {
             trace.record(crate::capture::desktop::workflow::performance::StartupPoint::AudioReady);
+        }
+        #[cfg(target_os = "linux")]
+        if pending_cancellation.is_some_and(|cancelled| cancelled.load(std::sync::atomic::Ordering::Acquire)) {
+            if let Err(error) = recover::abandon_start(bundle_dir, || drop(audio)) {
+                apparent_log(format!("Failed cancelled startup cleanup: {error:#}"));
+            }
+            return Err(StartError::Cancelled);
         }
         let stage = Instant::now();
         let screen = Self::start_with_exclusion_receipt(

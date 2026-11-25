@@ -16,7 +16,7 @@ use crate::stored_frame::StoredFrame;
 use crate::capture::desktop::workflow::performance::Startup;
 
 #[path = "../../../../engine/recording/start.rs"]
-mod start;
+pub(crate) mod start;
 #[cfg(target_os = "linux")]
 #[path = "../../../../engine/recording/lifecycle/chooser_storage.rs"]
 mod chooser_storage;
