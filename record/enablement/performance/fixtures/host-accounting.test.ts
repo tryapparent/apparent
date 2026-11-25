@@ -69,6 +69,7 @@ test("selected CPUs retain global work and reject interference on the subset", (
   const next = { busyTicks: 140, busyUs: 1_400_000, total: 400, steal: 2 };
   const last = {
     ...after,
+    atMs: 2_100,
     workloadUs: before.workloadUs + 950_000,
     selectedAfter: next,
   };
@@ -80,14 +81,16 @@ test("selected CPUs retain global work and reject interference on the subset", (
   );
   assert.equal(clean.qualified, true);
   assert.equal(clean.guestBusyUs, 2_440_000);
-  assert.equal(clean.unrelatedCpuPercent, 2.5);
+  assert.equal(clean.unrelatedCpuPercent, 1.25);
+  assert.equal(clean.unrelatedCpuUpperPercent, 3.75);
   const injected = qualifyAccounting(
     { ...before, selectedBefore: first },
     { ...last, selectedAfter: { ...next, busyTicks: 170, busyUs: 1_700_000 } },
     2,
     subset,
   );
-  assert.equal(injected.unrelatedCpuPercent, 17.5);
+  assert.equal(injected.unrelatedCpuPercent, 8.75);
+  assert.equal(injected.unrelatedCpuUpperPercent, 11.25);
   assert.equal(injected.guards.unrelatedCpu, false);
 });
 
@@ -99,7 +102,7 @@ test("a hosted subset counter mismatch rejects and exposes both raw samples", ()
   };
   const end = {
     ...after,
-    workloadUs: before.workloadUs + 1_050_000,
+    workloadUs: before.workloadUs + 1_110_000,
     selectedAfter: { busyTicks: 140, busyUs: 1_400_000, total: 400, steal: 0 },
   };
 
@@ -114,14 +117,49 @@ test("a hosted subset counter mismatch rejects and exposes both raw samples", ()
         elapsedUs: 1_000_000,
         guestBusyUs: 2_440_000,
         measuredBusyUs: 1_000_000,
-        workloadCpuUs: 1_050_000,
-        lagAllowanceUs: 40_000,
+        workloadCpuUs: 1_110_000,
+        lagAllowanceUs: 100_000,
         before: start,
         after: end,
       });
       return true;
     },
   );
+});
+
+test("the upper bound qualifies observed rounding and rejects borderline outside work", () => {
+  const subset = { cpus: [0, 1], clockTicks: 100 };
+  const start = {
+    ...before,
+    selectedBefore: { busyTicks: 40, busyUs: 400_000, total: 200, steal: 0 },
+  };
+  const end = {
+    ...after,
+    atMs: 4_100,
+    selectedAfter: { busyTicks: 540, busyUs: 5_400_000, total: 980, steal: 0 },
+  };
+  const owned = qualifyAccounting(
+    start,
+    { ...end, workloadUs: before.workloadUs + 5_043_870 },
+    2,
+    subset,
+  );
+  assert.equal(owned.qualified, true);
+  assert.equal(owned.unrelatedCpuPercent, 0);
+  assert.equal(owned.unrelatedCpuUpperPercent, 0.701625);
+  for (const [cpu, qualified] of [
+    [4_700_000, true],
+    [4_699_999, false],
+  ] as const) {
+    const estimate = qualifyAccounting(
+      start,
+      { ...end, workloadUs: before.workloadUs + cpu },
+      2,
+      subset,
+    );
+    assert.ok(estimate.unrelatedCpuPercent < 5);
+    assert.equal(estimate.qualified, qualified);
+  }
 });
 
 test("qualified hosted scheduling still rejects a candidate resource regression", async () => {

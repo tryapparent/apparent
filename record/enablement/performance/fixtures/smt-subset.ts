@@ -3,6 +3,13 @@ import { readFileSync } from "node:fs";
 
 export type CpuSubset = { cpus: number[]; clockTicks: number };
 type Topology = readonly { cpu: number; siblings: string }[];
+const busyFields = [0, 1, 2, 5, 6];
+
+export function selectedCpuRoundingUs(subset: CpuSubset) {
+  return (
+    (subset.cpus.length * busyFields.length * 1_000_000) / subset.clockTicks
+  );
+}
 
 export function cpuNumbers(list: string) {
   assert.match(list, /^\d+(?:-\d+)?(?:,\d+(?:-\d+)?)*$/);
@@ -54,10 +61,12 @@ export function selectedCpuTimes(text: string, subset: CpuSubset) {
     assert.ok(
       fields.every((value) => Number.isSafeInteger(value) && value >= 0),
     );
-    const [user, nice, system, , , irq, softirq, steal] = fields;
-    totals.busyTicks += user + nice + system + irq + softirq;
+    totals.busyTicks += busyFields.reduce(
+      (sum, field) => sum + fields[field],
+      0,
+    );
     totals.total += fields.reduce((sum, value) => sum + value, 0);
-    totals.steal += steal;
+    totals.steal += fields[7];
   }
   assert.equal(seen.size, subset.cpus.length, "Missing per-CPU stat rows");
   return {
