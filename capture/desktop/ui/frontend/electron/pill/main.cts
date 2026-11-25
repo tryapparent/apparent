@@ -142,7 +142,10 @@ function visibility(){
   if(!activated){window.hide();return;}
   if(!rendererReady||!current)return;
   const focus=destinations.view() && keyboardCapture!==capture;
-  if(!window.isVisible() && (!focus || process.platform!=='linux'))window.showInactive();
+  if(!window.isVisible()){
+    for(const old of retiredWindows)if(!old.isDestroyed())old.hide();
+    if(!focus || process.platform!=='linux')window.showInactive();
+  }
   if(focus){keyboardCapture=capture;focusPicker(true);}
   if(retiredWindows.length&&retiringFor!==window){
     const incoming=window;
@@ -269,9 +272,6 @@ app.whenReady().then(()=>{
       const repaintResize=process.platform==='linux' && resized && window.isVisible();
       if(repaintResize&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
       const phaseChanged=layoutPhase!==current.phase;
-      // Keep layout resizes mapped. Hyprland can lose a transparent XWayland
-      // surface during hide/setBounds/showInactive even when Electron reports
-      // it visible. Update its bounds and input shape in place, then repaint.
       const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
       const nextCenter=phaseChanged?size.recordingAnchor??nextVisibleWidth/2:size.recordingCenter??width/2;
       if(resized||phaseChanged||previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});

@@ -185,19 +185,8 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   await publish();
   if (pickerWindow) page = await pickerWindow;
   if (pickerWindow) {
-    const replacementWindowId = await app.evaluate(
-      ({ BrowserWindow }, initialId) =>
-        Number(
-          BrowserWindow.getAllWindows()
-            .find(
-              (w) => Number(w.getMediaSourceId().split(":")[1]) !== initialId,
-            )
-            .getMediaSourceId()
-            .split(":")[1],
-        ),
-      initialWindowId,
-    );
-    await expect.poll(() => readyIds.includes(replacementWindowId)).toBe(true);
+    await expect.poll(() => readyIds.length).toBe(2);
+    const replacementWindowId = readyIds[1];
     await activate(initialWindowId);
     assert.equal(
       await app.evaluate(
@@ -215,6 +204,13 @@ test("real pill keeps Paste by default, then selects during processing and dispa
         (w) => Number(w.getMediaSourceId().split(":")[1]) === id,
       );
       const focus = picker.focus.bind(picker);
+      const show = picker.show.bind(picker);
+      picker.show = () => {
+        picker.overlapped = BrowserWindow.getAllWindows().some(
+          (w) => w !== picker && w.isVisible(),
+        );
+        show();
+      };
       picker.focus = () => {
         if (!picker.isVisible()) throw Error("Focus before native admission");
         focus();
@@ -222,6 +218,13 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     }, replacementWindowId);
     await page.evaluate(() => window.apparentPill.destinationFocus(true));
     await activate(replacementWindowId);
+    assert.equal(
+      await app.evaluate(
+        ({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.overlapped,
+      ),
+      false,
+      "the replacement maps after the outgoing window is hidden",
+    );
     holdActivation = false;
     await expect.poll(() => oldPage.isClosed()).toBe(true);
   }
@@ -437,7 +440,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
         );
       })
       .toBe(true);
-    await trigger.focus();
+    await expect(trigger).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(options).toHaveCount(6);
     await expect
