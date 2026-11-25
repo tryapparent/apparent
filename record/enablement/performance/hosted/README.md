@@ -106,6 +106,9 @@ clipboard adapter. The hosted score runs from replay launch to verified Wayland
 clipboard readback. Clanker native acceptance covers capture teardown and the
 physical Finish shortcut. The waterfall shows the scored host interval and
 separate, cutoff-relative Engine spans from the instrumented attempts.
+Whole-file transcription spans distinguish WAV preparation, backend and model
+loading, session creation, and recognition plus transcript assembly. They
+carry timing and operation names only, with one span per stage.
 Hosted Stop records a quiet CPU and I/O window after packaging, before arming
 the replay. Its existing workload CPU-pressure limit still applies to each
 arm. Completed traces and their waterfall are retained if a batch fails.

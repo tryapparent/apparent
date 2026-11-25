@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
-use transcribe_cpp::{Model, RunOptions, TimestampKind};
+use anyhow::{Result, bail};
+use transcribe_cpp::{RunOptions, TimestampKind};
 
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
@@ -140,9 +140,7 @@ pub(super) fn installed_parakeet() -> Option<PathBuf> {
 }
 
 pub(super) fn transcribe_model(audio: &Path, path: &Path) -> Result<TranscriptData> {
-    let wav =
-        std::fs::read(audio).with_context(|| format!("Could not read {}", audio.display()))?;
-    let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
+    let (_wav, samples) = parakeet::read_whole_file_audio(audio)?;
     let clips = crate::shared::hex::plan_clips(&samples);
     let name = model_name(path);
     let mut transcript = TranscriptData {
@@ -155,15 +153,14 @@ pub(super) fn transcribe_model(audio: &Path, path: &Path) -> Result<TranscriptDa
         return Ok(transcript);
     }
 
-    init_backends()?;
-    let model = Model::load(path).with_context(|| format!("Could not load {}", path.display()))?;
-    let mut session = model.session()?;
+    let (_model, mut session) = parakeet::open_whole_file_session(path)?;
     let options = RunOptions {
         timestamps: TimestampKind::Word,
         language: Some("en".into()),
         ..Default::default()
     };
     let mut texts = Vec::new();
+    let _recognition = crate::recording_trace::span(crate::recording_trace::Operation::RecognizeSpeech);
     for (start, end) in clips {
         let from_ms = start;
         let from = (from_ms * KHZ) as usize;
@@ -243,6 +240,7 @@ pub use model_cache::download;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use transcribe_cpp::Model;
 
     /// A five-byte artifact whose checksum is `sha256("hello")`.
     const HELLO: Artifact = Artifact {
