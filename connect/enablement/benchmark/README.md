@@ -75,10 +75,11 @@ logs and waterfalls even on failure. `calibration.json` and
 
 The job records a post-build window and runs one unscored staging replay
 per build to warm immutable files. Timed replays still start new Worker and
-browser processes. Preflight waits up to twelve five-second windows. Guest
-`/proc/stat` guards outside CPU and I/O wait plus steal at 5%. PSI and
-dirty/writeback counters diagnose setup activity. Affinity includes all
-visible SMT siblings. Receipts pin image, virtual topology, quota and tools.
+browser processes. Preflight waits up to twelve five-second windows.
+Unscored probes choose a complete SMT set. The replay cgroup pins descendants
+to it. A pinned outside-load probe must fail the same 5% CPU guard. I/O wait
+plus steal stays at 5%. Guest PSI is diagnostic. Receipts pin affinity,
+capacity, image and tools.
 
 For local developer diagnostics, build the Worker with the commands above
 and choose complete visible SMT sibling sets. Local output and historical

@@ -5,9 +5,11 @@ import { readFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readCpuQuota, readCpuUsage } from "./quota.ts";
+import { cpuList, replayAffinity } from "./subset.ts";
 
 type UnitResult = {
   replayPath: string;
+  affinity?: ReturnType<typeof replayAffinity>;
   replayCgroup: { path: string; beforeUsec: number; afterUsec: number };
 };
 
@@ -16,6 +18,7 @@ export function runReplayUnit(
   cwd: string,
   tmp: string,
   evidence: string,
+  subset?: string,
 ): UnitResult {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
@@ -38,6 +41,7 @@ export function runReplayUnit(
       "--service-type=exec",
       "--property=RuntimeMaxSec=90s",
       "--property=CPUAccounting=yes",
+      ...(subset ? ["--property=AllowedCPUs=" + subset] : []),
       "--property=StandardOutput=truncate:" + receipt,
       "--property=StandardError=truncate:" + diagnostics,
       "--unit=" + name,
@@ -49,6 +53,7 @@ export function runReplayUnit(
       process.execPath,
       fileURLToPath(import.meta.url),
       name,
+      subset ?? "all",
       ...tasksetArgs,
     ],
     { encoding: "utf8", timeout: 95000 },
@@ -58,6 +63,7 @@ export function runReplayUnit(
 
 async function replay(
   name: string,
+  subset: string,
   tasksetArgs: string[],
 ): Promise<UnitResult> {
   assert.ok(process.getuid?.(), "Replay must run without root privileges");
@@ -74,6 +80,8 @@ async function replay(
     limits.every((limit) => limit.startsWith("max ")),
     "Replay cgroup introduced a CPU quota",
   );
+  const expected = subset === "all" ? undefined : cpuList(subset);
+  const affinity = expected && replayAffinity(path, expected);
   const beforeUsec = await readCpuUsage(path);
   const replayPath = execFileSync("taskset", tasksetArgs, {
     encoding: "utf8",
@@ -83,14 +91,19 @@ async function replay(
     afterUsec > beforeUsec,
     "Replay cgroup CPU counter did not advance",
   );
-  return { replayPath, replayCgroup: { path, beforeUsec, afterUsec } };
+  if (expected) assert.deepEqual(replayAffinity(path, expected), affinity);
+  return {
+    replayPath,
+    affinity,
+    replayCgroup: { path, beforeUsec, afterUsec },
+  };
 }
 
 if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(resolve(process.argv[1])).href
 ) {
-  const [name, ...args] = process.argv.slice(2);
+  const [name, subset, ...args] = process.argv.slice(2);
   assert.match(name ?? "", /^apparent-connect-replay-[0-9a-f-]{36}\.service$/);
-  console.log(JSON.stringify(await replay(name, args)));
+  console.log(JSON.stringify(await replay(name, subset, args)));
 }

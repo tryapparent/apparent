@@ -45,6 +45,11 @@ export const fixture = (run: Replay) =>
   run.attempts.map((row) => row.proof.manifest);
 
 export const maxExternalPercent = 5;
+export const quietResources = (
+  resource: Pick<Resource, "externalCpuPercent" | "peakHostWaitPercent">,
+) =>
+  resource.externalCpuPercent <= maxExternalPercent &&
+  resource.peakHostWaitPercent <= maxExternalPercent;
 
 export async function cpuCounters(cpus: number[]) {
   const text = await readFile("/proc/stat", "utf8");
@@ -98,6 +103,7 @@ export async function sample(
   cpuSpec: string,
   traced: boolean,
   hostedCgroup?: string,
+  enforceSubset = false,
 ) {
   const cpus = await affinity(cpuSpec);
   const command = join(tree, self, "recipient.ts");
@@ -146,7 +152,13 @@ export async function sample(
   ];
   const cwd = join(tree, "connect/service");
   const unit = hostedCgroup
-    ? runReplayUnit(args, cwd, result, dirname(log))
+    ? runReplayUnit(
+        args,
+        cwd,
+        result,
+        dirname(log),
+        enforceSubset ? cpuSpec : undefined,
+      )
     : undefined;
   const replayPath =
     unit?.replayPath ??
@@ -213,6 +225,7 @@ export async function sample(
       clockTicks,
       gnuTimeSeconds,
       replayCgroup: unit?.replayCgroup,
+      affinity: unit?.affinity,
       cpus,
       before,
       after,

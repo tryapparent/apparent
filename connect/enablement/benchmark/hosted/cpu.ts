@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { cpus as processorInfo } from "node:os";
 import { setTimeout } from "node:timers/promises";
-import { affinity, cpuCounters, maxExternalPercent } from "../watch-sample.ts";
+import { affinity, cpuCounters, quietResources } from "../watch-sample.ts";
 import { readCpuQuota } from "./quota.ts";
 
 const linux = (path: string) =>
@@ -36,6 +36,7 @@ export async function readHostedCpu() {
 export async function quietPreflight(cpus: number[]) {
   const before = await cpuCounters(cpus);
   const pressureBefore = await linux("/proc/pressure/io");
+  const guestCpuPsiBefore = await linux("/proc/pressure/cpu");
   const writeback = async () =>
     (await linux("/proc/meminfo"))
       .split("\n")
@@ -44,6 +45,7 @@ export async function quietPreflight(cpus: number[]) {
   await setTimeout(5000);
   const after = await cpuCounters(cpus);
   const pressureAfter = await linux("/proc/pressure/io");
+  const guestCpuPsiAfter = await linux("/proc/pressure/cpu");
   const writebackAfter = await writeback();
   let total = 0;
   let busy = 0;
@@ -58,11 +60,11 @@ export async function quietPreflight(cpus: number[]) {
   const externalCpuPercent = (100 * busy) / total;
   const peakHostWaitPercent = Math.max(...perCpuWaitPercent);
   return {
-    qualified:
-      externalCpuPercent <= maxExternalPercent &&
-      peakHostWaitPercent <= maxExternalPercent,
+    qualified: quietResources({ externalCpuPercent, peakHostWaitPercent }),
     externalCpuPercent,
     peakHostWaitPercent,
+    guestCpuPsiBefore,
+    guestCpuPsiAfter,
     pressureBefore,
     pressureAfter,
     writebackBefore,

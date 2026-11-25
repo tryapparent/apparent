@@ -16,7 +16,13 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { quietPreflight, readHostedCpu, waitForQuiet } from "./hosted/cpu.ts";
 import { withRunnerActors } from "./hosted/runner-actors.ts";
-import { hash, sample } from "./watch-sample.ts";
+import { completeSubsets, withInjectedCpu } from "./hosted/subset.ts";
+import {
+  hash,
+  maxExternalPercent,
+  quietResources,
+  sample,
+} from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
 
 const service = "connect/service";
@@ -130,14 +136,6 @@ async function main(args: string[]) {
     cpu.cpuQuota.limits.every((limit) => limit.startsWith("max ")),
     "A hosted replay unit cannot leave a quota-constrained runner cgroup",
   );
-  const runnerProfile = JSON.stringify({
-    platform: "github-hosted ubuntu-24.04 x64",
-    image,
-    topology: cpu.topology,
-    cpuQuota: cpu.cpuQuota.limits,
-    replayAccounting: "dedicated-systemd-cgroup-file-v2",
-    preparation: "unscored-replay-per-build-v1",
-  });
   const environment = {
     controlSha,
     candidateSha,
@@ -145,17 +143,14 @@ async function main(args: string[]) {
     runner: hostname(),
     cpu,
   };
-  const accounting = {
-    profile: runnerProfile,
-    cgroup: cpu.cpuQuota.groups[0].path,
-  };
+  const cgroup = cpu.cpuQuota.groups[0].path;
   const record = (name: string, value: unknown) =>
     writeFile(join(evidence, name), JSON.stringify(value, null, 2) + "\n", {
       mode: 0o600,
     });
-  const preflight = (name: string) =>
+  const preflight = (name: string, cpus: number[]) =>
     waitForQuiet(
-      () => quietPreflight(cpu.cpus),
+      () => quietPreflight(cpus),
       (windows) =>
         record(name, { qualified: windows.at(-1)?.qualified, windows }),
     );
@@ -246,23 +241,78 @@ async function main(args: string[]) {
           ["candidate", candidate],
         ]) {
       const staged = await withRunnerActors(
-        accounting.cgroup,
-        () =>
-          sample(tree, samples, chrome, cpu.cpuSpec, false, accounting.cgroup),
+        cgroup,
+        () => sample(tree, samples, chrome, cpu.cpuSpec, false, cgroup),
         (report) => record(`prestage-actors-${label}.json`, report),
       );
       await record(`prestage-${label}.json`, { scored: false, ...staged });
     }
 
+    const probes = [];
+    for (const cpus of completeSubsets(cpu.topology)) {
+      const spec = cpus.join(",");
+      const probe = await sample(
+        control,
+        samples,
+        chrome,
+        spec,
+        false,
+        cgroup,
+        true,
+      );
+      probes.push({
+        cpus,
+        resource: probe.resource,
+        accounting: probe.cpuAccounting,
+      });
+      await record("subset-probes.json", { scored: false, probes });
+    }
+    const chosen = probes
+      .filter(({ resource }) => quietResources(resource))
+      .sort(
+        (a, b) => a.resource.externalCpuPercent - b.resource.externalCpuPercent,
+      )[0];
+    assert.ok(chosen, "No complete SMT subset qualified during replay probing");
     assert.ok(
-      await preflight("calibration-preflight.json"),
+      chosen.accounting.affinity,
+      "Selected subset lacks kernel affinity evidence",
+    );
+    const cpuSpec = chosen.cpus.join(",");
+    const profile = {
+      platform: "github-hosted ubuntu-24.04 x64",
+      image,
+      topology: cpu.topology,
+      selected: chosen.cpus,
+      effectiveCapacity: chosen.accounting.affinity,
+      cpuQuota: cpu.cpuQuota.limits,
+      replayAccounting: "dedicated-systemd-complete-smt-v1",
+      preparation: "unscored-replay-per-build-v1",
+    };
+    const accounting = { profile: JSON.stringify(profile), cgroup };
+    await record("connect-subset.json", profile);
+    const injected = await withInjectedCpu(chosen.cpus[0], () =>
+      sample(control, samples, chrome, cpuSpec, false, cgroup, true),
+    );
+    const rejected =
+      !quietResources(injected.resource) &&
+      injected.resource.externalCpuPercent > maxExternalPercent;
+    await record("subset-injection.json", {
+      scored: false,
+      rejected,
+      resource: injected.resource,
+      accounting: injected.cpuAccounting,
+    });
+    assert.ok(rejected, "Outside CPU injection passed the replay guard");
+
+    assert.ok(
+      await preflight("calibration-preflight.json", chosen.cpus),
       "Hosted calibration failed the quiet CPU/I/O/steal preflight",
     );
     const baseline = await benchmark(
       "baseline",
       samples,
       chrome,
-      cpu.cpuSpec,
+      cpuSpec,
       control,
       undefined,
       control,
@@ -280,14 +330,14 @@ async function main(args: string[]) {
     if (calibrationOnly) return;
 
     assert.ok(
-      await preflight("comparison-preflight.json"),
+      await preflight("comparison-preflight.json", chosen.cpus),
       "Hosted comparison failed the quiet CPU/I/O/steal preflight",
     );
     const comparison = await benchmark(
       "compare",
       samples,
       chrome,
-      cpu.cpuSpec,
+      cpuSpec,
       control,
       baseline.receipt,
       candidate,
