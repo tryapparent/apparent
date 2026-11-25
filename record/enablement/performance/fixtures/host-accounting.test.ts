@@ -91,6 +91,39 @@ test("selected CPUs retain global work and reject interference on the subset", (
   assert.equal(injected.guards.unrelatedCpu, false);
 });
 
+test("a hosted subset counter mismatch rejects and exposes both raw samples", () => {
+  const subset = { cpus: [2, 3], clockTicks: 100 };
+  const start = {
+    ...before,
+    selectedBefore: { busyTicks: 40, busyUs: 400_000, total: 200, steal: 0 },
+  };
+  const end = {
+    ...after,
+    workloadUs: before.workloadUs + 1_050_000,
+    selectedAfter: { busyTicks: 140, busyUs: 1_400_000, total: 400, steal: 0 },
+  };
+
+  assert.throws(
+    () => qualifyAccounting(start, end, 2, subset),
+    (error: unknown) => {
+      assert.ok(error instanceof assert.AssertionError);
+      const prefix = "Guest and workload CPU counters are inconsistent ";
+      assert.ok(error.message.startsWith(prefix));
+      assert.deepEqual(JSON.parse(error.message.slice(prefix.length)), {
+        subset,
+        elapsedUs: 1_000_000,
+        guestBusyUs: 2_440_000,
+        measuredBusyUs: 1_000_000,
+        workloadCpuUs: 1_050_000,
+        lagAllowanceUs: 40_000,
+        before: start,
+        after: end,
+      });
+      return true;
+    },
+  );
+});
+
 test("qualified hosted scheduling still rejects a candidate resource regression", async () => {
   const result = qualifyAccounting(before, after, 4);
   const comparison = await benchmarkComparison(
