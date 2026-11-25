@@ -6,6 +6,7 @@ import {
   accountingHierarchy,
   allowedCpuList,
 } from "../fixtures/host-accounting.ts";
+import type { CpuSubset } from "../fixtures/smt-subset.ts";
 import { command } from "./job.ts";
 
 export function runInMeasurementUnit(
@@ -13,6 +14,7 @@ export function runInMeasurementUnit(
   args: string[],
   env: NodeJS.ProcessEnv,
   output: string,
+  subset?: CpuSubset,
 ) {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
@@ -27,6 +29,7 @@ export function runInMeasurementUnit(
       );
   }
   const unit = "apparent-record-bench-" + randomUUID() + ".service";
+  const cpuList = subset?.cpus.join(",");
   closeSync(openSync(output, "wx", 0o600));
   const invocation = [
     "-n",
@@ -46,13 +49,15 @@ export function runInMeasurementUnit(
     "--property=StandardInput=null",
     "--property=StandardOutput=append:" + output,
     "--property=StandardError=inherit",
+    ...(cpuList ? ["--property=AllowedCPUs=" + cpuList] : []),
     "--",
     "/usr/bin/env",
     "-i",
     ...Object.entries({
       ...env,
       APPARENT_RECORD_HOSTED_SCOPE: unit,
-      APPARENT_RECORD_HOST_CPU_LIST: allowedCpuList(),
+      APPARENT_RECORD_HOST_CPU_LIST: cpuList ?? allowedCpuList(),
+      APPARENT_RECORD_HOST_SUBSET_TICKS: subset && String(subset.clockTicks),
     })
       .filter(([, value]) => value !== undefined)
       .map(([key, value]) => key + "=" + value),

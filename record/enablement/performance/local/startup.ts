@@ -135,6 +135,8 @@ if (!childModes.includes(args[0])) {
             process.env.APPARENT_RECORD_HOSTED_SCOPE,
           APPARENT_RECORD_HOST_CPU_LIST:
             process.env.APPARENT_RECORD_HOST_CPU_LIST,
+          APPARENT_RECORD_HOST_SUBSET_TICKS:
+            process.env.APPARENT_RECORD_HOST_SUBSET_TICKS,
         },
         stdio: "inherit",
       },

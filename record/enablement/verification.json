@@ -97,7 +97,7 @@
         "instructions": "record/enablement/performance/hosted/README.md"
       },
       "expectedEvidence": [
-        "Verified media or pixel and clipboard endpoints, same-build noise, matched control and candidate records, scoped host CPU accounting, guest PSI, steal, throttling, and a qualified hosted receipt."
+        "Verified media or pixel and clipboard endpoints, same-build noise, matched control and candidate records, scoped CPU accounting, guest PSI, steal, throttling, and a qualified hosted receipt. Start also captures complete sibling-group placement and the same-subset interference proof."
       ],
       "limits": [
         "The hosted Start score covers the Electron pill and the hosted Stop score covers packaged replay finalization. Native physical input and real capture require separate acceptance."

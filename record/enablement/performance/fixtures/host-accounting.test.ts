@@ -63,6 +63,34 @@ test("rejects attributed interference, steal, throttling and I/O separately", ()
   }
 });
 
+test("selected CPUs retain global work and reject interference on the subset", () => {
+  const subset = { cpus: [0, 2], clockTicks: 100 };
+  const first = { busyTicks: 40, busyUs: 400_000, total: 200, steal: 2 };
+  const next = { busyTicks: 140, busyUs: 1_400_000, total: 400, steal: 2 };
+  const last = {
+    ...after,
+    workloadUs: before.workloadUs + 950_000,
+    selectedAfter: next,
+  };
+  const clean = qualifyAccounting(
+    { ...before, selectedBefore: first },
+    last,
+    2,
+    subset,
+  );
+  assert.equal(clean.qualified, true);
+  assert.equal(clean.guestBusyUs, 2_440_000);
+  assert.equal(clean.unrelatedCpuPercent, 2.5);
+  const injected = qualifyAccounting(
+    { ...before, selectedBefore: first },
+    { ...last, selectedAfter: { ...next, busyTicks: 170, busyUs: 1_700_000 } },
+    2,
+    subset,
+  );
+  assert.equal(injected.unrelatedCpuPercent, 17.5);
+  assert.equal(injected.guards.unrelatedCpu, false);
+});
+
 test("qualified hosted scheduling still rejects a candidate resource regression", async () => {
   const result = qualifyAccounting(before, after, 4);
   const comparison = await benchmarkComparison(
