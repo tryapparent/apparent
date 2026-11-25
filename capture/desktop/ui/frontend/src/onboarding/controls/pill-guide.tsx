@@ -28,7 +28,7 @@ export function PillGuide({finish=false,onTarget}:{finish?:boolean;onTarget?:()=
   return <figure className="native-control native-pill-guide" style={{'--pill-preview-width':`${layout.width}px`} as React.CSSProperties} data-kind={finish?"finish":"whiteboard"} aria-label={onTarget ? undefined : description}>
     <div ref={host} className="native-pill-example" style={{height:layout.height}}>
       <div ref={surface} inert={!onTarget} aria-hidden={!onTarget || undefined} className="native-pill-example-surface" style={{'--preview-scale':layout.scale} as React.CSSProperties}>
-        <PillSurface view={view} receivedAt={performance.now()} onAction={id=>{if(id===target)onTarget?.()}}/>
+        <PillSurface view={view} practiceExample receivedAt={performance.now()} onAction={id=>{if(id===target)onTarget?.()}}/>
       </div>
       <svg className="native-pill-pointer" aria-hidden="true" viewBox="0 0 22 26" style={{'--target-x':`${layout.x}px`,'--target-y':`${layout.y}px`} as React.CSSProperties}><path d="M1 1V19L6 14 11 23 14 21 9 12H17Z"/></svg>
     </div>

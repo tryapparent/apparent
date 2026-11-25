@@ -29,14 +29,13 @@ leaves the policy instance and its capture untouched.
 
 ## Active recording controls
 
-The shared Electron recording row offers the red Finish square, Whiteboard
+The shared Electron recording row offers the red Finish circle, Whiteboard
 pen and trailing Cancel cross. Capture modes are available in the pre-record
 picker. Microphone warnings still come from the capture.
 
-Live local transcription, Soft Bloom and Recording pill doodles are off by
-default. The optional Soft Bloom ring reacts to microphone activity. The
-optional doodles trail behind the controls. Reduce Motion uses a fixed ring
-with sound ticks and still doodles.
+Soft Bloom reacts to microphone activity, and Recording pill doodles trail
+behind the controls. Reduce Motion uses a fixed ring with sound ticks and still
+doodles. Live local transcription is opt-in. Older effect preferences are ignored.
 
 ## Native fields and boundaries
 

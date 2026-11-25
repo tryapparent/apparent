@@ -28,7 +28,6 @@ import { ConnectCard, useConnectSettings } from "./connect";
 import type { ComponentType } from "react";
 import {
   AgentContextPreference,
-  PillDoodles,
   PushToTalk,
   type PushToTalkProps,
   RecordingSection,
@@ -89,7 +88,6 @@ declare module "react" {
       > & {
         pane: string;
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
-        pillDoodlesExperiment?: typeof PillDoodles;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         speakingStyleExperiment?: typeof SpeakingStyle;
         desktopFrogExperiment?: typeof DesktopFrogPreference;
@@ -256,7 +254,6 @@ function Settings() {
               current === "Labs" ? SpeakingStyle : undefined
             }
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
-            pillDoodlesExperiment={current === "Labs" ? PillDoodles : undefined}
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
             desktopFrogExperiment={

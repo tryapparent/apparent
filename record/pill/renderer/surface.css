@@ -28,7 +28,6 @@
 .pill .indicator.recording { position:relative;background:var(--apparent-destructive); }
 .pill .recording > .pill-stop { -webkit-app-region:no-drag;width:44px;height:44px;padding:0;border-radius:50%; }
 .pill .pill-stop:hover { background:color-mix(in srgb,var(--apparent-background) 55%,transparent); }
-.pill .pill-stop .indicator { width:9px;height:9px;border-radius:2px; }
 @media(forced-colors:active) { .pill .pill-stop .indicator { forced-color-adjust:none;background:ButtonText; } }
 .pill .input-bloom { position:absolute;left:50%;top:50%;width:44px;height:44px;transform:translate(-50%,-50%);pointer-events:none;color:#982721; }
 @media(prefers-color-scheme:dark) {

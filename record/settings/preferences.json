@@ -20,22 +20,6 @@
     }
   },
   {
-    "id": "labs.pillDoodles",
-    "label": "Recording pill doodles",
-    "kind": "boolean",
-    "default": false,
-    "apply": "next-capture",
-    "legacy": { "path": "experiments.pillDoodles", "lenient": true }
-  },
-  {
-    "id": "labs.softBloom",
-    "label": "Soft Bloom",
-    "kind": "boolean",
-    "default": false,
-    "apply": "next-capture",
-    "legacy": { "path": "experiments.softBloom", "lenient": true }
-  },
-  {
     "id": "labs.pushToTalk",
     "label": "Push to talk",
     "kind": "boolean",

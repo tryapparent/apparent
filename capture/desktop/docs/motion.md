@@ -15,7 +15,7 @@ to inspect light and dark appearance, width, input and phase transitions.
 The [native performance benchmark](../../../record/enablement/performance/README.md)
 measures when the installed pill is first visible during a real recording.
 
-Optional Soft Bloom displays about one second of actual captured microphone
+Soft Bloom displays about one second of actual captured microphone
 history. Engine reduces the existing 16 kHz mono PCM into 24 overlapping RMS
 samples and retains the existing clipping, stale sample and warning behavior.
 The renderer consumes that history with its own transport expiry. It opens no

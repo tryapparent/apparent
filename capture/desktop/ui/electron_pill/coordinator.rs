@@ -171,8 +171,6 @@ impl ApparentCoordinator {
             clock: crate::shared::model::format_clock(self.active_recording.as_ref().map(ActiveRecording::elapsed_ms).unwrap_or(self.last_elapsed_ms)),
             reduced_motion: self.reduced_motion,
             input_waveform: None,
-            doodle_ink: None,
-            soft_bloom: None,
             transcript: None,
             notice: None,
             note_tip: None,

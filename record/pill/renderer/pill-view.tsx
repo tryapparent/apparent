@@ -3,7 +3,6 @@ import { Button } from "@apparent/ui/button";
 import { StickyNote } from "@apparent/ui/icons";
 import type { PillView } from "./view";
 import { InputMeter } from "./ink/input-meter";
-import ink from "./ink/doodle-ink.mjs";
 import { LiveCaption } from "./live-caption";
 import {
   Check,
@@ -75,6 +74,7 @@ type Props = {
   receivedAt?: number;
   reduced?: boolean;
   manualDrag?: boolean;
+  practiceExample?: boolean;
   onAction: (action: string, drop?: boolean) => void;
   onBeginDrag?: () => Promise<void>;
   onBeginPaste?: () => Promise<void>;
@@ -91,6 +91,7 @@ export function PillSurface({
   receivedAt = 0,
   reduced = false,
   manualDrag = false,
+  practiceExample = false,
   onAction,
   onBeginDrag,
   onBeginPaste,
@@ -124,8 +125,7 @@ export function PillSurface({
       controls[inspectIndex],
       controls[pasteIndex],
     ];
-  const showDoodles =
-    view.phase === "recording" && ink.doodles_enabled(view.doodleInk === true);
+  const showDoodles = recording && !practiceExample;
   return (
     <main
       data-revision={view.revision}
@@ -164,7 +164,7 @@ export function PillSurface({
               }}
             >
               <span className={`indicator-slot ${view.phase}`}>
-                {view.softBloom && microphoneInput !== null && (
+                {!practiceExample && microphoneInput !== null && (
                   <InputMeter
                     input={microphoneInput}
                     receivedAt={receivedAt}

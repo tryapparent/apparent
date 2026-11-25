@@ -10,7 +10,7 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', pillDoodles: 'pill-doodles-toggle', softBloom: 'soft-bloom-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = React.ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -18,14 +18,13 @@ export type LabsExperiment<Checked = boolean> = React.ComponentType<{
 }>;
 export type AutoPasteExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
 export type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
+export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
   autoPasteExperiment?: AutoPasteExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
-  pillDoodlesExperiment?: LabsExperiment<boolean | null | undefined>;
 }) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
@@ -89,19 +88,6 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
     {PushToTalk && <PushToTalk id={controls.pushToTalk} checked={facts?.pushToTalkSaved === true}
       supported={facts?.pushToTalkSupported} disabled={busy || !facts || !!facts.error}
       saving={busy && setting === 'pushToTalk'} onCheckedChange={bindPreference('labs', 'labs.pushToTalk', value => void request(value, 'pushToTalk'))} />}
-    <section className="agent-preference">
-      <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="soft-bloom-label">Soft Bloom</h2>
-        <Switch id={controls.softBloom} className="agent-switch" checked={facts?.softBloomSaved === true}
-          aria-labelledby="soft-bloom-label" aria-describedby="soft-bloom-help"
-          disabled={busy || !facts || !!facts.error} aria-busy={busy && setting === 'softBloom'}
-          onCheckedChange={bindPreference('labs', 'labs.softBloom', value => void request(value, 'softBloom'))} />
-      </div>
-      <p id="soft-bloom-help">Show a microphone-reactive ring around the red recording control. Applies to the next recording.</p>
-    </section>
-    {PillDoodles && <PillDoodles id={controls.pillDoodles} checked={facts?.pillDoodlesSaved}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'pillDoodles'}
-      onCheckedChange={bindPreference('labs', 'labs.pillDoodles', value => void request(value, 'pillDoodles'))} />}
     {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
       disabled={busy || autoPaste === undefined} saving={busy && setting === 'autoPaste'}
       onCheckedChange={bindPreference('labs', 'labs.autoPasteDraft', value => void request(value, 'autoPaste'))} />}

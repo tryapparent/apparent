@@ -46,20 +46,18 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(page.getByText('Compact recording prompts',{exact:true})).toHaveCount(0);
   await expect(page.getByText('Transcript-only handoff',{exact:true})).toHaveCount(0);
   const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
-  const doodles=page.getByRole('switch',{name:'Recording pill doodles'});
+  await expect(page.getByRole('switch',{name:/^(Recording pill doodles|Soft Bloom)$/})).toHaveCount(0);
   await expect(page.getByRole('switch',{name:'Label circled items'})).toHaveCount(0);
   await expect(agentContext).toBeDisabled();
   await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  await expect(doodles).not.toBeChecked();
   await expect(agentContext).toHaveAttribute('aria-checked','false');
   await agentContext.focus();await page.keyboard.press('Space');
   await expect(agentContext).toHaveAttribute('aria-checked','true');await expect(agentContext).toBeFocused();
   await expect(page.locator('#agent-context-access')).toContainText('Allow Apparent');
   await page.reload();
   await expect(agentContext).toBeChecked();
-  await expect(doodles).not.toBeChecked();
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
@@ -84,8 +82,6 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await expect(control).toBeChecked();
    await expect(toggle).toBeChecked();
   };
-  await enableAndReload(doodles);
-  await enableAndReload(page.getByRole('switch',{name:'Soft Bloom'}));
   const speaking=page.getByRole('switch',{name:'Match my speaking style'});
   await enableAndReload(speaking);
   const sharing=page.getByRole('switch',{name:'Public sharing links'});
@@ -160,7 +156,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await cdp.detach();
   }
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking],['pillDoodles',doodles]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking]];
   recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);

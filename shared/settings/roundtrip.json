@@ -24,8 +24,6 @@
   "agents.agentDemoVideo": false,
   "agents.t3DestinationPicker": true,
   "labs.localStreamingTranscription": true,
-  "labs.pillDoodles": true,
-  "labs.softBloom": true,
   "labs.pushToTalk": true,
   "labs.recordingPerformance": true,
   "labs.autoPasteDraft": false,
