@@ -209,15 +209,11 @@ class CleanupTests(unittest.TestCase):
 
 class TransportTests(unittest.TestCase):
     def exercise(self, fail=False, pending=False, no_decoder=False, existing_process=False):
-        # Keep paths short, as required by the real Unix control socket contract.
-        with tempfile.TemporaryDirectory(prefix='cs-', dir=os.environ.get('TMPDIR')) as directory:
+        with tempfile.TemporaryDirectory(prefix='apparent-dev-smoke-test-', dir='/tmp') as directory:
             root = Path(directory)
-            out = root / 'o'
-            out.mkdir()
-            tools = root / 'bin'
-            tools.mkdir()
-            runtime = root / 'runtime'
-            runtime.mkdir()
+            out, tools, runtime = [root / name for name in ('o', 'bin', 'runtime')]
+            for folder in (out, tools, runtime):
+                folder.mkdir()
             binary = tools / 'peer'
             binary.write_text(PEER)
             binary.chmod(0o700)
@@ -269,26 +265,28 @@ class TransportTests(unittest.TestCase):
                         recipe.cleanup()
             self.assertEqual(recipe.env['XAUTHORITY'], str(authority))
             report = json.loads((out / 'capture-smoke-report.json').read_text())
-            self.assertEqual(report['gates']['owned_process_cleanup'], 'PASS', report)
+            gates = report['gates']
+            self.assertEqual(gates['owned_process_cleanup'], 'PASS', report)
             if existing_process:
                 self.assertEqual(report['requests'], [])
                 self.assertFalse((out / 'scene.json').exists())
-                self.assertEqual(report['gates']['gui_ready'], 'UNRUN')
-                self.assertEqual(report['gates']['h264_decoder'], 'UNRUN')
+                self.assertEqual(gates['gui_ready'], 'UNRUN')
+                self.assertEqual(gates['h264_decoder'], 'UNRUN')
                 return
-            self.assertFalse((out / '.config/apparent/agent-control/capture.sock').exists())
-            self.assertFalse((out / '.config/apparent/launch/open.sock').exists())
+            sockets = {'.config/apparent/agent-control/capture.sock', '.config/apparent/launch/open.sock'}
+            for socket in sockets:
+                self.assertFalse((out / socket).exists())
             self.assertFalse(recipe.runtime.exists(), 'AppImage extraction must not reach artifact retention')
             self.assertFalse(recipe.runtime.is_relative_to(out))
             self.assertTrue(report['removed_private_runtime'])
             if not no_decoder:
                 self.assertEqual((out / 'retained-evidence').read_text(), 'must remain')
-            self.assertEqual(report['gates']['selected_target_pixels'], 'UNRUN')
-            self.assertEqual(report['gates']['movie_nonblack_changing'], 'UNRUN')
+            self.assertEqual(gates['selected_target_pixels'], 'UNRUN')
+            self.assertEqual(gates['movie_nonblack_changing'], 'UNRUN')
             if no_decoder:
                 self.assertEqual(report['requests'], [])
                 self.assertFalse((out / 'scene.json').exists())
-                self.assertEqual(report['gates']['gui_ready'], 'UNRUN')
+                self.assertEqual(gates['gui_ready'], 'UNRUN')
                 probe = next(c for c in report['commands'] if 'decoder-check' in c['argv'])
                 self.assertEqual(probe['exit'], 9)
                 self.assertIn('synthetic missing H.264 decoder', (out / probe['stderr']).read_text())
@@ -296,28 +294,30 @@ class TransportTests(unittest.TestCase):
                 self.assertEqual(len(report['requests']), 1)
                 peer = json.loads((out / 'peer-state.json').read_text())
                 self.assertEqual(peer['receipts'][recipe.ids[0]]['status'], 'cancelled')
-                self.assertEqual(report['gates']['saved_receipt'], 'UNRUN')
+                self.assertEqual(gates['saved_receipt'], 'UNRUN')
                 self.assertEqual(report['pending_receipt']['status'], 'starting')
             elif fail:
                 failed = [entry for entry in report['commands'] if entry.get('exit') == 7]
                 self.assertEqual(len(failed), 1)
                 self.assertIn('synthetic stop stderr', (out / failed[0]['stderr']).read_text())
                 self.assertIn('synthetic stop failure', (out / failed[0]['stdout']).read_text())
-                self.assertEqual(report['gates']['cancelled_receipt'], 'UNRUN')
+                self.assertEqual(gates['cancelled_receipt'], 'UNRUN')
                 peer = json.loads((out / 'peer-state.json').read_text())
                 self.assertEqual(peer['receipts'][recipe.ids[0]]['status'], 'cancelled')
             else:
-                self.assertEqual(report['gates']['h264_decoder'], 'PASS')
-                self.assertEqual(report['gates']['saved_receipt'], 'PASS')
-                self.assertEqual(set(report['removed_private_sockets']), {'.config/apparent/agent-control/capture.sock', '.config/apparent/launch/open.sock'})
-                self.assertEqual(report['gates']['cancelled_receipt'], 'PASS')
+                self.assertEqual(gates['h264_decoder'], 'PASS')
+                self.assertEqual(gates['saved_receipt'], 'PASS')
+                self.assertEqual(set(report['removed_private_sockets']), sockets)
+                self.assertEqual(gates['cancelled_receipt'], 'PASS')
                 self.assertEqual(report['saved_bundle_relative_to_output'], 'captures/synthetic.apparent')
                 self.assertEqual(len(report['requests']), 2)
                 self.assertNotEqual(*[r['capture_id'] for r in report['requests']])
-                self.assertEqual(report['gates']['movie_full_decode'], 'UNRUN')
+                self.assertEqual(gates['movie_full_decode'], 'UNRUN')
 
-    def test_whole_recipe_with_real_harmless_transport(self):
-        self.exercise()
+    def test_transport_with_long_tmpdir(self):
+        with tempfile.TemporaryDirectory(prefix='apparent-dev-smoke-' + 'x' * 108, dir='/tmp') as directory:
+            with patch.dict(os.environ, {'TMPDIR': directory}):
+                self.exercise()
 
     def test_existing_guest_product_stops_before_decoder_scene_or_capture(self):
         self.exercise(existing_process=True)
