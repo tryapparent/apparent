@@ -1,6 +1,6 @@
 use super::{Session, View};
 use crate::capture::desktop::{ApparentCoordinator, IslandPhase, apparent_log};
-use crate::capture::desktop::{ActiveRecording, CompletedAudioIssue, InputWarning, PillEvent, motion, reveal_clock_ms};
+use crate::capture::desktop::{ActiveRecording, CaptureSource, CompletedAudioIssue, InputWarning, PillEvent, motion, reveal_clock_ms};
 use std::time::{Duration, Instant};
 use super as pill_state;
 use gpui::Context;
@@ -85,6 +85,9 @@ impl ApparentCoordinator {
         let audio = self.completed_audio_issue();
         let facts = pill_state::Facts {
             phone: self.iphone.is_some(),
+            screen_starting: self.active_recording.as_ref().is_some_and(|recording| {
+                matches!(&recording.source, CaptureSource::Screen { session, .. } if !session.has_frames())
+            }),
             no_words: self.recording_has_no_words(),
             note_count: self.note_ui.as_ref().map_or(0, |notes| notes.saved_count()),
             movable,
@@ -97,10 +100,7 @@ impl ApparentCoordinator {
             microphone_problem: microphone.is_some(),
             audio_problem: audio.is_some(),
         };
-        if self.reveal.facts.as_ref() == Some(&facts) {
-            return;
-        }
-        let Some(session) = &self.reveal.policy else { return };
+        let Some(session) = self.reveal.policy.as_ref().filter(|_| self.reveal.facts.as_ref() != Some(&facts)) else { return };
         match session.present(&facts) {
             Ok(presentation) => {
                 self.reveal.facts = Some(facts);
@@ -175,8 +175,8 @@ impl ApparentCoordinator {
             notice: None,
             note_tip: None,
         };
-        if view.phase == "recording" {
-            if let Some(crate::capture::desktop::CaptureSource::Screen {audio: Some(audio), ..}) = self.active_recording.as_ref().map(|recording| &recording.source) {
+        if view.phase == "recording" && view.actions.iter().any(|action| action.id == "finish" && action.enabled) {
+            if let Some(CaptureSource::Screen { audio: Some(audio), .. }) = self.active_recording.as_ref().map(|recording| &recording.source) {
                 view.transcript = audio.streaming_preview();
                 view.input_waveform = Some(audio.input_waveform().unwrap_or([0.0; 24]));
             }

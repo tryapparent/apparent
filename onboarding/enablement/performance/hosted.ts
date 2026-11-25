@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { createReadStream } from "node:fs";
 import {
   lstat,
@@ -19,7 +20,7 @@ import {
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withHostedScope } from "./hosted-contention.ts";
+import { allowedCpus, choosePlacement } from "./hosted/placement.ts";
 
 const args = process.argv.slice(2);
 assert(
@@ -251,20 +252,116 @@ async function buildReceipt(staged: Awaited<ReturnType<typeof build>>) {
   };
 }
 
-async function replay(name: string, args: string[]) {
+function runScoped(
+  name: "proof" | "calibration" | "matched",
+  placement: Awaited<ReturnType<typeof choosePlacement>>,
+  entry: string,
+  args: string[],
+) {
+  const runId = process.env.GITHUB_RUN_ID ?? "";
+  const attempt = process.env.GITHUB_RUN_ATTEMPT ?? "";
+  assert.match(runId, /^\d+$/);
+  assert.match(attempt, /^\d+$/);
+  const uid = process.getuid?.();
+  const gid = process.getgid?.();
+  assert(uid && gid !== undefined);
+  const scope = `apparent-onboarding-${runId}-${attempt}-${name}.service`;
+  return stage(
+    name,
+    source,
+    "sudo",
+    "-n",
+    "/usr/bin/systemd-run",
+    "--quiet",
+    "--wait",
+    "--pipe",
+    "--collect",
+    "--expand-environment=no",
+    "--service-type=exec",
+    "--unit=" + scope,
+    "--uid=" + uid,
+    "--gid=" + gid,
+    "--working-directory=" + source,
+    "--property=CPUAccounting=yes",
+    "--property=RuntimeMaxSec=9min",
+    "--property=AllowedCPUs=" + placement.cpus.join(","),
+    ...[
+      "PATH",
+      "GITHUB_ACTIONS",
+      "GITHUB_REPOSITORY",
+      "GITHUB_RUN_ID",
+      "GITHUB_RUN_ATTEMPT",
+      "RUNNER_ENVIRONMENT",
+      "ImageVersion",
+      "APPARENT_ONBOARDING_HOSTED_COHORT",
+    ].map((key) => "--setenv=" + key + "=" + process.env[key]),
+    "--setenv=TMPDIR=" + scratch,
+    "--setenv=BEND_NO_TELEMETRY=1",
+    "--setenv=APPARENT_ONBOARDING_HOSTED_SCOPE=" + scope,
+    "--setenv=APPARENT_ONBOARDING_HOSTED_CPUS=" + placement.cpus.join(","),
+    "--",
+    process.execPath,
+    entry,
+    ...args,
+  );
+}
+
+async function proveOutsideCpu(
+  placement: Awaited<ReturnType<typeof choosePlacement>>,
+) {
+  const entry = fileURLToPath(
+    new URL("./hosted/injection.ts", import.meta.url),
+  );
+  const load = spawn(
+    "taskset",
+    ["-c", placement.cpus.join(","), process.execPath, entry, "inject"],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  const closed = once(load, "close");
+  void closed.catch(() => {});
+  try {
+    const [ready] = await Promise.race([
+      once(load.stdout, "data", { signal: AbortSignal.timeout(5000) }),
+      closed.then(() => {
+        throw Error("Outside CPU injector exited before ready");
+      }),
+    ]);
+    assert.equal(ready.toString().trim(), "ready");
+    const [status, membership] = await Promise.all([
+      readFile(`/proc/${load.pid}/status`, "utf8"),
+      readFile(`/proc/${load.pid}/cgroup`, "utf8"),
+    ]);
+    assert.deepEqual(allowedCpus(status), placement.cpus);
+    assert.match(membership, /^0::\//);
+    assert(!membership.includes("apparent-onboarding-"));
+    await receipt("injection-placement.json", {
+      scored: false,
+      cpus: placement.cpus,
+      membership: membership.trim(),
+    });
+    await runScoped("proof", placement, entry, [
+      "sample",
+      join(evidence, "injection.json"),
+    ]);
+    await stat(`/proc/${load.pid}/status`);
+  } finally {
+    load.kill();
+    await closed;
+  }
+}
+
+async function replay(
+  name: "calibration" | "matched",
+  placement: Awaited<ReturnType<typeof choosePlacement>>,
+  args: string[],
+) {
   const dir = join(evidence, name);
   await mkdir(dir, { mode: 0o700 });
-  await withHostedScope(name, () =>
-    stage(
-      name,
-      source,
-      process.execPath,
-      benchmark,
-      ...args.slice(0, 3),
-      dir,
-      ...args.slice(3),
-    ),
-  );
+  await runScoped(name, placement, benchmark, [
+    ...args.slice(0, 3),
+    dir,
+    ...args.slice(3),
+  ]);
   return join(name, "benchmark.json");
 }
 
@@ -282,40 +379,16 @@ try {
   )?.[1];
   assert(affinity);
   const cpuQuota = await cpuQuotas();
+  assert.equal(
+    cpuQuota.limits.length,
+    0,
+    "Runner CPU quota prevents an equivalent scope",
+  );
   const cpuModel = (await readFile("/proc/cpuinfo", "utf8")).match(
     /^model name\s+:\s+(.+)$/m,
   )?.[1];
   assert(cpuModel);
-  const cohort = createHash("sha256")
-    .update(
-      JSON.stringify({
-        imageVersion,
-        logicalCpus,
-        affinity,
-        limits: cpuQuota.limits,
-        cpuModel,
-      }),
-    )
-    .digest("hex");
-  process.env.APPARENT_ONBOARDING_HOSTED_COHORT = cohort;
-  await receipt("hosted-inputs.json", {
-    schema: 1,
-    mode: "synthetic-electron-click-through",
-    controlSha,
-    candidateSha,
-    collectorSha: output(source, "git", "rev-parse", "HEAD"),
-    runId: process.env.GITHUB_RUN_ID,
-    runAttempt: process.env.GITHUB_RUN_ATTEMPT,
-    imageVersion,
-    node: process.version,
-    availableParallelism: availableParallelism(),
-    topology: JSON.parse(output(scratch, "lscpu", "--json")),
-    logicalCpus,
-    affinity,
-    cpuQuota,
-    cpuModel,
-    cohort,
-  });
+  await installPrerequisites();
   await stage(
     "hosted-contention-tests",
     source,
@@ -323,7 +396,6 @@ try {
     "--test",
     fileURLToPath(new URL("./hosted-contention.test.ts", import.meta.url)),
   );
-  await installPrerequisites();
   const a = await build("control", control, controlSha);
   const b =
     controlSha === candidateSha
@@ -352,7 +424,45 @@ try {
       metadata.gid === 0 &&
       (metadata.mode & 0o7777) === 0o4755,
   );
-  const calibration = await replay("calibration", [
+  const placement = await choosePlacement(affinity);
+  const cohort = createHash("sha256")
+    .update(
+      JSON.stringify({
+        placement: {
+          protocol: placement.protocol,
+          cpus: placement.cpus,
+          topology: placement.topology,
+        },
+        imageVersion,
+        logicalCpus,
+        affinity,
+        limits: cpuQuota.limits,
+        cpuModel,
+      }),
+    )
+    .digest("hex");
+  process.env.APPARENT_ONBOARDING_HOSTED_COHORT = cohort;
+  await receipt("hosted-inputs.json", {
+    schema: 1,
+    mode: "synthetic-electron-click-through",
+    controlSha,
+    candidateSha,
+    collectorSha: output(source, "git", "rev-parse", "HEAD"),
+    runId: process.env.GITHUB_RUN_ID,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+    imageVersion,
+    node: process.version,
+    availableParallelism: availableParallelism(),
+    topology: JSON.parse(output(scratch, "lscpu", "--json")),
+    logicalCpus,
+    affinity,
+    cpuQuota,
+    cpuModel,
+    placement,
+    cohort,
+  });
+  await proveOutsideCpu(placement);
+  const calibration = await replay("calibration", placement, [
     runtime,
     a.assets,
     controlSha,
@@ -360,7 +470,7 @@ try {
   const comparison =
     b === a
       ? undefined
-      : await replay("matched", [
+      : await replay("matched", placement, [
           runtime,
           a.assets,
           controlSha,

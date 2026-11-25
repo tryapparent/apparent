@@ -3,11 +3,23 @@ import path from "node:path";
 import readline from "node:readline";
 
 const state = JSON.parse(process.argv.at(-1) ?? "");
+const startError = state.kind === "record-start-error";
+if (
+  startError &&
+  (typeof state.title !== "string" ||
+    state.title.length > 120 ||
+    typeof state.description !== "string" ||
+    state.description.length > 300)
+)
+  throw Error("Invalid recording start error");
 app.setName("Apparent");
 app.setPath(
   "userData",
   app.commandLine.getSwitchValue("user-data-dir") ||
-    path.join(app.getPath("appData"), "apparent-quit"),
+    path.join(
+      app.getPath("appData"),
+      startError ? "apparent-record-start-error" : "apparent-quit",
+    ),
 );
 
 void app
@@ -15,11 +27,13 @@ void app
   .then(async () => {
     const window = new BrowserWindow({
       width: 480,
-      height: 300,
+      height: startError ? 320 : 300,
       useContentSize: true,
       minWidth: 320,
-      minHeight: 280,
+      minHeight: startError ? 320 : 280,
       show: false,
+      alwaysOnTop: startError,
+      resizable: !startError,
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#020102" : "#f5f0e8",
       title: "Apparent",
       autoHideMenuBar: true,
@@ -50,6 +64,7 @@ void app
     ipcMain.handle("quit-decide", (event, quit: unknown, checked: unknown) => {
       if (
         event.sender !== window.webContents ||
+        startError ||
         reply ||
         typeof quit !== "boolean" ||
         (checked !== null && (!state.available || typeof checked !== "boolean"))

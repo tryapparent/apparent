@@ -3,9 +3,7 @@ mod coordinator;
 mod session;
 #[cfg(target_os = "linux")]
 mod pin;
-use crate::capture::desktop::{
-    SelectionMode,
-};
+use crate::capture::desktop::SelectionMode;
 use anyhow::{Context as _, Result};
 use crate::embedded_policy::EmbeddedPolicy;
 pub(crate) use crate::capture::desktop::PillAction;
@@ -109,6 +107,7 @@ pub(crate) struct Facts {
     pub(crate) audio_issue: Option<&'static str>,
     pub(crate) microphone_problem: bool,
     pub(crate) audio_problem: bool,
+    pub(crate) screen_starting: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -269,20 +268,6 @@ impl View {
             && self.actions.iter().any(|action| action.id == "copy-link" && action.enabled)
     }
 
-    /// Known rejection advances the matching revision so the renderer can recover.
-    /// A stale command never consumes a newer capture's revision.
-    pub fn consume(&mut self, command: Command, timely: bool) -> Option<PillAction> {
-        if command.revision != self.revision {
-            return None;
-        }
-        let action = timely.then(|| self.admit(command)).flatten();
-        self.revision += 1;
-        self.notice = action
-            .is_none()
-            .then(|| "Control request expired or changed. Try again.".into());
-        action
-    }
-
     /// Admission is checked again against current coordinator state before dispatch.
     #[cfg(target_os = "linux")]
     pub fn drag_point(&self, command: &Command, timely: bool) -> Option<[f32; 2]> {
@@ -337,14 +322,17 @@ impl View {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Command {
     pub revision: u64,
     pub action: String,
     #[serde(default)]
     pub target: Option<[f32; 2]>,
+    pub startup_capture: Option<String>,
 }
+
+include!("../../../../engine/native/desktop/pill_actions.rs");
 
 #[cfg(test)]
 mod tests;

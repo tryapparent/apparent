@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+
+import {
+  allowedCpus,
+  busyTicks,
+  cpuFields,
+  cpuList,
+  cpuRows,
+} from "./hosted/placement.ts";
 
 const root = "/sys/fs/cgroup";
 export const hostedLimits = {
@@ -11,48 +19,6 @@ export const hostedLimits = {
   throttledPeriods: 0,
 } as const;
 
-async function membership() {
-  const path = (await readFile("/proc/self/cgroup", "utf8")).match(
-    /^0::(\/.*)$/m,
-  )?.[1];
-  assert(path, "Expected unified cgroup membership");
-  const dir = resolve(root, "." + path);
-  assert(dir === root || dir.startsWith(root + "/"));
-  return dir;
-}
-
-function privileged(
-  command: "mkdir" | "rmdir" | "tee",
-  path: string,
-  input?: string,
-) {
-  execFileSync("sudo", ["-n", command, "--", path], {
-    input,
-    stdio: ["pipe", "ignore", "inherit"],
-    timeout: 5_000,
-  });
-}
-
-function scopeName(phase: string) {
-  assert.match(process.env.GITHUB_RUN_ID ?? "", /^\d+$/);
-  assert.match(process.env.GITHUB_RUN_ATTEMPT ?? "", /^\d+$/);
-  assert.match(phase, /^(calibration|matched)$/);
-  return `apparent-onboarding-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}-${phase}`;
-}
-
-export async function withHostedScope<T>(phase: string, run: () => Promise<T>) {
-  const dir = join(await membership(), scopeName(phase));
-  privileged("mkdir", dir);
-  try {
-    process.env.APPARENT_ONBOARDING_HOSTED_SCOPE = phase;
-    return await run();
-  } finally {
-    delete process.env.APPARENT_ONBOARDING_HOSTED_SCOPE;
-    privileged("rmdir", dir);
-  }
-}
-
-const read = (file: string) => readFile(file, "utf8");
 const keyValues = (contents: string) =>
   Object.fromEntries(
     contents
@@ -73,6 +39,7 @@ const counter = (value: number | undefined) => {
 export type HostedSample = {
   clockMs: number;
   hostCpu: string;
+  selectedCpu: string[];
   totalGuestCpuPsi: string;
   ioPsi: string;
   scopeCpu: {
@@ -82,25 +49,30 @@ export type HostedSample = {
   }[];
 };
 
-export async function startHostedMeter() {
-  const dir = join(
-    await membership(),
-    scopeName(process.env.APPARENT_ONBOARDING_HOSTED_SCOPE ?? ""),
+export function startHostedMeter() {
+  const read = (path: string) => readFileSync(path, "utf8");
+  const scope = process.env.APPARENT_ONBOARDING_HOSTED_SCOPE ?? "";
+  assert.match(
+    scope,
+    /^apparent-onboarding-[0-9]+-[0-9]+-(calibration|matched|proof)\.service$/,
   );
-  privileged("tee", join(dir, "cgroup.procs"), `${process.pid}\n`);
-  assert.equal(
-    await membership(),
-    dir,
-    "Observer must be inside the owned workload scope",
+  const membership = /^0::(\/.*)$/m.exec(read("/proc/self/cgroup"))?.[1];
+  assert.equal(membership, "/system.slice/" + scope);
+  const dir = join(root, membership);
+  const selected = cpuList(process.env.APPARENT_ONBOARDING_HOSTED_CPUS ?? "");
+  assert.deepEqual(
+    cpuList(read(join(dir, "cpuset.cpus.effective")).trim()),
+    selected,
   );
+  assert.deepEqual(allowedCpus(read("/proc/self/status")), selected);
   const hierarchy = [dir];
   while (hierarchy.at(-1) !== root) hierarchy.push(dirname(hierarchy.at(-1)!));
   const ticksPerSecond = counter(
     Number(execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }).trim()),
   );
   assert(ticksPerSecond > 0);
-  const scopeCpu = async (directory: string) => {
-    const stats = keyValues(await read(join(directory, "cpu.stat")));
+  const scopeCpu = (directory: string) => {
+    const stats = keyValues(read(join(directory, "cpu.stat")));
     return {
       directory,
       usageUs: counter(stats.usage_usec),
@@ -110,19 +82,18 @@ export async function startHostedMeter() {
   };
   return {
     ticksPerSecond,
-    async sample(): Promise<HostedSample> {
+    selected,
+    sample(boundary: "start" | "end"): HostedSample {
       const clockMs = performance.now();
-      const [hostCpu, totalGuestCpuPsi, ioPsi, scopes] = await Promise.all([
-        read("/proc/stat"),
-        read("/proc/pressure/cpu"),
-        read("/proc/pressure/io"),
-        Promise.all(hierarchy.map(scopeCpu)),
-      ]);
+      const startCpu = boundary === "start" ? read("/proc/stat") : undefined;
+      const scopes = hierarchy.map(scopeCpu);
+      const hostCpu = startCpu ?? read("/proc/stat");
       return {
         clockMs,
         hostCpu: hostCpu.split("\n", 1)[0],
-        totalGuestCpuPsi,
-        ioPsi,
+        selectedCpu: cpuRows(hostCpu, selected),
+        totalGuestCpuPsi: read("/proc/pressure/cpu"),
+        ioPsi: read("/proc/pressure/io"),
         scopeCpu: scopes,
       };
     },
@@ -140,14 +111,25 @@ export function hostedContention(
   after: HostedSample,
   ticksPerSecond: number,
 ) {
-  const cpu = (sample: HostedSample) =>
-    sample.hostCpu.trim().split(/\s+/).slice(1, 9).map(Number);
-  const first = cpu(before);
-  const delta = cpu(after).map((value, index) => counter(value - first[index]));
-  assert.equal(delta.length, 8);
-  const total = delta.reduce((sum, value) => sum + value, 0);
+  const cpuDelta = (before: string, after: string) => {
+    const first = cpuFields(before);
+    return cpuFields(after).map((value, index) =>
+      counter(value - first[index]),
+    );
+  };
+  const sum = (fields: number[]) =>
+    fields.reduce((total, value) => total + value, 0);
+  assert(before.selectedCpu.length > 0);
+  assert.deepEqual(
+    before.selectedCpu.map((row) => row.split(/\s+/, 1)[0]),
+    after.selectedCpu.map((row) => row.split(/\s+/, 1)[0]),
+  );
+  const deltas = before.selectedCpu.map((row, index) =>
+    cpuDelta(row, after.selectedCpu[index]),
+  );
+  const total = sum(deltas.map(sum));
   assert(total > 0 && ticksPerSecond > 0);
-  const busy = delta[0] + delta[1] + delta[2] + delta[5] + delta[6];
+  const busy = sum(deltas.map(busyTicks));
   const workloadUs = counter(
     after.scopeCpu[0].usageUs - before.scopeCpu[0].usageUs,
   );
@@ -155,7 +137,11 @@ export function hostedContention(
     0,
     (100 * (busy - (workloadUs * ticksPerSecond) / 1_000_000)) / total,
   );
-  const stealPercent = (100 * delta[7]) / total;
+  const guestDelta = cpuDelta(before.hostCpu, after.hostCpu);
+  const selectedStealPercent =
+    (100 * sum(deltas.map((delta) => delta[7]))) / total;
+  const guestStealPercent = (100 * guestDelta[7]) / sum(guestDelta);
+  const stealPercent = Math.max(selectedStealPercent, guestStealPercent);
   assert.deepEqual(
     after.scopeCpu.map(({ directory }) => directory),
     before.scopeCpu.map(({ directory }) => directory),
@@ -179,6 +165,8 @@ export function hostedContention(
   return {
     outsideCpuPercent,
     workloadUs,
+    selectedStealPercent,
+    guestStealPercent,
     stealPercent,
     throttledPeriods,
     fullIoPressurePercent,
