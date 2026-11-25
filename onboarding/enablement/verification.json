@@ -42,6 +42,7 @@
       "expectedEvidence": [
         "Each observation has stage milliseconds, same-clock trace intervals and dwell, executable, renderer and fixture hashes, and verified assertions for Whiteboard ink, synthetic media and clipboard readback, persisted fixture completion and coach closure.",
         "Every job records same-build repeat noise and incremental trace overhead. A job with distinct builds also publishes serial matched A/B/B/A cold and resumed comparisons with resource guards and scores.",
+        "Hosted receipts keep total guest CPU pressure for diagnosis and independently guard outside CPU, guest steal, I/O interference, and throttling using the owned workload cgroup.",
         "The artifact contains exact build and runner identities, raw admission samples and traces. Rejected runs retain available evidence and do not qualify."
       ],
       "limits": [

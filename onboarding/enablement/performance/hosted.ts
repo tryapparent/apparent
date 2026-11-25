@@ -19,6 +19,7 @@ import {
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withHostedScope } from "./hosted-contention.ts";
 
 const args = process.argv.slice(2);
 assert(
@@ -253,14 +254,16 @@ async function buildReceipt(staged: Awaited<ReturnType<typeof build>>) {
 async function replay(name: string, args: string[]) {
   const dir = join(evidence, name);
   await mkdir(dir, { mode: 0o700 });
-  await stage(
-    name,
-    source,
-    process.execPath,
-    benchmark,
-    ...args.slice(0, 3),
-    dir,
-    ...args.slice(3),
+  await withHostedScope(name, () =>
+    stage(
+      name,
+      source,
+      process.execPath,
+      benchmark,
+      ...args.slice(0, 3),
+      dir,
+      ...args.slice(3),
+    ),
   );
   return join(name, "benchmark.json");
 }
@@ -313,6 +316,13 @@ try {
     cpuModel,
     cohort,
   });
+  await stage(
+    "hosted-contention-tests",
+    source,
+    process.execPath,
+    "--test",
+    fileURLToPath(new URL("./hosted-contention.test.ts", import.meta.url)),
+  );
   await installPrerequisites();
   const a = await build("control", control, controlSha);
   const b =
