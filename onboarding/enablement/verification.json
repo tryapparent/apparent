@@ -41,7 +41,7 @@
         "instructions": "onboarding/enablement/performance/local/README.md"
       },
       "expectedEvidence": [
-        "Each observation has stage milliseconds, same-clock trace intervals and dwell, executable, renderer and fixture hashes, and verified assertions for Whiteboard ink, synthetic media and clipboard readback, persisted fixture completion and coach closure.",
+        "Each observation records endpoint version 2, prewarm preceding the scoped open action, first accepted and painted Whiteboard ink, and the lesson prompt at input. Receipts retain same-clock intervals, dwell, build and fixture fingerprints, resource checks, synthetic media and clipboard readback, persisted fixture completion and coach closure.",
         "A separate unscored setup click-through per distinct build retains its verification and pressure samples before the fresh-process, fresh-profile measured trials.",
         "Every job records same-build repeat noise and incremental trace overhead. A job with distinct builds also publishes serial matched A/B/B/A cold and resumed comparisons with resource guards and scores.",
         "Hosted receipts keep total guest CPU pressure for diagnosis and independently guard outside CPU, guest steal, I/O interference, and throttling using the owned workload cgroup.",

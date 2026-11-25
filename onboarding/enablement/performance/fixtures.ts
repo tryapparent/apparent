@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, open, readFile, rename, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import type { launchElectron } from "./electron-fixture.ts";
 
 const screenFrame = Buffer.from([59, 121, 189, 255, 255, 255, 255, 255]);
 
@@ -73,4 +74,32 @@ export function practiceFixture(profile: string) {
       return files.reduce((sum, file) => sum + file.size, 0);
     },
   };
+}
+
+export function practiceChannel(
+  { send, reply }: ReturnType<typeof launchElectron>,
+  run: string,
+) {
+  const scope = {
+    version: 1,
+    source: "1",
+    transport: "2",
+    attempt: "1",
+    capture: "1",
+    board: "fixture-board-" + run,
+  };
+  let sequence = 0;
+  const batch = async (events: object[]) => {
+    const id = String(++sequence);
+    const intent = events.some((event) => "action" in event) ? id : null;
+    send({ type: "practice-batch", ...scope, sequence: id, intent, events });
+    const disposition = await reply(
+      (row) => row.type === "practice-disposition" && row.sequence === id,
+    );
+    for (const [key, value] of Object.entries(scope))
+      assert.equal(disposition[key], value, key);
+    assert.equal(disposition.intent, intent);
+    return disposition;
+  };
+  return { scope, batch };
 }

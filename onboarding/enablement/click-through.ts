@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash, randomBytes } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { randomBytes } from "node:crypto";
 import {
   mkdir,
   mkdtemp,
@@ -11,16 +10,17 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import * as observer from "../../shared/enablement/performance/electron-observer.ts";
-import { clickTrace } from "./performance/click-trace.ts";
+import { clickTrace, endpointVersion } from "./performance/click-trace.ts";
 import {
   launchElectron,
+  buildIdentity,
+  whiteboardEntry,
   visible,
   type Surface,
 } from "./performance/electron-fixture.ts";
 import { exerciseWhiteboard } from "./performance/whiteboard.ts";
-import { practiceFixture } from "./performance/fixtures.ts";
+import { practiceChannel, practiceFixture } from "./performance/fixtures.ts";
 
 const [
   runtimeArg,
@@ -38,7 +38,6 @@ assert.match(repeatsArg, /^(?:[1-9]|1\d|20)$/);
 assert.match(variant, /^(?:cold|resumed)$/);
 assert.equal(process.platform, "linux");
 const detailed = process.env.APPARENT_ONBOARDING_OBSERVATION !== "minimal";
-const whiteboardEntry = "dist/whiteboard/main.cjs";
 const [runtime, assets, job] = await Promise.all(
   [runtimeArg, rootArg, jobArg].map((file) => realpath(file)),
 );
@@ -50,45 +49,7 @@ assert(
 );
 process.umask(0o077);
 const entry = join(assets, "dist/composition/onboarding/entry.cjs");
-const sha256 = async (file: string) => {
-  const hash = createHash("sha256");
-  for await (const bytes of createReadStream(file)) hash.update(bytes);
-  return hash.digest("hex");
-};
-const sourceHash = async (paths: string[]) => {
-  const hashes = await Promise.all(
-    paths.map((name) => sha256(fileURLToPath(new URL(name, import.meta.url)))),
-  );
-  return createHash("sha256").update(hashes.join("\n")).digest("hex");
-};
-const identity = {
-  runtimeSha256: await sha256(runtime),
-  entrySha256: await sha256(entry),
-  collectorSha256: await sourceHash([
-    "./click-through.ts",
-    "./performance/benchmark.ts",
-    "./performance/click-trace.ts",
-    "./performance/electron-fixture.ts",
-    "./performance/whiteboard.ts",
-    ...(process.env.APPARENT_ONBOARDING_HOSTED_SCOPE
-      ? ["./performance/hosted-contention.ts"]
-      : []),
-    "../../shared/enablement/performance/electron-observer.ts",
-    "../../shared/enablement/performance/measurement.ts",
-  ]),
-  fixtureSha256: await sourceHash(["./performance/fixtures.ts"]),
-  onboardingPreloadSha256: await sha256(
-    join(assets, "electron/onboarding-preload.cjs"),
-  ),
-  whiteboardViewSha256: await sha256(join(assets, "dist/whiteboard/view.js")),
-  rendererPageSha256: await sha256(join(assets, "dist/onboarding.html")),
-  whiteboardEntrySha256: await sha256(join(assets, whiteboardEntry)),
-  whiteboardRendererPageSha256: await sha256(
-    join(assets, "dist/whiteboard/index.html"),
-  ),
-  platform: process.platform,
-  node: process.version,
-};
+const identity = await buildIdentity(runtime, assets, entry);
 const sandbox = async () => {
   if (process.env.APPARENT_ONBOARDING_FIXTURE_NO_SANDBOX === "1")
     return ["--no-sandbox"];
@@ -271,30 +232,7 @@ async function clickThrough(run: number) {
       await checkpoint("shortcut-to-practice", tryIt, practice);
     }
 
-    let sequence = 0;
-    const batch = async (events: object[]) => {
-      const id = String(++sequence);
-      send({
-        type: "practice-batch",
-        version: 1,
-        source: "1",
-        transport: "2",
-        attempt: "1",
-        capture: "1",
-        sequence: id,
-        intent: events.some((event) => "action" in event) ? id : null,
-        board: "synthetic-board",
-        events,
-      });
-      const disposition = await reply(
-        (row) => row.type === "practice-disposition" && row.sequence === id,
-      );
-      assert.equal(disposition.attempt, "1");
-      assert.equal(disposition.source, "1");
-      assert.equal(disposition.transport, "2");
-      assert.equal(disposition.capture, "1");
-      return disposition;
-    };
+    const { batch, scope } = practiceChannel(child, attempt);
     const stage = (name: string) => `main.native-coach[data-stage="${name}"]`;
     const record = performance.now();
     trace.input("record-shortcut-fixture", record);
@@ -306,17 +244,7 @@ async function clickThrough(run: number) {
       record,
     );
     trace.checkpoint("practice-record-to-first-media", record);
-    await batch([{ type: "reset" }, { type: "started" }]);
-    project("try-it", { practice: "whiteboard", practiceAttempt: "1" });
-    const whiteboard =
-      stage("whiteboard") + ' button[data-action="whiteboard"]:enabled';
-    await checkpoint("practice-start-to-coach", record, whiteboard);
-    const opened = await page.click(whiteboard);
-    trace.input("open-whiteboard", opened);
-    await reply((row) => row.action === "practice-open-board:1");
-    const boardLaunch = performance.now();
-    const boardWait = "whiteboard-open-to-usable";
-    trace.span(boardWait, "dispatch-whiteboard-action", opened, boardLaunch);
+    const prewarm = performance.now();
     boardChild = launchElectron({
       runtime,
       args: [
@@ -329,17 +257,35 @@ async function clickThrough(run: number) {
       surface: "whiteboard",
       log,
     });
-    const whiteboardResources = await exerciseWhiteboard(
+    const started = await batch([{ type: "reset" }, { type: "started" }]);
+    assert.equal(started.stage, "whiteboard");
+    project("try-it", { practice: "whiteboard", practiceAttempt: "1" });
+    const whiteboard =
+      stage("whiteboard") +
+      ' button[data-action="whiteboard"]:enabled:not([inert] *)';
+    await visible(page, whiteboard);
+    const opened = await page.click(whiteboard);
+    trace.input("open-whiteboard", opened);
+    const openAction = await reply(
+      (row) => row.action === "practice-open-board:1",
+    );
+    trace.checkpoint(
+      "practice-start-to-effective-whiteboard-control",
+      record,
+      opened,
+    );
+    const board = await exerciseWhiteboard(
       boardChild,
       trace,
+      record,
       opened,
-      boardLaunch,
-      async () => {
-        trace.checkpoint("begin-practice-to-whiteboard", record);
+      prewarm,
+      async (frame) => {
         const disposition = await batch([
           { type: "whiteboard-visible", visible: true },
         ]);
         assert.equal(disposition.stage, "board-ink");
+        project("try-it", { practice: "board-ink", practiceBoard: frame });
         await observer.waitFor(async () => {
           const hidden = await page.evaluate<boolean>(
             'document.visibilityState === "hidden"',
@@ -350,10 +296,11 @@ async function clickThrough(run: number) {
       },
     );
     boardChild = undefined;
-    await batch([
+    const advanced = await batch([
       { type: "ink", board: true, screen: 1 },
       { type: "whiteboard-visible", visible: false },
     ]);
+    assert.equal(advanced.stage, "screen-ink");
     await visible(page, stage("screen-ink"));
     await batch([{ type: "ink", board: false, screen: 2 }]);
     project("try-it", { practice: "stop", practiceAttempt: "1" });
@@ -426,7 +373,7 @@ async function clickThrough(run: number) {
     const { perfetto, ...attribution } = trace.report();
     const resources = {
       coach: await child.finish(),
-      whiteboard: whiteboardResources,
+      whiteboard: board.resources,
       outputBytes: await fixture.outputBytes(),
     };
     const name = "click-through-" + run;
@@ -434,13 +381,20 @@ async function clickThrough(run: number) {
       line.startsWith("LOCAL_ONBOARDING_POINT "),
     );
     const receipt = {
-      schema: 2,
+      schema: 3,
+      endpointVersion,
       mode: "synthetic-electron-click-through",
       variant,
       detailed,
       identity,
       attempt,
       waits: trace.waits,
+      whiteboard: {
+        ...board.proof,
+        scope,
+        openAction: openAction.action,
+        dispositionSequence: advanced.sequence,
+      },
       attribution,
       composition,
       clocks: {
