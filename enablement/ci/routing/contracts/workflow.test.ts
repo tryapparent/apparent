@@ -166,9 +166,16 @@ test("committed candidate routing selects the workflow contract commands and pre
           "Record selected contracts",
           undefined,
           undefined,
+          "Set up Bun for selected contracts",
           "Prepare Settings contract parser",
           "Verify Settings contract",
         ],
+      );
+      assert.equal(
+        steps(outputs).find(
+          (step: { name: string }) => step.name === checks.settings,
+        ).env.SETTINGS_CONTRACT_PROOF,
+        "true",
       );
       assert.ok(!jobs.linux.needs.includes("contracts"));
     }

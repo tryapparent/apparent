@@ -11,6 +11,7 @@ import {
 } from "../ci/settings-contract/check.ts";
 import { settingsContractRequired } from "../../shared/enablement/ci/settings-inputs.ts";
 import { sourceChecker } from "../ci/settings-contract/source.ts";
+import { renderPreferenceIds } from "../ci/settings-contract/types.ts";
 
 const picker = {
   id: "permissions.skipScreenSelection",
@@ -217,4 +218,39 @@ test("catalog, UI binding, runtime, writer and guard edits select the contract",
     assert.ok(settingsContractRequired([path]), path);
   assert.ok(settingsContractRequired(null));
   assert.equal(settingsContractRequired(["README.md"]), false);
+});
+
+test("a Settings binding requires a known literal in its pane and protects direct renderer writes", async () => {
+  const bindings = new Set<string>();
+  const inspect = await sourceChecker([picker], (id) => bindings.add(id));
+  const renderer = "composition/settings/renderer/shell.tsx";
+  const action = "() => window.apparentPermissions.save(false)";
+  assert.match(
+    inspect(renderer, action).failures.join(),
+    /requires bindPreference/,
+  );
+  assert.match(
+    inspect(renderer, `bindPreference(pane, key, ${action})`).failures.join(),
+    /requires a literal pane/,
+  );
+  assert.match(
+    inspect(
+      renderer,
+      `bindPreference("labs", "${picker.id}", ${action})`,
+    ).failures.join(),
+    /cannot bind in labs/,
+  );
+  assert.equal(bindings.size, 0);
+  assert.deepEqual(
+    inspect(
+      renderer,
+      `bindPreference("permissions", "${picker.id}", ${action})`,
+    ).failures,
+    [],
+  );
+  assert.deepEqual([...bindings], [picker.id]);
+  assert.match(
+    renderPreferenceIds([picker]),
+    /"permissions\.skipScreenSelection": boolean;/,
+  );
 });

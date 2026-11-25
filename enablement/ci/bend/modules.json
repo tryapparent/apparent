@@ -1,4 +1,7 @@
 {
-  "modules": ["timing/journey/journey-scoring.bend"],
-  "inputs": ["timing/journey/"]
+  "modules": [
+    "timing/journey/journey-scoring.bend",
+    "ci/settings-contract/coverage.bend"
+  ],
+  "inputs": ["timing/journey/", "ci/settings-contract/"]
 }

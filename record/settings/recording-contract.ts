@@ -1,3 +1,4 @@
+import type { PreferenceValues } from "../../shared/settings/preference-ids.ts";
 export type Choice = { id: string; title: string; enabled: boolean };
 
 export type RecordingState = {
@@ -39,13 +40,13 @@ export type RecordingChange = {
 
 type RecordingValues = {
   microphone: string;
-  transcriber: string;
-  appleLocale: string;
-  hexModel: string;
-  hexLanguage: string;
-  lowerPlayback: boolean;
-  playbackLevel: number;
-  videoExport: boolean;
+  transcriber: PreferenceValues["recording.transcriber"];
+  appleLocale: PreferenceValues["recording.appleLocale"];
+  hexModel: PreferenceValues["recording.hexModel"];
+  hexLanguage: PreferenceValues["recording.hexLanguage"];
+  lowerPlayback: PreferenceValues["recording.lowerPlayback"];
+  playbackLevel: PreferenceValues["recording.playbackLevel"];
+  videoExport: PreferenceValues["recording.videoExport"];
 };
 
 export interface RecordingBridge {

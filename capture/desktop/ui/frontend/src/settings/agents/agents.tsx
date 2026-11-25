@@ -1,4 +1,4 @@
-import './bridge';
+import {bindPreference} from '../../../../../../../shared/settings/binding';
 import {useEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
@@ -42,7 +42,7 @@ export function Agents() {
       <div className="agent-command"><code>{skillCommand.split('/').map((part,index)=><span key={index}>{index>0&&<>/<wbr/></>}{part}</span>)}</code><Button variant="ghost" className="agent-copy" aria-label="Copy install command" onClick={()=>void copy()}>{copied?<Check aria-hidden="true" />:<Copy aria-hidden="true" />}</Button></div>
       <span role="status" className="settings-metadata">{copied?'Copied':''}</span>
     </section>
-    <section className="agent-preference"><div className="agent-preference-row"><h2 className="settings-preference-label" id="agent-video-label">Ask for video proof</h2><Switch id="agent-video-control" className="agent-switch" checked={enabled} aria-labelledby="agent-video-label" aria-describedby="agent-video-help" aria-busy={busy&&setting==='video'} disabled={busy} onCheckedChange={value=>void request(value)} /></div><p id="agent-video-help">Requests a video for complex visual changes when the agent can record.</p></section>
+    <section className="agent-preference"><div className="agent-preference-row"><h2 className="settings-preference-label" id="agent-video-label">Ask for video proof</h2><Switch id="agent-video-control" className="agent-switch" checked={enabled} aria-labelledby="agent-video-label" aria-describedby="agent-video-help" aria-busy={busy&&setting==='video'} disabled={busy} onCheckedChange={bindPreference("agents", "agents.agentDemoVideo", value => void request(value))} /></div><p id="agent-video-help">Requests a video for complex visual changes when the agent can record.</p></section>
     <span role="status" className="sr-only">{busy?(operation==='save'?'Saving preference':'Reading saved preference'):''}</span>
     {(!facts||facts.error)&&!busy&&!error&&<Button id="agent-refresh" variant="secondary" onClick={()=>void request()}>Refresh preference</Button>}
     <ErrorDialog open={!!error} title={!facts?'Preference not confirmed':facts.error==='config_read_failed'?'Unable to read preference':'Unable to save preference'} description={error} artwork={<img src={frog} alt=""/>} recoveryLabel="Refresh preference" busy={busy}

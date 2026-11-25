@@ -1,3 +1,4 @@
+import { bindPreference } from "../../../shared/settings/binding";
 import { useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Button } from "@apparent/ui/button";
 import { Input } from "@apparent/ui/input";
@@ -389,7 +390,11 @@ export function RecordingControls({
                   ]
             }
             disabled={disabled}
-            onChange={(value) => save({ key: "microphone", value })}
+            onChange={bindPreference(
+              "recording",
+              "recording.microphone",
+              (value) => save({ key: "microphone", value }),
+            )}
           />
           {microphone.meter && <Level key={microphone.meter} bridge={bridge} />}
         </div>
@@ -415,7 +420,11 @@ export function RecordingControls({
             options={engines}
             value={transcriber.engine}
             disabled={disabled}
-            onChange={(value) => save({ key: "transcriber", value })}
+            onChange={bindPreference(
+              "recording",
+              "recording.transcriber",
+              (value) => save({ key: "transcriber", value }),
+            )}
           />
           {languages && (
             <Options
@@ -423,7 +432,11 @@ export function RecordingControls({
               options={languages.options}
               value={languages.selected}
               disabled={disabled}
-              onChange={(value) => save({ key: "appleLocale", value })}
+              onChange={bindPreference(
+                "recording",
+                "recording.appleLocale",
+                (value) => save({ key: "appleLocale", value }),
+              )}
             />
           )}
           {hex && transcriber.models.length > 0 && (
@@ -438,14 +451,22 @@ export function RecordingControls({
               ]}
               value={chosenModel}
               disabled={disabled}
-              onChange={(value) => save({ key: "hexModel", value })}
+              onChange={bindPreference(
+                "recording",
+                "recording.hexModel",
+                (value) => save({ key: "hexModel", value }),
+              )}
             />
           )}
           {hex && mac && (
             <HexLanguage
               value={transcriber.language}
               pending={disabled}
-              save={(value) => save({ key: "hexLanguage", value })}
+              save={bindPreference(
+                "recording",
+                "recording.hexLanguage",
+                (value) => save({ key: "hexLanguage", value }),
+              )}
             />
           )}
         </div>
@@ -500,13 +521,21 @@ export function RecordingControls({
               )
             }
             busy={pending?.key === "lowerPlayback"}
-            onChange={(value) => save({ key: "lowerPlayback", value })}
+            onChange={bindPreference(
+              "recording",
+              "recording.lowerPlayback",
+              (value) => save({ key: "lowerPlayback", value }),
+            )}
           />
           {mac ? (
             <MacVolume
               value={playback}
               disabled={levelDisabled}
-              save={(value) => save({ key: "playbackLevel", value })}
+              save={bindPreference(
+                "recording",
+                "recording.playbackLevel",
+                (value) => save({ key: "playbackLevel", value }),
+              )}
             />
           ) : (
             <Options
@@ -514,9 +543,11 @@ export function RecordingControls({
               options={levels}
               value={String(playback)}
               disabled={levelDisabled}
-              onChange={(value) =>
-                save({ key: "playbackLevel", value: Number(value) })
-              }
+              onChange={bindPreference(
+                "recording",
+                "recording.playbackLevel",
+                (value) => save({ key: "playbackLevel", value: Number(value) }),
+              )}
             />
           )}
         </div>
@@ -535,7 +566,11 @@ export function RecordingControls({
             checked={state.videoExport}
             disabled={disabled}
             busy={pending?.key === "videoExport"}
-            onChange={(value) => save({ key: "videoExport", value })}
+            onChange={bindPreference(
+              "recording",
+              "recording.videoExport",
+              (value) => save({ key: "videoExport", value }),
+            )}
           />
         </div>
         <p className="recording-note">

@@ -20,6 +20,28 @@ const preferenceCalls = new Set([
   "experiment_preference_in",
   "bindPreference",
 ]);
+const rendererBridgeWriters = new Map([
+  [
+    "capture/desktop/ui/frontend/src/settings/labs/labs.tsx",
+    "window.apparentLabs.save",
+  ],
+  [
+    "capture/desktop/ui/frontend/src/settings/agents/agents.tsx",
+    "window.apparentAgents.save",
+  ],
+]);
+
+function boundAction(node: TreeNode): boolean {
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (
+      parent.type === "call_expression" &&
+      nameOf(component(parent, "function")) === "bindPreference"
+    )
+      return true;
+  }
+  return false;
+}
+
 const experimentReads = new Set(["experiment", "experiment_enabled_in"]);
 const component = (node: TreeNode | null, key: string) =>
   node?.childForFieldName(key);
@@ -145,7 +167,10 @@ function guardedPaths(preferences: readonly Preference[]) {
   return { known, aliases };
 }
 
-export async function sourceChecker(preferences: readonly Preference[]) {
+export async function sourceChecker(
+  preferences: readonly Preference[],
+  onBinding?: (id: string) => void,
+) {
   const parsers = await preferenceParsers();
   const { known, aliases } = guardedPaths(preferences);
   const needles = [
@@ -160,7 +185,10 @@ export async function sourceChecker(preferences: readonly Preference[]) {
     path: string,
     source: string,
   ): { failures: string[]; raw: string[] } => {
-    if (!needles.some((needle) => source.includes(needle)))
+    if (
+      !source.includes("window.apparent") &&
+      !needles.some((needle) => source.includes(needle))
+    )
       return { failures: [], raw: [] };
     const language = path.endsWith(".rs")
       ? "rs"
@@ -236,10 +264,43 @@ export async function sourceChecker(preferences: readonly Preference[]) {
             .filter((child) => !child.type.endsWith("comment")) ?? [];
         const first = resolveKey(args[0]);
         const second = resolveKey(args[1]);
-        if (preferenceCalls.has(name)) {
+        const rendererWrite = target?.text.replaceAll("?", "");
+        if (
+          !path.endsWith(".rs") &&
+          rendererWrite &&
+          /^window\.apparent\w*\.(?:save|change|reset)\w*\.?$/.test(
+            rendererWrite,
+          ) &&
+          rendererBridgeWriters.get(path) !== rendererWrite &&
+          !boundAction(call)
+        ) {
+          failures.add(
+            `${location(call)}: Settings bridge write requires bindPreference`,
+          );
+        }
+        if (name === "bindPreference") {
+          if (!first || !second || !args[2]) {
+            failures.add(
+              `${location(call)}: bindPreference requires a literal pane, preference ID and action`,
+            );
+          }
+          if (second) checkId(call, second, expectedPane ?? first);
+          if (first && expectedPane && first !== expectedPane)
+            failures.add(
+              `${location(call)}: cannot declare a ${first} binding in ${expectedPane}`,
+            );
+          if (
+            first &&
+            second &&
+            args[2] &&
+            known.has(second) &&
+            second.startsWith(first + ".")
+          ) {
+            onBinding?.(second);
+          }
+        } else if (preferenceCalls.has(name)) {
           const id = name === "experiment_preference" ? first : second;
-          if (id)
-            checkId(call, id, name === "bindPreference" ? first : expectedPane);
+          if (id) checkId(call, id, expectedPane);
         }
         if (rawWrites.has(name) && !mutatorOwners.has(path)) {
           const owner = containingFunction(call);
