@@ -13,11 +13,27 @@
         "instructions": "From capture/desktop/ui/frontend, run npm run build and then node --experimental-strip-types --test ../../../../composition/settings/enablement/recording.smoke.ts. Set APPARENT_RECORDING_PROOF to save screenshots."
       },
       "expectedEvidence": [
-        "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer.",
-        "The macOS fixture shows a playback switch and slider. At 720 and 640 pixels in both themes, the pane remains keyboard accessible and saves or recovers from a refused Video export change."
+        "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer. The Export instructions show Export Latest Video… at 720 and 640 pixels in both themes.",
+        "The macOS fixture shows a playback switch and slider. At 720 and 640 pixels in both themes, the pane remains keyboard accessible."
       ],
       "limits": [
         "The Electron parent uses synthetic platform and recording facts. Native volume effects and installer behavior require their owning checks."
+      ]
+    },
+    {
+      "id": "linux-tray-video-export",
+      "description": "Verify the video export label and action in Waybar.",
+      "platforms": ["linux-hyprland"],
+      "userEntryPoint": "Open the Apparent tray menu in Waybar and choose Export Latest Video….",
+      "prerequisites": [
+        "A candidate build in a disposable Omarchy guest with Waybar, a working FileChooser portal and a synthetic latest capture."
+      ],
+      "runner": {
+        "path": "capture/desktop/docs/native-testing.md",
+        "instructions": "Use the isolated guest runner and open the actual Waybar tray menu. Select Export Latest Video…, save to a private MP4 path, and decode the result."
+      },
+      "expectedEvidence": [
+        "Waybar shows the entire action label. The action opens the save dialog and saves a decodable MP4 from the synthetic latest capture."
       ]
     },
     {

@@ -108,7 +108,7 @@ apparent export latest --crop 0.1,0.2,0.6,0.5       # x,y,w,h as fractions, or p
 - **Audio**: `audio.wav` starts where the video does (`videoOffsetMs`); a cabled iPhone's movie
   uses its own audio track. `--no-ink` and `--no-clicks` leave the annotations out, `--fps` sets the
   rate (default 60 for a 60 fps recording).
-- **Menu**: choose **Export Last Capture as Video…** from the Apparent menu.
+- **Menu**: use [video export](../export-and-retention.md).
   Mac saves to `~/Movies/Apparent/<name>.mp4`, shows progress beside the menu bar icon,
   and reveals the file in Finder. Linux opens the desktop Save dialog for a local `.mp4`
   destination and shows progress, cancellation and failures in the tray menu; it needs a

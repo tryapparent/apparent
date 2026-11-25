@@ -85,7 +85,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     }
     const exportSection = page.getByRole("region", { name: "Export", exact: true });
     const exportGuide = exportSection.getByText(
-      "To save your latest capture as an MP4, choose Export Last Capture as Video… from the Apparent menu.",
+      "To save your latest capture as an MP4, choose Export Latest Video… from the Apparent menu.",
       { exact: true },
     );
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });

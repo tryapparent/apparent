@@ -120,7 +120,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const engineBoundary = paths !== null && !engineIndependentRange(base, head, paths, cwd);
   const serviceBoundary = paths !== null && !serviceOnlyRange(base, head, paths, cwd);
   const admissionChanges = delta?.filter(change => admissionTooling(change.path)) ?? [];
-  const admissionKnown = !admissionChanges.length || admissionConsumersKnown(cwd, head);
+  const admissionKnown = !admissionChanges.length || admissionConsumersKnown(cwd, head, admissionChanges.map(change => change.path));
   const supportedAdmission = (change: Change) => admissionKnown && admissionTooling(change.path) &&
     ['M','A','D'].includes(change.status) && [change.oldMode,change.newMode].every(mode => ['000000','100644','100755'].includes(mode));
   const unsafe = !admissionKnown || engineBoundary || serviceBoundary || changedOnboardingBoundary.length > 0 || (delta?.some(change => !provenFileChange(change) && !supportedAdmission(change)) ?? false) || changedPolicyImports.length > 0;

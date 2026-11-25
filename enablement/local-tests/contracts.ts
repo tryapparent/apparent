@@ -1,6 +1,9 @@
 // Audited tooling-owned tests. Adding a test within this owner must not edit
 // the shared executor (and thereby select every product). New roots require
 // review of this execution definition and retain conservative CI selection.
+import {spawnSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+import {codexStopHookTest} from '../../shared/enablement/ci/inputs.ts';
 import {readdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {settingsContractRequired} from '../../shared/enablement/ci/settings-inputs.ts';
@@ -48,4 +51,12 @@ export function workflowContracts(paths: string[] | null, base: string, workflow
   if (!controlsOnly && settingsContractRequired(paths))
     commands.push({argv: ['node', '--experimental-strip-types', 'enablement/ci/settings-contract/check.ts', base], cwd: '.'});
   return commands;
+}
+
+export function codexStopHookTests(head: string, paths: string[] | null, cwd = fileURLToPath(new URL('../../', import.meta.url))) {
+  if (paths && !paths.some(path => path.startsWith('enablement/hooks/'))) return [];
+  const trackedHookTest = spawnSync('git', ['ls-tree', '--end-of-options', head, '--', codexStopHookTest], {cwd, encoding: 'utf8'});
+  return trackedHookTest.status === 0 && trackedHookTest.stdout.startsWith('100644 blob ')
+    ? [{argv: ['node', '--experimental-strip-types', '--test', codexStopHookTest], cwd: '.'}]
+    : [];
 }

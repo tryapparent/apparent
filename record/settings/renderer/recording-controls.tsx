@@ -521,7 +521,10 @@ export function RecordingControls({
       <Group title="Export" sectionId="recording-video-export">
         <p className="recording-note">
           To save your latest capture as an MP4, choose{" "}
-          <strong>Export Last Capture as Video…</strong> from the Apparent menu.
+          <strong>
+            {mac ? "Export Last Capture as Video…" : "Export Latest Video…"}
+          </strong>{" "}
+          from the Apparent menu.
         </p>
       </Group>
     </>
