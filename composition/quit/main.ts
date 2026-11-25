@@ -32,6 +32,8 @@ void app
       minWidth: 320,
       minHeight: startError ? 320 : 280,
       show: false,
+      alwaysOnTop: startError,
+      resizable: !startError,
       backgroundColor: nativeTheme.shouldUseDarkColors ? "#020102" : "#f5f0e8",
       title: "Apparent",
       autoHideMenuBar: true,

@@ -27,13 +27,13 @@ function view(value) {
     shareIndicator:value.shareIndicator??'none',reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
     transcript:value.transcript == null ? null : {state:value.transcript.state,text:value.transcript.text},actions:controls};
 }
-function command(current, revision, action) {
+function command(current, revision, action, capture) {
   if (!current || revision !== current.revision || !actions.has(action) ||
       !current.actions.some(a => a.id === action && a.enabled)) throw Error('Stale or unavailable pill action');
-  return {revision,action};
+  const starting = current.phase === "recording" && current.actions.some(a => a.id === "finish" && !a.enabled);
+  return starting && action === "cancel" && capture ? {revision,action,startup_capture:capture} : {revision,action};
 }
 function profile(appData) {
-  const name = process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly-pill' : 'apparent-pill';
-  return require('node:path').join(appData, name);
+  return require('node:path').join(appData, process.env.APPARENT_PROFILE === 'apparent-nightly' ? 'apparent-nightly-pill' : 'apparent-pill');
 }
 module.exports = {view,command,profile};
