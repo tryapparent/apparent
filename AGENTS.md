@@ -46,6 +46,8 @@ Use Linux for portable logic and shared Electron UI. Compare migrating a small l
 
 Capture before/after views, entry-to-result clips, or sample outputs during verification. Carry evidence through merge and release into the final reply so Simon can see or reproduce the change from it alone. Give the exact build, environment, brief safe steps and expected result. Label simulations, candidate builds and verification gaps. Check links, use approved durable storage when available, and collect missing in-scope evidence before handoff.
 
+Run [Make It Apparent](agent/skills/make-it-apparent/SKILL.md) when asked and before every completed implementation handoff. Follow the [video handoff rules](enablement/hooks/README.md).
+
 For Simon-authorized work in `tryapparent/apparent`, finish through merge into current `main` and passing CI for the exact landed commit. Honor holds and branch protections and repair failures caused by the change. Normal automatic CD is authorized. Separate activation, destructive migrations, access, spending and external communications require their own authority. Other repositories normally receive a scoped commit and draft PR.
 
 For shipped Desktop changes, verify a publicly downloadable Development installer on Linux Main and/or macOS Nightly for each affected platform. Follow a superseding release candidate if it contains the change. Report direct links and shipped SHA, or the exact publication blocker. Use the [Composition release guide](composition/enablement/release/README.md).
@@ -60,7 +62,6 @@ Use authenticated `gh` and the [issue traceability contract](shared/enablement/i
 - Never reset Kit’s real TCC grants, wake or flash Studio displays, record or benchmark its real screen, play test audio on Kit’s Macs or post tests to a real OpenCode session. Use approved isolated environments and the [screen safety gate](capture/desktop/scripts/perf/screen-guard.sh).
 - NoMac limits are **$2 cumulative per canonical repo/issue or standalone PR** and **$0.50 / 30 minutes per session**, normally with a 300-second idle timeout. Count existing spend and concurrent reservations across retries, branches and derived issues. Narrower task limits win. Require an approved bucket for untracked work. See [queue, budget and cleanup](enablement/docs/continuous-delivery.md#nomac-verification).
 - On Clanker, follow `/home/simon/AGENTS.md` and use a private `/tmp/apparent-dev-<job>-<run>/` for disposable artifacts. Keep native signing and update storage outside disposable output.
-- For “make it apparent,” use [the skill](agent/skills/make-it-apparent/SKILL.md), inspect the complete recording and deliver a playable video with truthful limits.
 
 ## Staged code
 
