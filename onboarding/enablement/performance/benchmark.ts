@@ -331,6 +331,12 @@ async function observation(
   }
 }
 
+if (hostedMeter) {
+  await observation("setup", "control-1", "cold", control, true);
+  if (candidate !== control)
+    await observation("setup", "candidate-1", "cold", candidate, true);
+}
+
 const groups =
   candidate === control
     ? (["repeat", "overhead"] as const)

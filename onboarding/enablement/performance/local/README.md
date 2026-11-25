@@ -29,6 +29,14 @@ same-job calibration qualifies. Each batch uses the same serial
 control/candidate/candidate/control order, including the same-build
 calibration and tracing-overhead checks. A failing prerequisite, output
 check or resource guard fails the run and leaves the available evidence.
+Before calibration or comparison, the hosted job records one setup click-through
+per distinct build to exercise the newly staged files and shared runtime. The
+setup requires all output and readiness checks. Its traces and pressure samples
+are retained in `setup-cold-*`. Scores use only the planned four measured
+trials in each group. Every measured trial
+waits for the existing quiet-host gate and uses a new process and profile.
+The hosted cold variant represents a fresh process and welcome profile
+with prepared runner files.
 The hosted adapter puts the click-through, Electron processes, Xvfb, and
 observer in one owned cgroup without changing the runner's CPU allocation.
 Receipts include total guest CPU PSI and the sampled workload CPU counters.
