@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export const hostedInterference = "guest-cgroup-v1";
+export const hostedInterference = "guest-cgroup-v2";
 const cgroupRoot = "/sys/fs/cgroup";
 const pressureTotal = (path: string) => {
   const total = Number(
@@ -36,6 +36,8 @@ export function scopeCommand(scope: string, command: string, args: string[]) {
 }
 
 export function hostedSampler(scope: string) {
+  const clockTicks = Number(process.env.APPARENT_PUBLIC_GUEST_CLOCK_TICKS);
+  assert(Number.isSafeInteger(clockTicks) && clockTicks > 0);
   assert.equal(dirname(scope), cgroupRoot);
   assert(
     readFileSync("/proc/self/cgroup", "utf8")
@@ -68,6 +70,7 @@ export function hostedSampler(scope: string) {
       atMs: (start + end) / 2,
       sampleUs: (end - start) * 1000,
       logicalCpus,
+      clockTicks,
       guestCpuUs: root.usage_usec,
       stealTicks: cpu[7],
       benchmarkCpuUs: own.usage_usec,
@@ -87,7 +90,11 @@ type Sample = ReturnType<ReturnType<typeof hostedSampler>>;
 
 export function evaluateInterference(before: Sample, after: Sample) {
   const durationUs = (after.atMs - before.atMs) * 1000;
-  assert(durationUs > 0 && after.logicalCpus === before.logicalCpus);
+  assert(
+    durationUs > 0 &&
+      after.logicalCpus === before.logicalCpus &&
+      after.clockTicks === before.clockTicks,
+  );
   const readSkewUs = before.sampleUs + after.sampleUs;
   const delta = (
     key: keyof Pick<
@@ -110,6 +117,9 @@ export function evaluateInterference(before: Sample, after: Sample) {
   const benchmarkCpuUs = delta("benchmarkCpuUs");
   const guestCpuUs = delta("guestCpuUs");
   const cpuReadSkewUs = readSkewUs * before.logicalCpus;
+  const guestCounterLagUs = Math.max(0, benchmarkCpuUs - guestCpuUs);
+  const counterLagAllowanceUs =
+    cpuReadSkewUs + (1_000_000 * before.logicalCpus) / before.clockTicks;
   const unrelatedCpuUs = Math.max(0, guestCpuUs - benchmarkCpuUs);
   const cpuAllowanceUs = cpuReadSkewUs + durationUs / 4;
   const guestIoUs = delta("guestIoUs");
@@ -123,7 +133,7 @@ export function evaluateInterference(before: Sample, after: Sample) {
   const checks = {
     sampling:
       readSkewUs <= Math.min(10_000, durationUs / 10) &&
-      benchmarkCpuUs <= guestCpuUs + cpuReadSkewUs,
+      guestCounterLagUs <= counterLagAllowanceUs,
     unrelatedCpu: unrelatedCpuUs <= cpuAllowanceUs,
     observedSteal: observedStealTicks === 0,
     throttling: throttleUs === 0 && throttleEvents === 0,
@@ -136,6 +146,8 @@ export function evaluateInterference(before: Sample, after: Sample) {
     passed: Object.values(checks).every(Boolean),
     benchmarkCpuUs,
     guestCpuUs,
+    guestCounterLagUs,
+    counterLagAllowanceUs,
     unrelatedCpuUs,
     cpuAllowanceUs,
     guestIoUs,

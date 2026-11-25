@@ -6,6 +6,7 @@ const before: Parameters<typeof evaluateInterference>[0] = {
   atMs: 1,
   sampleUs: 100,
   logicalCpus: 4,
+  clockTicks: 100,
   guestCpuUs: 100_000,
   stealTicks: 80,
   benchmarkCpuUs: 90_000,
@@ -47,4 +48,19 @@ test("rejects independently observed interference", () => {
     assert.equal(result.checks[guard as keyof typeof result.checks], false);
     assert.equal(result.passed, false);
   }
+});
+
+test("bounds negative guest accounting lag without widening outside CPU allowance", () => {
+  const warm = evaluateInterference(before, {
+    ...ownWork,
+    guestCpuUs: 536_293,
+  });
+  assert.equal(warm.guestCounterLagUs, 13_707);
+  assert(warm.passed);
+  const inconsistent = evaluateInterference(before, {
+    ...ownWork,
+    guestCpuUs: 480_000,
+  });
+  assert.equal(inconsistent.checks.sampling, false);
+  assert.equal(warm.cpuAllowanceUs, 50_800);
 });
