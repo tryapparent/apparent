@@ -15,7 +15,12 @@ function state(row: ShareRow): ShareState {
  return row.upload_state==='uploading'?'pending':row.upload_state;
 }
 function plaintext(row:Pick<CaptureRow,'format'>) {if(row.format!=='plaintext-v1')fail('encrypted_sharing_unsupported',409);}
-const join=`SELECT s.*,c.format,c.status,c.expires_at,c.pending_until,c.bytes FROM shares s JOIN captures c ON c.id=s.capture_id`;
+const columns='s.*,c.format,c.status,c.expires_at,c.pending_until,c.bytes';
+const source='FROM shares s JOIN captures c ON c.id=s.capture_id';
+const join=`SELECT ${columns} ${source}`;
+const withPreview=`SELECT ${columns},f.object_key AS preview_key,f.size AS preview_size ${source}
+ LEFT JOIN files f ON f.capture_id=c.id AND f.path='apparent.json' AND c.status='ready' AND s.revoked_at IS NULL`;
+type ShareLookup = ShareRow & {preview_key?: string | null; preview_size?: number | null};
 const publicUrl=(env: Env,secret: string)=>apiBase(env)+'/s/'+secret;
 async function owner(request: Request,env: Env,write=false) {
  // Bearer and browser authority are explicit alternatives, never a capability.
@@ -23,8 +28,8 @@ async function owner(request: Request,env: Env,write=false) {
  const s=await session(request,env);if(s.beta!=='active')fail('beta_required',403);
  if(write)csrf(request,env,s);return s;
 }
-async function bySecret(env: Env,secret: string) {
- const row=await stmt(env,join+' WHERE s.hash=?',await hash(secret)).first<ShareRow>();
+async function bySecret(env: Env,secret: string,preview=false) {
+ const row=await stmt(env,(preview?withPreview:join)+' WHERE s.hash=?',await hash(secret)).first<ShareLookup>();
  if(!row)fail('not_found',404);plaintext(row);return row;
 }
 function available(row: ShareRow) {const s=state(row);if(['revoked','expired','deleted'].includes(s))fail(s,410);return s;}
@@ -77,12 +82,14 @@ export async function shareRoutes(request: Request,env: Env,url: URL,render: (mo
  const publicMatch=/^\/s\/([a-f0-9]{64})(?:\/(manifest\.json|thumbnail\.png|files\/(.+)))?$/.exec(url.pathname);
  if(!publicMatch)return null;
  if(!['GET','HEAD'].includes(request.method))fail('method_not_allowed',405);
- const [,secret,action,encoded]=publicMatch,row=await bySecret(env,secret),base=publicUrl(env,secret),status=state(row);
+ const [,secret,action,encoded]=publicMatch;
+ const preview=previewPolicy.lookup_metadata(!action,request.method==='GET');
+ const row=await bySecret(env,secret,preview),base=publicUrl(env,secret),status=state(row);
  if(!action) {
-  const limit=previewPolicy.metadata_limit(status==='ready',request.method==='GET');
+  const limit=previewPolicy.metadata_limit(status==='ready',preview);
   const [model,metadata]=await Promise.all([
    descriptor(env,row,base),
-   limit?evidenceText(env,row,'apparent.json',limit,secret):undefined,
+   limit?evidenceText(env,row.preview_key,row.preview_size,limit,secret):undefined,
   ]);
   if(metadata!==undefined) {
    // Reuse the existing bounded metadata read; never infer time from frame numbers.
@@ -122,10 +129,10 @@ export async function shareRoutes(request: Request,env: Env,url: URL,render: (mo
  if(range)headers['Content-Range']=`bytes ${range.offset}-${range.offset+range.length-1}/${f.size}`;
  return new Response(object?.body||null,{status:range?206:200,headers});
 }
-async function evidenceText(env: Env,row: ShareRow,path: string,limit: number,secret: string) {
- const f=await stmt(env,'SELECT * FROM files WHERE capture_id=? AND path=?',row.capture_id,path).first<FileRow>();if(!f?.object_key)return '';
- if(f.size>limit)return 'Preview exceeds the text limit. Download the original evidence below.';
- const object=await getObject(env,f.object_key);if(!object)return 'Evidence unavailable.';
+async function evidenceText(env: Env,key: ShareLookup['preview_key'],length: ShareLookup['preview_size'],limit: number,secret: string) {
+ if(!key||length===null||length===undefined)return '';
+ if(length>limit)return 'Preview exceeds the text limit. Download the original evidence below.';
+ const object=await getObject(env,key);if(!object)return 'Evidence unavailable.';
  const reader=object.body.getReader(),chunks=[];let size=0;
  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>limit) {await reader.cancel();return 'Preview exceeds the text limit. Download the original evidence below.';}chunks.push(value);}}finally{reader.releaseLock();}
  available(await bySecret(env,secret));const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}return new TextDecoder().decode(bytes);

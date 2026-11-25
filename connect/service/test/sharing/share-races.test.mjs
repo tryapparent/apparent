@@ -15,7 +15,12 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
    if(key==='get'&&request.headers.has('X-Observe-Metadata'))await env.DB.prepare('UPDATE test_barrier SET metadata_read=1').run();
    return result;
   }:value;}});
-  const DB=request.headers.has('X-Hold-Manifest')?{prepare(sql){const statement=env.DB.prepare(sql);if(!sql.startsWith('SELECT path,size,sha256,object_key FROM files'))return statement;return {bind(...args){const bound=statement.bind(...args);return {async all(){const result=await bound.all();await env.DB.prepare('UPDATE test_barrier SET entered=1').run();while(!(await env.DB.prepare('SELECT released FROM test_barrier').first()).released)await new Promise(r=>setTimeout(r,5));return result;}}}};}}:env.DB;
+  const holdManifest=request.headers.has('X-Hold-Manifest'),rejectExtraLookup=request.headers.has('X-Reject-Extra-Lookup');
+  const DB=holdManifest||rejectExtraLookup?{prepare(sql){
+   if(rejectExtraLookup&&sql.startsWith('SELECT * FROM files WHERE capture_id=? AND path=?'))throw new Error('unexpected separate file lookup');
+   const statement=env.DB.prepare(sql);if(!holdManifest||!sql.startsWith('SELECT path,size,sha256,object_key FROM files'))return statement;
+   return {bind(...args){const bound=statement.bind(...args);return {async all(){const result=await bound.all();await env.DB.prepare('UPDATE test_barrier SET entered=1').run();while(!(await env.DB.prepare('SELECT released FROM test_barrier').first()).released)await new Promise(r=>setTimeout(r,5));return result;}}}};
+  }}:env.DB;
   const response=await worker.fetch(request,{...env,DB,BUCKET});response.headers.set('X-Metered',String(calls));return response;
  }};
 `},bundle:true,format:'esm',platform:'browser',conditions:['workerd'],external:['node:*'],write:false});
@@ -63,6 +68,15 @@ test('ready HTML reads metadata independently of the file list and still recheck
   assert.ok([409,410].includes(response.status));
   assert.ok(!(await response.text()).includes('hello'));
  }finally{await release(f);if(pending)await pending;await f.close();}
+});
+
+test('ready HTML resolves the preview in the capability query and performs one metered read',async()=>{
+ const f=await setup(true);try {
+  const response=await f.call(f.path,{headers:{'X-Reject-Extra-Lookup':'1'}});
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('X-Metered'),'1');
+  assert.ok((await response.text()).includes('hello'));
+ }finally{await f.close();}
 });
 
 for(const [suffix,header] of [['/files/summary.md','X-Hold-R2'],['/thumbnail.png','X-Hold-R2'],['','X-Hold-R2'],['/manifest.json','X-Hold-Manifest']])test('revocation wins a blocked public read '+(suffix||'HTML'),async()=>{
