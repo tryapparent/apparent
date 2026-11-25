@@ -12,10 +12,8 @@ use transcribe_cpp::{
     TimestampKind,
 };
 
-use crate::capture::engine::runtime::audio::{
-    audio::decode_wav_16k,
-    persistence::{Samples, header},
-};
+use super::speech::parakeet::saved_audio_tail;
+use crate::capture::engine::runtime::audio::persistence::Samples;
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 const START_SAMPLES: usize = 320_000;
@@ -196,30 +194,6 @@ fn run(
     Ok(transcript)
 }
 
-fn canonical_pcm16(wav: &[u8]) -> Option<&[u8]> {
-    let (actual_header, payload) = wav.split_at_checked(44)?;
-    let bytes = u32::try_from(payload.len()).ok()?;
-    (bytes % 2 == 0 && bytes <= u32::MAX - 36 && actual_header == header(bytes))
-        .then_some(payload)
-}
-
-fn saved_audio_tail(wav: &[u8], consumed: usize) -> Result<(usize, Vec<f32>)> {
-    if let Some(payload) = canonical_pcm16(wav) {
-        let sample_count = payload.len() / 2;
-        ensure!(consumed <= sample_count, "Stream exceeds saved audio");
-        let tail = payload[consumed * 2..]
-            .chunks_exact(2)
-            .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32_768.0)
-            .collect();
-        return Ok((sample_count, tail));
-    }
-    let mut audio = decode_wav_16k(wav)?;
-    let sample_count = audio.len();
-    ensure!(consumed <= sample_count, "Stream exceeds saved audio");
-    audio.drain(..consumed);
-    Ok((sample_count, audio))
-}
-
 fn clamp_trailing_punctuation(tokens: &mut [transcribe_cpp::Token], end: i64) {
     if let Some(token) = tokens.last_mut() {
         let text = token.text.trim();
@@ -373,35 +347,6 @@ impl std::fmt::Debug for Slot {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn saved_tail_matches_full_decode_at_sample_boundaries() {
-        use crate::capture::engine::runtime::audio::audio::encode_wav_16k;
-
-        let wav = encode_wav_16k(&[-1.0, -0.5 / 32_768.0, 0.0, 0.5 / 32_768.0, 1.0]).unwrap();
-        assert!(canonical_pcm16(&wav).is_some());
-        let mut with_chunk = wav.clone();
-        with_chunk.splice(36..36, *b"JUNK\x02\0\0\0\0\0");
-        with_chunk[4..8].copy_from_slice(&(wav.len() as u32 + 2).to_le_bytes());
-        assert!(canonical_pcm16(&with_chunk).is_none());
-        let expected = decode_wav_16k(&wav).unwrap();
-        for input in [&wav, &with_chunk] {
-            for consumed in 0..=expected.len() {
-                assert_eq!(
-                    saved_audio_tail(input, consumed).unwrap(),
-                    (expected.len(), expected[consumed..].to_vec())
-                );
-            }
-            assert!(saved_audio_tail(input, expected.len() + 1).is_err());
-        }
-        for truncated in [&wav[..43], &wav[..wav.len() - 1], &wav[..44]] {
-            assert!(canonical_pcm16(truncated).is_none());
-            assert!(saved_audio_tail(truncated, expected.len()).is_err());
-        }
-        let mut unsupported = wav;
-        unsupported[24..28].copy_from_slice(&44_100_u32.to_le_bytes());
-        assert!(saved_audio_tail(&unsupported, expected.len()).is_err());
-    }
 
     #[test]
     fn short_capture_uses_its_saved_audio_fallback() {

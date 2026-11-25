@@ -8,7 +8,7 @@ use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 const KHZ: u64 = 16;
 
 #[path = "../../../../../engine/recording/parakeet.rs"]
-mod parakeet;
+pub(super) mod parakeet;
 pub(super) use parakeet::{Incremental, RecognitionPhase};
 
 /// The model Apparent downloads when Hex hasn't installed one: the same file, revision and

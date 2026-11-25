@@ -1,8 +1,9 @@
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use transcribe_cpp::{DeviceType, Model, RunOptions, Session, SessionOptions, TimestampKind};
 
+use crate::capture::engine::runtime::audio::{audio::decode_wav_16k, persistence::header};
 use crate::recording_trace::{self, Operation};
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
@@ -10,9 +11,36 @@ use super::{KHZ, init_backends, installed_models, model_name};
 
 pub(super) fn read_whole_file_audio(audio: &Path) -> Result<(Vec<u8>, Vec<f32>)> {
     let _span = recording_trace::span(Operation::PrepareSpeechAudio);
-    let wav = std::fs::read(audio).with_context(|| format!("Could not read {}", audio.display()))?;
-    let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
+    let wav =
+        std::fs::read(audio).with_context(|| format!("Could not read {}", audio.display()))?;
+    let (_, samples) = saved_audio_tail(&wav, 0)?;
     Ok((wav, samples))
+}
+
+fn canonical_pcm16(wav: &[u8]) -> Option<&[u8]> {
+    let (actual_header, payload) = wav.split_at_checked(44)?;
+    let bytes = u32::try_from(payload.len()).ok()?;
+    (bytes % 2 == 0 && bytes <= u32::MAX - 36 && actual_header == header(bytes)).then_some(payload)
+}
+
+pub(in crate::capture::engine::runtime::audio::transcription) fn saved_audio_tail(
+    wav: &[u8],
+    consumed: usize,
+) -> Result<(usize, Vec<f32>)> {
+    if let Some(payload) = canonical_pcm16(wav) {
+        let sample_count = payload.len() / 2;
+        ensure!(consumed <= sample_count, "Stream exceeds saved audio");
+        let tail = payload[consumed * 2..]
+            .chunks_exact(2)
+            .map(|sample| f32::from(i16::from_le_bytes([sample[0], sample[1]])) / 32_768.0)
+            .collect();
+        return Ok((sample_count, tail));
+    }
+    let mut audio = decode_wav_16k(wav)?;
+    let sample_count = audio.len();
+    ensure!(consumed <= sample_count, "Stream exceeds saved audio");
+    audio.drain(..consumed);
+    Ok((sample_count, audio))
 }
 
 pub(super) fn open_whole_file_session(path: &Path) -> Result<(Model, Session)> {
@@ -143,5 +171,46 @@ impl Incremental {
             }
         }
         Ok(transcript)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saved_tail_matches_full_decode_at_sample_boundaries() {
+        use crate::capture::engine::runtime::audio::audio::encode_wav_16k;
+
+        let wav = encode_wav_16k(&[-1.0, -0.5 / 32_768.0, 0.0, 0.5 / 32_768.0, 1.0]).unwrap();
+        assert!(canonical_pcm16(&wav).is_some());
+        let mut with_chunk = wav.clone();
+        with_chunk.splice(36..36, *b"JUNK\x02\0\0\0\0\0");
+        with_chunk[4..8].copy_from_slice(&(wav.len() as u32 + 2).to_le_bytes());
+        assert!(canonical_pcm16(&with_chunk).is_none());
+        let expected = decode_wav_16k(&wav).unwrap();
+        for input in [&wav, &with_chunk] {
+            for consumed in 0..=expected.len() {
+                assert_eq!(
+                    saved_audio_tail(input, consumed).unwrap(),
+                    (expected.len(), expected[consumed..].to_vec())
+                );
+            }
+            assert!(saved_audio_tail(input, expected.len() + 1).is_err());
+        }
+        for truncated in [&wav[..43], &wav[..wav.len() - 1], &wav[..44]] {
+            assert!(canonical_pcm16(truncated).is_none());
+            assert_eq!(
+                saved_audio_tail(truncated, 0).unwrap_err().to_string(),
+                decode_wav_16k(truncated).unwrap_err().to_string()
+            );
+            assert!(saved_audio_tail(truncated, expected.len()).is_err());
+        }
+        let mut unsupported = wav;
+        unsupported[24..28].copy_from_slice(&44_100_u32.to_le_bytes());
+        assert_eq!(
+            saved_audio_tail(&unsupported, 0).unwrap_err().to_string(),
+            decode_wav_16k(&unsupported).unwrap_err().to_string()
+        );
     }
 }
