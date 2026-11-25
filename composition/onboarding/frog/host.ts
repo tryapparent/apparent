@@ -2,12 +2,15 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  Menu,
+  powerMonitor,
   screen,
   session,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   type Rectangle,
 } from "electron";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
@@ -29,6 +32,14 @@ export function startDesktopFrog(assets: string) {
           : "apparent-desktop-frog",
       ),
   );
+  const profile = app.getPath("userData");
+  const pauseFile = join(profile, "frog-paused-until");
+  let pausedUntil = 0;
+  try {
+    const stored = Number(readFileSync(pauseFile, "utf8"));
+    if (Number.isSafeInteger(stored)) pausedUntil = stored;
+  } catch {}
+  let wake: ReturnType<typeof setTimeout> | undefined;
   const directory = join(assets, "dist/composition/onboarding/desktop-frog");
   const page = pathToFileURL(join(directory, "desktop.html")).href;
   let name = "";
@@ -109,10 +120,32 @@ export function startDesktopFrog(assets: string) {
     throw Error("Forbidden desktop frog request");
   });
   ipcMain.on("desktop-frog:start", (event) => {
-    if (visible && owns(event, window)) process.stdout.write("record\n");
+    if (available() && owns(event, window)) process.stdout.write("record\n");
+  });
+  ipcMain.on("desktop-frog:menu", (event) => {
+    if (!window || !available() || !owns(event, window)) return;
+    Menu.buildFromTemplate([
+      {
+        label: "Quit for 1 hour",
+        click: () => {
+          if (!available()) return;
+          pausedUntil = Date.now() + frogPolicy.desktop_pause_ms();
+          present();
+          scheduleWake();
+          try {
+            mkdirSync(profile, { recursive: true });
+            const pendingPause = `${pauseFile}.${process.pid}`;
+            writeFileSync(pendingPause, String(pausedUntil), { mode: 0o600 });
+            renameSync(pendingPause, pauseFile);
+          } catch (error) {
+            console.error("Could not save the desktop frog pause:", error);
+          }
+        },
+      },
+    ]).popup({ window });
   });
   ipcMain.on("desktop-frog:drag", (event, phase: unknown) => {
-    if (!visible || !owns(event, window) || !window) return;
+    if (!available() || !owns(event, window) || !window) return;
     const cursor = screen.getCursorScreenPoint();
     if (phase === "begin") {
       const bounds = window.getBounds();
@@ -185,11 +218,29 @@ export function startDesktopFrog(assets: string) {
     clearTimeout(landing);
     flight?.destroy();
     flight = undefined;
-    if (desktopReady && visible) window?.showInactive();
+    if (desktopReady && available()) window?.showInactive();
+  }
+
+  function available() {
+    return frogPolicy.desktop_visible(visible, Date.now() < pausedUntil);
+  }
+
+  function scheduleWake() {
+    clearTimeout(wake);
+    const remaining = pausedUntil - Date.now();
+    if (remaining > 0) {
+      wake = setTimeout(
+        () => {
+          present();
+          scheduleWake();
+        },
+        Math.min(remaining, frogPolicy.desktop_pause_ms()),
+      );
+    }
   }
 
   function present() {
-    if (!visible) {
+    if (!available()) {
       grip = undefined;
       window?.hide();
       if (flight) settle();
@@ -218,7 +269,7 @@ export function startDesktopFrog(assets: string) {
     window = makeWindow(point, false);
     window.on("ready-to-show", () => {
       desktopReady = true;
-      if (visible && !flight) window?.showInactive();
+      if (available() && !flight) window?.showInactive();
     });
     if (origin) {
       flightPath = {
@@ -231,7 +282,7 @@ export function startDesktopFrog(assets: string) {
       const overlay = (flight = makeWindow(area, true));
       overlay.once("ready-to-show", () => {
         flightReady = true;
-        if (visible) overlay.showInactive();
+        if (available()) overlay.showInactive();
       });
       landing = setTimeout(settle, 2200);
       void overlay.loadURL(page).catch(() => {
@@ -259,6 +310,11 @@ export function startDesktopFrog(assets: string) {
     };
     screen.on("display-removed", rehome);
     screen.on("display-metrics-changed", rehome);
+    powerMonitor.on("resume", () => {
+      present();
+      scheduleWake();
+    });
+    scheduleWake();
     present();
   });
 }

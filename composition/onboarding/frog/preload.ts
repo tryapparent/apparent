@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("desktopFrog", {
     return () => ipcRenderer.removeListener("desktop-frog:shortcut", relay);
   },
   start: () => ipcRenderer.send("desktop-frog:start"),
+  menu: () => ipcRenderer.send("desktop-frog:menu"),
   drag: (phase: string) => ipcRenderer.send("desktop-frog:drag", phase),
   arrived: () => ipcRenderer.send("desktop-frog:arrived"),
 });

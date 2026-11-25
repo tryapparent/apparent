@@ -60,6 +60,7 @@ await bendScratch(async (scratch) => {
     naming: [0, 0, 0, 0, 1, 2, 0, 0],
     name: [false, false, true, false, true, false, true, false, false, false],
     visible: [false, false, true, false],
+    pauseMs: 3600000,
   });
   const dictation = dictationTable(production);
   assert.deepEqual(JSON.parse(dictation), [

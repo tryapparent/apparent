@@ -32,3 +32,6 @@ def desktop_visible(adopted: Bool, unavailable: Bool) -> Bool:
       False{}
     case False{}:
       adopted
+
+def desktop_pause_ms() -> U32:
+  3600000

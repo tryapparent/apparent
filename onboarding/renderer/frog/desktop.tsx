@@ -15,6 +15,7 @@ type FrogBridge = {
   read(): Promise<State>;
   onShortcut(listener: (shortcut: string) => void): () => void;
   start(): void;
+  menu(): void;
   drag(phase: "begin" | "move" | "drop" | "cancel"): void;
   arrived(): void;
 };
@@ -95,6 +96,20 @@ function DesktopFrog({ name, shortcut }: State) {
         className="desktop-frog-pet"
         type="button"
         aria-label={`Make ${name} hop`}
+        aria-haspopup="menu"
+        onContextMenu={(event) => {
+          event.preventDefault();
+          window.desktopFrog.menu();
+        }}
+        onKeyDown={(event) => {
+          if (
+            event.key === "ContextMenu" ||
+            (event.shiftKey && event.key === "F10")
+          ) {
+            event.preventDefault();
+            window.desktopFrog.menu();
+          }
+        }}
         onPointerDown={(event) => {
           if (event.button !== 0) return;
           event.currentTarget.setPointerCapture(event.pointerId);
