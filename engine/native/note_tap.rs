@@ -160,6 +160,10 @@ impl SharedCaptureTelemetry {
             ],
         });
         drop(strokes);
+        #[cfg(target_os = "linux")]
+        if self.probing() && self.capture_mode.load(Ordering::Acquire) <= 1 {
+            crate::capture::engine::accessibility::ax::Prober::shared().pin(number, t0, t_ms, x0, y0);
+        }
         let _ = self.ui_sender.try_send(LiveOverlayEvent::Note {
             pin: number,
             t: t0,

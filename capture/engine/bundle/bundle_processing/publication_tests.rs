@@ -285,7 +285,7 @@ fn publication_recovery_reconciles_only_durable_typed_notes_before_journal_valid
         video_offset_ms: 0,
         strokes: vec![],
         events: vec![click.clone()],
-        action_context: vec![model::ActionContext {
+        action_context: vec![model::ActionContext { pin_window: None,
             kind: model::ActionKind::Pointer,
             t: 100,
             window: model::ActionWindow {

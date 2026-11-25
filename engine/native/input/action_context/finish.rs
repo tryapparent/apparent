@@ -63,9 +63,23 @@ impl SharedCaptureTelemetry {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         );
+        let context = self
+            .action_context
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        #[cfg(target_os = "linux")]
+        let mut context = context;
         if self.agent_context.swap(false, Ordering::AcqRel) {
+            #[cfg(target_os = "linux")]
+            let (hits, pins) = crate::capture::engine::accessibility::ax::Prober::shared().finish();
+            #[cfg(not(target_os = "linux"))]
             let hits = crate::capture::engine::accessibility::ax::Prober::shared().finish();
             crate::capture::engine::accessibility::ax::apply(&hits, &mut events, &mut strokes);
+            #[cfg(target_os = "linux")]
+            if let Some(context) = context.as_mut() {
+                context.pin_windows = pins;
+            }
             if self.capture_mode.load(Ordering::Acquire) != 3 {
                 let end = crate::shared::clock::now_epoch_ms();
                 let start = end.saturating_sub(self.elapsed_ms());
@@ -80,11 +94,6 @@ impl SharedCaptureTelemetry {
         }
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         self.circle_session
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        let context = self
-            .action_context
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();

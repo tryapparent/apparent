@@ -112,6 +112,7 @@ fn compact_mark_page_requires_every_stroke_to_resolve_to_the_same_url() {
     };
     b.action_context = [1500, 3000]
         .map(|t| ActionContext {
+            pin_window: None,
             kind: ActionKind::Stroke,
             t,
             window: window.clone(),

@@ -145,7 +145,30 @@ impl Window {
         }
     }
 
-    pub fn unique_browser_client(&self) -> Option<([i32; 2], String)> {
+    pub fn size(&self) -> [i32; 2] {
+        self.size
+    }
+
+    pub fn pin_tree_identity(&self) -> Option<bool> {
+        let clients = read::<Vec<Client>>("j/clients")?;
+        let mut found = false;
+        let mut unique = true;
+        for client in clients.into_iter().filter(|client| {
+            client.window.pid == self.pid && client.mapped && !client.hidden
+        }) {
+            if client.window == *self {
+                found = true;
+            } else {
+                if client.window.title == self.title {
+                    return None;
+                }
+                unique = false;
+            }
+        }
+        found.then_some(unique)
+    }
+
+    pub fn unique_mapped_client(&self) -> Option<([i32; 2], String)> {
         let clients = read::<Vec<Client>>("j/clients")?;
         let mut windows = clients.iter().filter(|client| client.window.pid == self.pid && client.mapped);
         let only = windows.next()?;

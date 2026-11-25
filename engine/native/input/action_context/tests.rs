@@ -49,10 +49,11 @@ fn retained_evidence_requires_one_surviving_action_at_the_exact_time() {
     let collector = Collector {
         jobs,
         context,
-        last_scroll: None,
+        last_scroll: None, pin_windows: Vec::new(),
     };
     for t in [100, 200, 300] {
         send.send(ActionContext {
+            pin_window: None,
             kind: ActionKind::Pointer,
             t,
             window: evidence("x11:23:4".into(), "Firefox", "Invoice").unwrap(),

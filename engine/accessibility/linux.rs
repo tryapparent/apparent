@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use crate::capture::desktop::linux::hyprland;
-use crate::shared::model::{InteractionEvent, Stroke, TargetFrame};
+use crate::shared::model::{ActionContext, ActionKind, ActionWindow, InteractionEvent, PinWindow, Stroke, TargetFrame};
 
 #[cfg(test)]
 pub(crate) use super::ax_other::percent_decode;
@@ -26,6 +26,15 @@ enum Request {
     Start(u64, f64, f64, Instant),
     Pointer(u64, f64, f64, Instant),
     Resolve(Mark, Instant),
+}
+
+struct PinRequest {
+    pin: u32,
+    t: u64,
+    release: u64,
+    x: f64,
+    y: f64,
+    at: Instant,
 }
 
 struct Mark {
@@ -51,8 +60,14 @@ impl Mark {
     }
 }
 
+struct Pins {
+    requests: flume::Sender<PinRequest>,
+    results: flume::Receiver<ActionContext>,
+}
+
 struct Session {
     requests: flume::Sender<Request>,
+    pins: Option<Pins>,
     results: flume::Receiver<Result>,
 }
 
@@ -86,7 +101,14 @@ impl Prober {
             .spawn(move || Work::run(pending, labels))
             .is_ok()
         {
-            *session = Some(Session { requests, results });
+            let (requests_for_pins, pending) = flume::bounded(2);
+            let (observations, pin_results) = flume::bounded(12);
+            let pins = std::thread::Builder::new()
+                .name("apparent-atspi-pins".into())
+                .spawn(move || Work::run_pins(pending, observations))
+                .ok()
+                .map(|_| Pins { requests: requests_for_pins, results: pin_results });
+            *session = Some(Session { requests, pins, results });
         }
     }
 
@@ -115,18 +137,34 @@ impl Prober {
         self.send(Request::Pointer(time, x, y, Instant::now()));
     }
 
-    pub fn finish(&self) -> Vec<Result> {
+    pub fn pin(&self, pin: u32, t: u64, release: u64, x: f64, y: f64) {
+        if let Some(queue) = self.0.try_lock().ok()
+            .and_then(|session| Some(session.as_ref()?.pins.as_ref()?.requests.clone()))
+        {
+            let _ = queue.try_send(PinRequest { pin, t, release, x, y, at: Instant::now() });
+        }
+    }
+
+    pub fn finish(&self) -> (Vec<Result>, Vec<ActionContext>) {
         let session = self
             .0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
-        let Some(Session { requests, results }) = session else {
-            return Vec::new();
+        let Some(Session { requests, pins, results }) = session else {
+            return (Vec::new(), Vec::new());
         };
         drop(requests);
+        let pin_results = pins.map(|Pins { requests, results }| {
+            drop(requests);
+            results
+        });
         let deadline = Instant::now() + DRAIN;
-        std::iter::from_fn(|| results.recv_deadline(deadline).ok()).collect()
+        let marks = std::iter::from_fn(|| results.recv_deadline(deadline).ok()).collect();
+        let pins = pin_results.map_or_else(Vec::new, |results| {
+            std::iter::from_fn(|| results.recv_deadline(deadline).ok()).collect()
+        });
+        (marks, pins)
     }
 }
 
@@ -144,18 +182,25 @@ struct Work {
 }
 
 impl Work {
+    fn open(accessibility: atspi::Bus) -> Option<Self> {
+        Some(Self { events: window::Events::open()?, accessibility, witness: None })
+    }
+
+    fn run_pins(pending: flume::Receiver<PinRequest>, results: flume::Sender<ActionContext>) {
+        let Some(mut worker) = atspi::Bus::connect().and_then(Self::open) else { return; };
+        let mut remaining = 12;
+        while remaining > 0 {
+            let Ok(pin) = pending.recv() else { return; };
+            if let Some(snapshot) = worker.pin_window(pin)
+                && results.try_send(snapshot).is_ok()
+            {
+                remaining -= 1;
+            }
+        }
+    }
+
     fn run(pending: flume::Receiver<Request>, labels: flume::Sender<Result>) {
-        let Some(events) = window::Events::open() else {
-            return;
-        };
-        let Some(accessibility) = atspi::Bus::open() else {
-            return;
-        };
-        let mut worker = Self {
-            events,
-            accessibility,
-            witness: None,
-        };
+        let Some(mut worker) = atspi::Bus::open().and_then(Self::open) else { return; };
         while let Ok(request) = pending.recv() {
             match request {
                 Request::Start(time, x, y, at) => worker.witness = worker.begin_mark(time, x, y, at),
@@ -196,9 +241,52 @@ impl Work {
         Some(Witness { time, window, tree, page })
     }
 
+    fn pin_window(&mut self, pin: PinRequest) -> Option<ActionContext> {
+        if pin.at.elapsed() > FRESHNESS {
+            return None;
+        }
+        self.events.drain(None)?;
+        let rect = window::layout_rect([pin.x.floor() as i32, pin.y.floor() as i32, 1, 1])?;
+        let window = window::focused_for_mark(rect)?;
+        if crate::capture::ui_process::owns(window.pid as i32)
+            || !window.is_uncovered(rect)?
+            || !window::share_picker_clear(rect)?
+        {
+            return None;
+        }
+        let tree = self.accessibility.active_tree(window.pid)?;
+        if pin.at.elapsed() > FRESHNESS || self.events.drain_action(&window)? {
+            return None;
+        }
+        let unique_client = window.pin_tree_identity()?;
+        let sampled_after_ms = pin.release.saturating_sub(pin.t)
+            .saturating_add(pin.at.elapsed().as_millis() as u64);
+        let (elements, truncated) =
+            self.accessibility.pin_tree(&tree, &window.title, window.size(), unique_client)?;
+        if !self.accessibility.is_active(&tree)
+            || window::focused_for_mark(rect).as_ref() != Some(&window)
+            || !window.is_uncovered(rect)?
+            || !window::share_picker_clear(rect)?
+            || self.events.drain_action(&window)?
+            || pin.at.elapsed() > FRESHNESS + DRAIN
+        {
+            return None;
+        }
+        Some(ActionContext {
+            kind: ActionKind::Stroke,
+            t: pin.t,
+            window: ActionWindow {
+                id: window.action_id(),
+                app: window.class,
+                title: (!window.title.is_empty()).then_some(window.title),
+            },
+            pin_window: Some(PinWindow { pin: pin.pin, sampled_after_ms, truncated, elements }),
+        })
+    }
+
     fn page(&self, window: &window::Window, point: (i32, i32)) -> Option<String> {
         let attribute = window.browser_attribute()?;
-        let (size, title) = window.unique_browser_client()?;
+        let (size, title) = window.unique_mapped_client()?;
         self.accessibility.browser_page(window.pid, size, &title, point, attribute)
     }
 

@@ -1,3 +1,6 @@
+#[path = "pin_tree.rs"]
+mod pin_tree;
+
 use std::time::Duration;
 
 use zbus::blocking::connection::Builder;
@@ -39,7 +42,7 @@ pub struct Object(String, OwnedObjectPath);
 pub struct Bus(Connection);
 
 impl Bus {
-    pub fn open() -> Option<Self> {
+    pub fn connect() -> Option<Self> {
         let desktop = Builder::session()
             .ok()?
             .method_timeout(REQUEST)
@@ -54,9 +57,15 @@ impl Bus {
             .method_timeout(REQUEST)
             .build()
             .ok()?;
+        Some(Self(connection))
+    }
+
+    pub fn open() -> Option<Self> {
+        let bus = Self::connect()?;
+        let connection = &bus.0;
         let registry =
-            Proxy::new(&connection, REGISTRY, "/org/a11y/atspi/registry", REGISTRY).ok()?;
-        let daemon = DBusProxy::new(&connection).ok()?;
+            Proxy::new(connection, REGISTRY, "/org/a11y/atspi/registry", REGISTRY).ok()?;
+        let daemon = DBusProxy::new(connection).ok()?;
         let rule = zbus::MatchRule::builder()
             .msg_type(zbus::message::Type::Signal)
             .interface("org.a11y.atspi.Event.Window")
@@ -72,7 +81,9 @@ impl Bus {
                 .call::<_, _, ()>("RegisterEvent", &(event, Vec::<String>::new(), ""))
                 .ok()?;
         }
-        Some(Self(connection))
+        drop(registry);
+        drop(daemon);
+        Some(bus)
     }
 
     fn proxy<'a>(&'a self, object: &'a Object, interface: &'static str) -> Option<Proxy<'a>> {
