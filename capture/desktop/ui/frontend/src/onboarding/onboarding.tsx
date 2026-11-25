@@ -7,9 +7,8 @@ import {ShortcutSuggestions} from './shortcut/suggestions';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
-import { GestureGuide } from '../../../../../../onboarding/renderer/gesture-guide';
-import { coachCopy } from '../../../../../../onboarding/renderer/frog/coach-copy';
-import { FrogCoach, MeetFrog } from '../../../../../../onboarding/renderer/frog/meet';
+import { PracticeCoach } from '../../../../../../onboarding/renderer/practice-coach';
+import { MeetFrog } from '../../../../../../onboarding/renderer/frog/meet';
 import { TourAction } from '../../../../../../onboarding/renderer/tour-actions';
 import { ControlGuide } from './controls/control-guide';
 import { AgentSetup } from './agent-setup';
@@ -139,8 +138,6 @@ export function NativeOnboarding(){
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
   const practiceStage=state.practice==='note'?'screen-ink':state.practice;
-  const trackpadHint=practiceStage==='screen-ink';
-  const helper=<aside className="native-trackpad-helper" aria-label="Trackpad drawing hint"><div className="native-trackpad-helper-content"><strong>Pressing down on your trackpad?</strong><p>No need. Just hold Shift and glide.</p></div></aside>;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   function finishSetup() {
     const area = coachFrog.current?.getBoundingClientRect();
@@ -148,13 +145,14 @@ export function NativeOnboarding(){
     return action({action:'frog-finish', takeoff:[area.x + area.width / 2, area.y + area.height / 2, area.width]});
   }
   if(practice){
-    const c=coachCopy(practiceStage,state.platform,state.shortcut);
     const practiceCommand = state.practice === 'whiteboard' ? 'practice-open-board'
       : state.practice === 'stop' ? 'practice-save-capture' : null;
     const practiceAction = practiceCommand && state.practiceAttempt
       ? () => void action(`${practiceCommand}:${state.practiceAttempt}`)
       : undefined;
-    return <><main className="native-coach" data-paired={trackpadHint&&wideCoach} data-stage={practiceStage} data-arrow={state.coachPointsUp} style={{'--coach-arrow':`${(state.coachArrow??190)-24}px`} as React.CSSProperties}>{state.frogName ? <FrogCoach name={state.frogName} entering={practiceStage==='screen'} canvasRef={coachFrog} /> : <img key={practiceStage} src={frog} alt="Frog guide"/>}<div className="native-coach-content">{c.title&&<h1>{c.title}</h1>}{c.text&&<p>{c.text}</p>}<GestureGuide key={practiceStage} stage={practiceStage} shortcut={state.shortcut} recordKeys={recordKeys(state.shortcut)} platform={state.platform} penRgb={state.penRgb}/> {['whiteboard','stop','locate'].includes(state.practice??'')&&<ControlGuide key={state.practice} kind={state.practice==='locate'?'locate':state.practice==='stop'?'finish':'whiteboard'} onTarget={practiceAction}/>} {c.button&&<Button onClick={()=>void action(c.action!)}>{c.button}</Button>}{trackpadHint&&!wideCoach&&helper}{error&&<p role="alert">{error}</p>}{state.frogName&&state.practice==='complete'&&<Button onClick={()=>void finishSetup()}>Finish setup</Button>}<Button hidden={Boolean(state.frogName&&state.practice==='complete')} variant="ghost" size="icon" className="native-finish-close" aria-label={state.practice==='complete'?'Finish setup':'Close guide'} onClick={()=>void (state.practice==='complete'?finishSetup():action('later'))}>×</Button></div></main>{trackpadHint&&wideCoach&&helper}</>;
+    const control = ['whiteboard','stop','locate'].includes(state.practice??'')&&<ControlGuide kind={state.practice==='locate'?'locate':state.practice==='stop'?'finish':'whiteboard'} onTarget={practiceAction} />;
+    return <PracticeCoach view={state} stage={practiceStage} wide={wideCoach} frog={frog} canvasRef={coachFrog}
+      recordKeys={recordKeys(state.shortcut)} control={control} error={error} onAction={action} finishSetup={finishSetup} />;
   }
   return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-wispr={wispr.visible} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section ref={wispr.attach}>
     {wispr.visible?<WisprPrompt flow={wispr}/>:<>

@@ -1,0 +1,18 @@
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-prompt-enter {
+    animation: onboarding-prompt-enter 160ms ease-out both;
+  }
+
+  .onboarding-prompt-enter:focus-within {
+    --onboarding-prompt-start: 1;
+  }
+}
+
+@keyframes onboarding-prompt-enter {
+  from {
+    opacity: var(--onboarding-prompt-start, 0.72);
+  }
+  to {
+    opacity: 1;
+  }
+}

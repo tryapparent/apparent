@@ -256,8 +256,14 @@ test("trusted practice host drives the real renderer without accepting renderer 
   };
   const stage = (name: string) =>
     expect(page.locator(".native-coach")).toHaveAttribute("data-stage", name);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await batch([{ type: "reset" }, { type: "started" }]);
   await stage("whiteboard");
+  const mascot = page.locator(".native-coach > img");
+  const previousMascot = await mascot.elementHandle();
+  const compactCoach = await page.locator(".native-coach").boundingBox();
+  const prompt = page.locator(".onboarding-prompt-enter");
+  await expect(prompt).toHaveCSS("animation-name", "onboarding-prompt-enter");
   await batch([{ type: "whiteboard-visible", visible: true }]);
   await stage("whiteboard");
   await batch([{ type: "whiteboard-visible", visible: false }]);
@@ -272,6 +278,8 @@ test("trusted practice host drives the real renderer without accepting renderer 
     { type: "whiteboard-visible", visible: false },
   ]);
   await stage("screen-ink");
+  assert.ok(await mascot.evaluate((element, previous) => element === previous, previousMascot));
+  await expect(prompt).toHaveCSS("animation-name", "onboarding-prompt-enter");
   await expect(page.locator(".native-gesture-ink")).toHaveCSS(
     "stroke",
     "rgb(217, 76, 68)",
@@ -280,10 +288,15 @@ test("trusted practice host drives the real renderer without accepting renderer 
   await stage("screen-ink");
   await batch([{ type: "ink", board: false, screen: 6 }]);
   await stage("stop");
+  assert.ok(await mascot.evaluate((element, previous) => element === previous, previousMascot));
+  const stopCoach = await page.locator(".native-coach").boundingBox();
+  assert.ok(compactCoach && stopCoach);
+  assert.deepEqual([stopCoach.x, stopCoach.y], [compactCoach.x, compactCoach.y]);
   for (const width of [380, 320])
     for (const theme of ["light", "dark"] as const) {
       await page.setViewportSize({ width, height: 540 });
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      await expect(prompt).toHaveCSS("animation-name", "none");
       assert.equal(
         await page
           .locator(".native-coach-content")
