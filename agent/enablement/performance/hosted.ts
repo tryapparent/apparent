@@ -36,10 +36,9 @@ assert(
 assert.equal(realpathSync(evidence), evidence);
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const scratch = mkdtempSync("/tmp/apparent-dev-agent-hosted-");
-const results = join(scratch, "results");
 const target = join(scratch, "cargo");
 const home = join(scratch, "home");
-for (const path of [results, home]) mkdirSync(path, { mode: 0o700 });
+mkdirSync(home, { mode: 0o700 });
 
 const env = {
   PATH: process.env.PATH,
@@ -162,10 +161,10 @@ async function quietCpu(cpus: number[]) {
 }
 
 function retainReceipts() {
-  for (const job of readdirSync(results).filter((name) =>
+  for (const job of readdirSync(scratch).filter((name) =>
     name.startsWith("inspect-"),
   )) {
-    const directory = join(results, job);
+    const directory = join(scratch, job);
     for (const name of readdirSync(directory).filter((row) =>
       /^[0-9a-f]{64}$/.test(row),
     )) {
@@ -179,7 +178,7 @@ function retainReceipts() {
       }
     }
     for (const file of ["quiet.json", "failure.json", "receipt.json"]) {
-      const source = join(results, job, file);
+      const source = join(scratch, job, file);
       try {
         copyFileSync(source, join(evidence, job + "-" + file));
       } catch (error) {
@@ -294,7 +293,7 @@ try {
       entry,
       control,
       binary,
-      results,
+      scratch,
       manifest,
       ...(ledger ? [ledger] : []),
     ];
