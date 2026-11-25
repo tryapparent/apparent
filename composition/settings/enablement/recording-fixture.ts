@@ -65,7 +65,9 @@ export async function launchRecording() {
     });
     browser = await chromium.connectOverCDP(endpoint);
     const context = browser.contexts()[0];
-    const page = context.pages()[0];
+    const page =
+      context.pages()[0] ??
+      (await context.waitForEvent("page", { timeout: 10_000 }));
     const session = await context.newCDPSession(page);
     async function setVariant(width: number, colorScheme: "light" | "dark") {
       await session.send("Emulation.setDeviceMetricsOverride", {
