@@ -8,7 +8,7 @@ const REQUEST_LIMIT: usize = 256 * 1024;
 const DEADLINE: Duration = Duration::from_millis(25);
 
 pub(super) fn evaluate(endpoint: &str, input: &[u8], max_output: usize) -> Option<String> {
-    if !cfg!(target_os = "linux") || input.len() > REQUEST_LIMIT {
+    if input.len() > REQUEST_LIMIT {
         return None;
     }
     let input = std::str::from_utf8(input).ok()?;
@@ -38,7 +38,7 @@ pub(super) fn evaluate_file(
     input: &mut File,
     max_output: usize,
 ) -> std::io::Result<Option<String>> {
-    if !cfg!(target_os = "linux") || input.metadata()?.len() > REQUEST_LIMIT as u64 {
+    if input.metadata()?.len() > REQUEST_LIMIT as u64 {
         return Ok(None);
     }
     let mut bytes = Vec::new();
@@ -46,3 +46,7 @@ pub(super) fn evaluate_file(
     input.rewind()?;
     Ok(evaluate(endpoint, &bytes, max_output))
 }
+
+#[cfg(test)]
+#[path = "policy_tests.rs"]
+mod tests;

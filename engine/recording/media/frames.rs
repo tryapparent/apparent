@@ -4,6 +4,9 @@ use serde::Deserialize;
 use std::{fs::{File, OpenOptions}, os::unix::fs::{OpenOptionsExt, PermissionsExt}, path::Path, process::Command, time::Duration};
 
 pub(super) fn record_movie_times(times: &[u64], offset: u64) -> Option<Vec<u64>> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
     let input = serde_json::to_vec(&(times, offset)).ok()?;
     let output = super::super::record_policy::evaluate("nativeMovieClock", &input, 2048)?;
     let request: Vec<u64> = serde_json::from_str(&output).ok()?;

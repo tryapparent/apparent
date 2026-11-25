@@ -56,9 +56,9 @@ pub(crate) fn record(
     })
 }
 
-#[path = "../engine/native/record_frame_transport.rs"]
-mod record_transport;
-use record_transport::{direct_record, record_movie_times, run_frame_command};
+#[path = "../engine/recording/media/frames.rs"]
+mod transport;
+use transport::{direct_record, record_movie_times, run_frame_command};
 
 pub(crate) fn agent_range(movie: &Path, times: &[u64], offset: u64) -> Result<Vec<RgbaFrame>> {
     adaptive_batches_from(times, 4, |batch| {
@@ -437,7 +437,7 @@ mod tests {
             requested
         );
         assert!(assembled.iter().all(|f| (f.width, f.height) == (320, 240)));
-        record_transport::assert_matches_packaged(&movie, &requested, &assembled);
+        transport::assert_matches_packaged(&movie, &requested, &assembled);
         let decoded = record(&movie, &times, 500, 900).unwrap();
         assert_eq!(decoded.len(), times.len());
         for (frame, time) in decoded.iter().zip(times) {
