@@ -1,8 +1,13 @@
+use super as platform;
 use super::super::{LiveOverlayEvent, SCALE, SharedCaptureTelemetry, Stroke};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 include!(concat!(env!("OUT_DIR"), "/note-gesture.rs"));
+
+fn window_blocks_note(owned: bool, settings: bool) -> bool {
+    BLOCKS_NOTE[usize::from(owned) | (usize::from(settings) << 1)]
+}
 
 #[derive(Default)]
 pub(crate) struct NoteTap {
@@ -62,6 +67,58 @@ impl NoteTap {
 }
 
 impl SharedCaptureTelemetry {
+    pub(in crate::capture::engine::runtime) fn apparent_window_in(
+        &self,
+        windows: &[crate::shared::windows::RawWindow],
+        x: f64,
+        y: f64,
+        is_helper: impl Fn(i32) -> bool,
+    ) -> bool {
+        self.apparent_window_in_for(windows, x, y, is_helper, false)
+    }
+
+    fn note_blocked_by_window(&self, x: f64, y: f64) -> bool {
+        let windows = platform::input_windows(self.note_ui_pid.load(Ordering::Acquire) as u32);
+        self.apparent_window_in_for(&windows, x, y, platform::is_helper_process, true)
+    }
+
+    pub(in crate::capture::engine::runtime) fn apparent_window_in_for(
+        &self,
+        windows: &[crate::shared::windows::RawWindow],
+        x: f64,
+        y: f64,
+        is_helper: impl Fn(i32) -> bool,
+        placing_note: bool,
+    ) -> bool {
+        if self.notes_window_in(windows, x, y) { return true; }
+        #[cfg(target_os = "macos")]
+        let adjusted = {
+            let mut raw = windows.to_vec();
+            crate::shared::windows::constrain_dock(&mut raw, *self.dock_bounds.lock().unwrap());
+            raw
+        };
+        #[cfg(target_os = "macos")]
+        let windows = adjusted.as_slice();
+        let passthrough = self
+            .passthrough_window_ids
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        let own = std::process::id() as i32;
+        let source = self.capture_source_pid.load(Ordering::Acquire);
+        let note_pid = self.note_ui_pid.load(Ordering::Acquire);
+        crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
+            let owned = pid == own || (note_pid > 0 && u64::try_from(pid).ok() == Some(note_pid))
+                || (pid != source && (crate::capture::ui_process::owns(pid) || is_helper(pid)));
+            if placing_note {
+                window_blocks_note(owned, owned && crate::capture::ui_process::owns_settings(pid))
+            } else {
+                owned
+            }
+        })
+    }
+
+
     pub(crate) fn has_note_editor(&self) -> bool {
         self.note_ui_pid.load(Ordering::Acquire) != 0
     }
@@ -115,21 +172,92 @@ impl SharedCaptureTelemetry {
         let _ = self.ui_sender.try_send(LiveOverlayEvent::RequestSnapshot);
     }
 
-    pub(crate) fn request_note_at(&self, t_ms: u64, screen_x: f64, screen_y: f64) {
+    pub(crate) fn request_note_at(&self, t_ms: u64, screen_x: f64, screen_y: f64) -> bool {
         if self.active.load(Ordering::Acquire)
             && self.has_note_editor()
             && !self.notes_editing.load(Ordering::Acquire)
             && self.contains_screen_point(screen_x, screen_y)
-            && !self.on_capture_input_ui(screen_x, screen_y)
+            && !self.note_blocked_by_window(screen_x, screen_y)
         {
             self.place_note(t_ms, t_ms, screen_x, screen_y);
+            return true;
         }
+        false
     }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub(crate) fn observe_note_tap(
+    tap: &mut NoteTap,
+    at: Option<(f64, f64)>,
+    now: std::time::Instant,
+    pure: bool,
+    telemetry: &SharedCaptureTelemetry,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    if !telemetry.has_note_editor() || telemetry.notes_editing.load(Ordering::Acquire) {
+        tap.reset();
+        return false;
+    }
+    if !pure && !tap.is_pressed() {
+        return false;
+    }
+    if at.is_none_or(|(x, y)| !telemetry.contains_screen_point(x, y)) {
+        tap.reset();
+        return false;
+    }
+    let drew = !pure && tap.is_pressed()
+        && telemetry.live_ink.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref().is_some_and(super::super::is_real_ink);
+    if let Some((x, y)) = tap.observe(now, at, pure, drew, telemetry.note_tap_epoch()) {
+        return telemetry.request_note_at(telemetry.elapsed_ms(), x, y);
+    }
+    false
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn separate_settings_window_is_owned_only_while_its_exact_child_is_alive() {
+        use crate::capture::ui_process::UiChild;
+        let (sender, _receiver) = flume::unbounded();
+        let telemetry = SharedCaptureTelemetry::new(sender);
+        let spawn = || std::process::Command::new("sh").args(["-c", "exec sleep 30"]).spawn().unwrap();
+        let raw = spawn();
+        let pid = raw.id() as i32;
+        let windows = [crate::shared::windows::RawWindow {
+            id: 42, pid, owner: "Electron".into(), title: "Apparent Settings".into(),
+            bounds: [0.0, 0.0, 600.0, 400.0], layer: 0, alpha: 1.0,
+        }];
+        let at = || telemetry.apparent_window_in(&windows, 100.0, 100.0, |_| false);
+        assert!(!at(), "an unregistered Electron process is not ours");
+        let mut child = UiChild::settings(raw);
+        assert!(at(), "the separate Settings window excludes presses and scrolls");
+        let placement = |windows: &[crate::shared::windows::RawWindow]| {
+            telemetry.apparent_window_in_for(windows, 100.0, 100.0, |_| false, true)
+        };
+        assert!(!placement(&windows));
+        let mut control = windows[0].clone();
+        control.pid = std::process::id() as i32;
+        assert!(placement(&[control, windows[0].clone()]));
+        telemetry.set_capture_source_pid(pid as u32);
+        assert!(!at(), "explicit capture sources retain their interaction telemetry");
+        telemetry.set_capture_source_pid(0);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!at(), "a reaped PID is not owned even before its registration is dropped");
+        let next = spawn();
+        let next_pid = next.id() as i32;
+        let mut next = UiChild::new(next);
+        drop(child);
+        assert!(crate::capture::ui_process::owns(next_pid), "old cleanup cannot retire a new session");
+        next.kill().unwrap();
+        next.wait().unwrap();
+        drop(next);
+        assert!(!crate::capture::ui_process::owns(next_pid));
+    }
 
     fn base() -> Instant {
         Instant::now()

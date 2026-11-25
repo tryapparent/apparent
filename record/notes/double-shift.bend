@@ -11,3 +11,6 @@ def pointer_limit() -> U32:
 
 def release(clean: Bool, within_hold: Bool, within_movement: Bool, within_pair: Bool) -> U32:
   Bool.pick(U32, Bool.and(clean, Bool.and(within_hold, within_movement)), Bool.pick(U32, within_pair, 2, 1), 0)
+
+def blocks_note(owned: Bool, settings: Bool) -> Bool:
+  Bool.and(owned, Bool.not(settings))

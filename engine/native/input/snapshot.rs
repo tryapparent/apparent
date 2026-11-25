@@ -1,4 +1,5 @@
-use super::{Held, Modifiers, ShortcutConfig, ShortcutKind, hotkey_combos, input, linux, vk_for_keysym, x11};
+use super::{Held, Ordering, SharedCaptureTelemetry, shortcut_key_name, shortcut_label, Modifiers, ShortcutConfig, ShortcutKind, hotkey_combos, input, linux, vk_for_keysym, x11};
+use crate::shared::model::InteractionEvent;
 
 pub(super) fn held_from(devices: Option<input::Held>) -> Held {
     if linux::wayland_session()
@@ -11,12 +12,7 @@ pub(super) fn held_from(devices: Option<input::Held>) -> Held {
                 alt: devices.alt(),
                 shift: devices.shift(),
             },
-            note_blocked: devices.keys.iter().any(|code| {
-                !matches!(
-                    *code,
-                    input::code::KEY_LEFTSHIFT | input::code::KEY_RIGHTSHIFT | 0x140..=0x14f
-                )
-            }),
+            note_blocked: devices.note_blocked(),
             left: devices.left(),
             right: devices.right(),
             keys: devices
@@ -104,8 +100,55 @@ fn detect_held_record_shortcut(config: &ShortcutConfig, state: &input::Held) -> 
     })
 }
 
-pub(super) fn held_polled() -> Held {
-    held_from(input::take_held())
+pub(super) fn held_polled() -> (Held, Option<std::collections::VecDeque<input::NoteEdge>>) {
+    match input::take_held() {
+        Some((devices, edges)) if linux::wayland_session() => (held_from(Some(devices)), Some(edges)),
+        _ => (held_from(None), None),
+    }
+}
+
+pub(super) fn replay_note_edges(
+    tap: &mut super::super::NoteTap,
+    edges: std::collections::VecDeque<input::NoteEdge>,
+    point: (f64, f64),
+    telemetry: &SharedCaptureTelemetry,
+) {
+    if tap.is_pressed() && !telemetry.contains_screen_point(point.0, point.1) {
+        tap.reset();
+    }
+    if edges.is_empty() {
+        return;
+    }
+    let started = *telemetry.started_at.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    for edge in edges.into_iter().filter(|edge| edge.at >= started) {
+        let Some(shift) = edge.shift else {
+            tap.reset();
+            continue;
+        };
+        if super::super::observe_note_tap(tap, Some(point), edge.at, shift, telemetry) {
+            break;
+        }
+    }
+}
+
+pub(super) fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
+    if !(mods.ctrl || mods.super_key) {
+        return;
+    }
+    let Some(key) = shortcut_key_name(vk) else {
+        return;
+    };
+    let t_ms = telemetry.elapsed_ms();
+    telemetry.window_log_request.store(true, Ordering::Release);
+    telemetry.observe_key_context(t_ms);
+    telemetry
+        .events
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push(InteractionEvent::Key {
+            t: t_ms,
+            shortcut: shortcut_label(mods.bits(), &key),
+        });
 }
 
 #[cfg(test)]

@@ -53,6 +53,8 @@ pub struct Held {
     pub button_events: Vec<ButtonEvent>,
     /// At least one edge was lost; consumers must discard any pending gesture.
     pub button_events_lost: bool,
+    note_edges: VecDeque<NoteEdge>,
+    note_pointer_moved: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -237,28 +239,13 @@ pub fn absolute_pointer() -> Option<[f64; 2]> {
 }
 
 /// What is held, counting what was pressed and let go since the last call, for the one poller.
-pub fn take_held() -> Option<Held> {
-    READER.get().map(take_held_from)
+pub(crate) fn take_held() -> Option<(Held, VecDeque<NoteEdge>)> {
+    READER.get().map(take_snapshot)
 }
 
+#[cfg(test)]
 fn take_held_from(reader: &Reader) -> Held {
-    let mut state = reader
-        .held
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let events = std::mem::take(&mut state.button_events);
-    let lost = std::mem::take(&mut state.button_events_lost);
-    let mut held = state.clone();
-    held.button_events = events;
-    held.button_events_lost = lost;
-    held.keys.extend(
-        reader
-            .pressed
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .drain(),
-    );
-    held
+    take_snapshot(reader).0
 }
 
 /// What is held, when the devices are being read.
@@ -387,67 +374,6 @@ struct PendingEvent {
     at: Instant,
     time_source: &'static str,
     modifiers_known: bool,
-}
-
-fn apply_events(reader: &Reader, events: Vec<PendingEvent>) {
-    // read_ready_events already merges descriptor heads, retaining native order
-    // within each device. Mixed clock snapshots explicitly remain unqualified.
-    let mut held = reader
-        .held
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let mut pressed = reader
-        .pressed
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for event in events {
-        let PendingEvent {
-            kind,
-            code,
-            value,
-            axes,
-            at,
-            time_source,
-            modifiers_known,
-        } = event;
-        match (kind, axes) {
-            (EV_KEY, _) if value == 0 || value == 1 => {
-                if value == 1 {
-                    held.keys.insert(code);
-                    pressed.insert(code);
-                } else {
-                    held.keys.remove(&code);
-                }
-                if matches!(code, code::BTN_LEFT | code::BTN_RIGHT) {
-                    if held.button_events.len() == 512 {
-                        held.button_events.remove(0);
-                        held.button_events_lost = true;
-                        crate::capture::engine::runtime::apparent_log(
-                            "input button queue overflow",
-                        );
-                    }
-                    let modifiers = ButtonModifiers::from_held(&held);
-                    held.button_events.push(ButtonEvent {
-                        at,
-                        time_source,
-                        button: code,
-                        pressed: value == 1,
-                        modifiers,
-                        modifiers_known,
-                    });
-                }
-            }
-            (EV_ABS, Some(ranges)) if code == ABS_X || code == ABS_Y => {
-                let (min, max) = ranges[usize::from(code)];
-                let at = f64::from(value - min) / f64::from(max - min);
-                let mut point = held.absolute.unwrap_or([0.5, 0.5]);
-                point[usize::from(code)] = at.clamp(0.0, 1.0);
-                held.absolute = Some(point);
-            }
-            (EV_REL, _) if code == REL_X || code == REL_Y => held.absolute = None,
-            _ => {}
-        }
-    }
 }
 
 /// The evdev codes of A–Z, on a US layout's positions.

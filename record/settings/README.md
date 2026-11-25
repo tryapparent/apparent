@@ -75,12 +75,15 @@ and verify it with `node record/enablement/ci/bend/check.ts`.
 ## Double-tap Shift for notes
 
 During a screen recording with typed notes available, tap Shift twice quickly
-over the recording target to open the note editor at the pointer. Hold Shift
-and move the pointer to draw. The shortcut is always available in these
-recordings. The app ignores the former `experiments.doubleShiftNotes` preference.
+over the recording target to open the note editor at the pointer. You can add
+notes to Apparent Settings during a display recording. Hold Shift and move
+the pointer to draw. The shortcut is always available in these recordings.
+The app ignores the former `experiments.doubleShiftNotes` preference.
 
 Record's Bend policy builds a checked native decision table for the input
-pollers. They keep the monotonic timestamps, live ink, pointer position and
-session guards local, so the gesture works without waiting on the renderer.
+adapters. Linux reads ordered Shift transitions from evdev when available,
+including taps that complete between polls. The adapters keep live ink, pointer
+position and session guards local, so the gesture works without waiting on the
+renderer.
 Regenerate the table with
 `node record/enablement/ci/bend/check.ts --write-native-gesture`.

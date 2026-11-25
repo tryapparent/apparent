@@ -40,6 +40,26 @@
       ]
     },
     {
+      "id": "double-shift-notes-over-settings",
+      "description": "Verify quick Shift gestures and typed notes on Apparent Settings during display capture.",
+      "platforms": ["linux-hyprland", "macos"],
+      "userEntryPoint": "Open Apparent Settings, start a display capture, point inside Settings and double-tap Shift.",
+      "prerequisites": [
+        "A packaged native build with the Electron note editor and recording permissions. For Linux, use an isolated Hyprland guest with readable evdev devices."
+      ],
+      "runner": {
+        "path": "capture/desktop/docs/native-testing.md",
+        "instructions": "Use the native display capture recipe and existing VM input runner on Linux. During recording compare an ordinary and a rapid double tap while the pointer is still, dismiss with Escape, then attach a note inside Settings and finish."
+      },
+      "expectedEvidence": [
+        "Both desktop tap sequences open the editor. A note attached inside Settings appears in the saved bundle at the intended pointer position.",
+        "A held Shift stroke can still draw. The recording controls and an active note editor do not open another editor."
+      ],
+      "limits": [
+        "Linux edge retention requires evdev access. Confirm macOS using the packaged app and native permissions."
+      ]
+    },
+    {
       "id": "recording-performance-spans",
       "description": "Verify content-free nested finish spans and real bundle instrumentation without sending telemetry.",
       "platforms": ["linux", "macos"],

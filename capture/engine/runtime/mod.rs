@@ -1237,36 +1237,6 @@ impl SharedCaptureTelemetry {
         on
     }
 
-    fn apparent_window_in(
-        &self,
-        windows: &[crate::shared::windows::RawWindow],
-        x: f64,
-        y: f64,
-        is_helper: impl Fn(i32) -> bool,
-    ) -> bool {
-        if self.notes_window_in(windows, x, y) { return true; }
-        #[cfg(target_os = "macos")]
-        let adjusted = {
-            let mut raw = windows.to_vec();
-            crate::shared::windows::constrain_dock(&mut raw, *self.dock_bounds.lock().unwrap());
-            raw
-        };
-        #[cfg(target_os = "macos")]
-        let windows = adjusted.as_slice();
-        let passthrough = self
-            .passthrough_window_ids
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .clone();
-        let own = std::process::id() as i32;
-        let source = self.capture_source_pid.load(Ordering::Acquire);
-        let note_pid = self.note_ui_pid.load(Ordering::Acquire);
-        crate::shared::windows::owned_window_at(windows, x, y, &passthrough, |pid| {
-            pid == own || (note_pid > 0 && u64::try_from(pid).ok() == Some(note_pid))
-                || (pid != source && (crate::capture::ui_process::owns(pid) || is_helper(pid)))
-        })
-    }
-
     pub fn normalize_point(&self, screen_x: f64, screen_y: f64) -> (f32, f32, u32, u32) {
         let frame = *self
             .target_frame

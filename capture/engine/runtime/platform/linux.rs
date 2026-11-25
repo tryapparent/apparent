@@ -33,7 +33,7 @@ use super::super::{
     shortcut_matches, track_shift_ink,
 };
 use crate::capture::desktop::linux::{self, input, x11};
-use crate::shared::model::{CaptureMode, InteractionEvent, TargetFrame, TargetInfo};
+use crate::shared::model::{CaptureMode, TargetFrame, TargetInfo};
 
 /// Frames are pixels already: a recording keeps at most the screen's own resolution.
 pub const MAX_CAPTURE_SCALE: f64 = 1.0;
@@ -1028,27 +1028,6 @@ pub fn start_global_input_tap(telemetry: Arc<SharedCaptureTelemetry>) {
         .spawn(move || run_key_poller(telemetry));
 }
 
-/// Logs a modifier chord (`Ctrl+Shift+C`), never ordinary typing.
-fn log_chord(telemetry: &SharedCaptureTelemetry, mods: Modifiers, vk: u16) {
-    if !(mods.ctrl || mods.super_key) {
-        return;
-    }
-    let Some(key) = shortcut_key_name(vk) else {
-        return;
-    };
-    let t_ms = telemetry.elapsed_ms();
-    telemetry.window_log_request.store(true, Ordering::Release);
-    telemetry.observe_key_context(t_ms);
-    telemetry
-        .events
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .push(InteractionEvent::Key {
-            t: t_ms,
-            shortcut: shortcut_label(mods.bits(), &key),
-        });
-}
-
 fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
     let mut prev_keys: HashSet<u16> = HashSet::new();
     let mut prev_shift_ink = false;
@@ -1066,7 +1045,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             check_tap(&telemetry);
             last_tap_check = Instant::now();
         }
-        let held = held_polled();
+        let (held, note_edges) = held_polled();
         let mods = held.mods;
         if !mods.shift {
             await_shift_release = false;
@@ -1111,7 +1090,7 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             if vk == KEY_Z && mods.ctrl && !mods.alt && !mods.shift && !mods.super_key {
                 let _ = telemetry.ui_sender.try_send(LiveOverlayEvent::UndoStroke);
             } else {
-                log_chord(&telemetry, mods, vk);
+                input_snapshot::log_chord(&telemetry, mods, vk);
             }
         }
 
@@ -1152,7 +1131,9 @@ fn run_key_poller(telemetry: Arc<SharedCaptureTelemetry>) {
             .pointer_screen
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = [x as f32, y as f32];
-        if held.note_blocked || buttons.into_iter().any(|down| down) || await_shift_release {
+        if let Some(edges) = note_edges {
+            input_snapshot::replay_note_edges(&mut note_tap, edges, (x, y), &telemetry);
+        } else if held.note_blocked || buttons.into_iter().any(|down| down) || await_shift_release {
             note_tap.reset();
         } else {
             super::observe_note_tap(&mut note_tap, Some((x, y)), Instant::now(), mods.shift, &telemetry);
