@@ -57,6 +57,7 @@ export async function stopAttempt(
   output: string,
   probe: boolean,
   traceSpans: boolean,
+  replayCpus?: string,
 ) {
   mkdirSync(output, { mode: 0o700 });
   const home = join(output, "home");
@@ -131,6 +132,7 @@ export async function stopAttempt(
         "-o",
         usage,
         "--",
+        ...(replayCpus ? ["taskset", "--cpu-list", replayCpus] : []),
         build.app,
         "reprocess",
         source.directory,
