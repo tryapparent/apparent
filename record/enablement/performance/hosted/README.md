@@ -40,8 +40,9 @@ collect a same-build noise and probe calibration, followed by serial control,
 candidate, candidate and control repeats when comparing different revisions.
 The existing owner runner qualifies decoded output, clipboard or pixel proof,
 and resource limits. The hosted adapter also requires at most 5% virtual-CPU
-steal in the Linux accounting window. It retains the CPU topology and CPU/I/O
-PSI snapshots. `record-run.json` is the successful hosted receipt. It links
+steal in the Linux accounting window. It retains the CPU topology, allowed
+CPU list and CPU/I/O PSI snapshots. Both adapters inherit the runner's
+normal scheduler allocation. `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing
 `score/frontier.ts` ledger. Its decision and active-effort rules are unchanged.
 Local and old Clanker timings are diagnostic history.
@@ -63,11 +64,6 @@ may cache runtime and graphics files from preparation. Physical first-use
 acceptance uses the separate native fixture. Profiles live outside the
 uploaded evidence.
 
-Hosted Start assigns Electron two vCPUs from distinct runner-reported cores.
-Xvfb and the framebuffer observer use the other two vCPUs. The receipt
-records both masks and their kernel readbacks. The split uses the runner's
-logical topology and does not establish exclusive physical cores.
-
 If Start fails before creating a comparison, it keeps the fixture's IPC and
 frame evidence and tries one unscored cold launch with Chromium logging.
 The diagnostic artifacts do not qualify the failed batch.
@@ -83,11 +79,6 @@ separate, cutoff-relative Engine spans from the instrumented attempts.
 Hosted Stop records a quiet CPU and I/O window after packaging, before arming
 the replay. Its existing workload CPU-pressure limit still applies to each
 arm. Completed traces and their waterfall are retained if a batch fails.
-The hosted Stop replay process is pinned to two vCPUs from distinct cores
-as reported by the runner. This leaves the other vCPUs available to the
-clipboard and display observers. The affinity and its kernel readback are
-recorded in `stop-affinity.json` and applied equally to all replay arms.
-The receipt's timing and noise apply to this two-vCPU allocation.
 
 ## Native feasibility
 

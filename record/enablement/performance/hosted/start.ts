@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,42 +20,9 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
-import { cpuNumbers, replayCpuPair } from "./replay-affinity.ts";
 import { startWaterfall } from "./start-waterfall.ts";
 
 const job = openJob("start");
-const topology = hostCounters().topology;
-const cpuListPattern = /^Cpus_allowed_list:\s+(\S+)$/m;
-const available = cpuListPattern.exec(
-  readFileSync("/proc/self/status", "utf8"),
-)?.[1];
-assert.ok(available, "Missing runner CPU affinity");
-const allowed = cpuNumbers(available);
-assert.equal(allowed.length, 4, "Expected four allowed standard runner vCPUs");
-const renderer = replayCpuPair(topology, available);
-const rendererCpus = cpuNumbers(renderer);
-const observer = allowed.filter((cpu) => !rendererCpus.includes(cpu)).join(",");
-const verified = [renderer, observer].map((mask) => {
-  const status = command(
-    "taskset",
-    ["--cpu-list", mask, "cat", "/proc/self/status"],
-    {
-      capture: true,
-      env: job.env,
-    },
-  );
-  const observed = cpuListPattern.exec(status)?.[1];
-  assert.ok(observed, "Missing pinned process CPU affinity");
-  assert.deepEqual(cpuNumbers(observed), cpuNumbers(mask));
-  return observed;
-});
-receipt(join(job.evidence, "start-affinity.json"), {
-  topology,
-  available,
-  renderer,
-  observer,
-  verified,
-});
 apt("xvfb", "xauth", "xdotool", "libgtk-3-0t64", "libnss3", "libasound2t64");
 
 async function build(checkout: string, revision: string, name: string) {
@@ -87,13 +54,7 @@ const candidate = job.calibrationOnly
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
 function runFixture(args: string[]) {
-  command(
-    "taskset",
-    ["--cpu-list", observer, process.execPath, runner, ...args],
-    {
-      env: { ...job.env, APPARENT_START_BENCH_CPUS: renderer },
-    },
-  );
+  command(process.execPath, [runner, ...args], { env: job.env });
 }
 
 function prepareAttempt(output: string, desktop: string) {
@@ -224,5 +185,4 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
-  cpuAffinity: "start-affinity.json",
 });

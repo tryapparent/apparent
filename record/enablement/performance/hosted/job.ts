@@ -172,6 +172,10 @@ export function stealSince(before: CpuSample, after: CpuSample) {
 
 export function hostCounters() {
   const online = readFileSync("/sys/devices/system/cpu/online", "utf8").trim();
+  const allowedCpuList = /^Cpus_allowed_list:\s+([0-9,-]+)$/m.exec(
+    readFileSync("/proc/self/status", "utf8"),
+  )?.[1];
+  assert.ok(allowedCpuList, "Missing runner allowed CPU list");
   const cpus = online.split(",").flatMap((range) => {
     const [start, end = start] = range.split("-").map(Number);
     assert.ok(
@@ -181,6 +185,7 @@ export function hostCounters() {
   });
   return {
     online,
+    allowedCpuList,
     availableParallelism: availableParallelism(),
     topology: cpus.map((cpu) => ({
       cpu,

@@ -30,7 +30,6 @@ const usage =
   "stop.ts [--collect] CONTROL_APPDIR NATIVE_REPORT ENGLISH_MODEL NEW_RESULTS [CANDIDATE_APPDIR] | stop.ts --score RESULTS";
 const maxPressurePercent = 5;
 const traceSpans = process.env.APPARENT_STOP_BENCH_SPANS === "1";
-const replayCpus = process.env.APPARENT_STOP_BENCH_CPUS;
 
 type Trial = Awaited<ReturnType<typeof stopAttempt>>;
 type Build = Awaited<ReturnType<typeof locateStopBuild>>;
@@ -39,7 +38,6 @@ type Evidence = {
   transcription: "whole-file";
   control: Build;
   candidate?: Build;
-  replayCpus?: string;
   trials: Trial[];
 };
 
@@ -57,11 +55,6 @@ async function collect(
   assert.equal(json(model + ".verified.json").sha256, threshold.modelSha256);
   const modelSha256 = await sha256(model);
   assert.equal(modelSha256, threshold.modelSha256);
-  if (replayCpus)
-    assert.ok(
-      hosted && /^\d+,\d+$/.test(replayCpus),
-      "Invalid hosted CPU pair",
-    );
   const stage = hosted ? stageHostedFixture : stageStopFixture;
   const fixture = await stage(reference, join(output, "source.apparent"));
   const { manifest: _, ...fixtureEvidence } = fixture;
@@ -115,7 +108,6 @@ async function collect(
       transcription: "whole-file",
       control,
       candidate,
-      replayCpus,
       trials: [],
     };
     const builds = [
@@ -133,7 +125,6 @@ async function collect(
           join(output, "arm-" + i),
           Boolean(candidate) || i === 0 || i === 3,
           traceSpans,
-          replayCpus,
         ),
       );
       writeFileSync(
@@ -237,7 +228,6 @@ async function score(output: string) {
     qualified: eligible,
     control: raw.control.version,
     candidate: raw.candidate?.version,
-    replayCpus: raw.replayCpus,
     timing: {
       ...comparison.timings[0],
       score: eligible ? comparison.timings[0].score : null,
@@ -305,7 +295,6 @@ if (mode === "--xvfb-child") {
         HOME: home,
         TMPDIR: output,
         APPARENT_STOP_BENCH_SPANS: traceSpans ? "1" : undefined,
-        APPARENT_STOP_BENCH_CPUS: hosted ? replayCpus : undefined,
       },
       stdio: "inherit",
     },
