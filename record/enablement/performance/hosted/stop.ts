@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   renameSync,
   symlinkSync,
 } from "node:fs";
@@ -23,10 +24,32 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
+import { cpuNumbers, stopReplayCpus } from "./stop-affinity.ts";
 import { fixture, model } from "./stop-input.ts";
 import { waterfall } from "./waterfall.ts";
 
 const job = openJob("stop");
+const topology = hostCounters().topology;
+const allowed = /^Cpus_allowed_list:\s+([0-9,-]+)$/m.exec(
+  readFileSync("/proc/self/status", "utf8"),
+)?.[1];
+assert.ok(allowed, "Missing runner CPU affinity");
+assert.equal(topology.length, 4, "Expected four standard runner vCPUs");
+const affinity = stopReplayCpus(topology, allowed);
+const pinned = command(
+  "taskset",
+  ["--cpu-list", affinity, "cat", "/proc/self/status"],
+  { capture: true, env: job.env },
+);
+const observed = /^Cpus_allowed_list:\s+(\S+)$/m.exec(pinned)?.[1];
+assert.ok(observed, "Missing pinned process CPU affinity");
+assert.deepEqual(cpuNumbers(observed), cpuNumbers(affinity));
+receipt(join(job.evidence, "stop-affinity.json"), {
+  topology,
+  allowed,
+  replayCpuList: affinity,
+  verifiedCpuList: observed,
+});
 apt("xvfb", "xauth", "weston", "ffmpeg", "espeak-ng", "time");
 const target = join(job.scratch, "cargo-target");
 const packaging = join(job.scratch, "appimage-packaging");
@@ -147,45 +170,12 @@ type WaterfallAttempt = {
   };
 };
 
-async function run(label: string, other?: string) {
-  await waitForQuietStart(AbortSignal.timeout(46_000));
-  const output =
-    mkdtempSync("/tmp/apparent-dev-record-hosted-stop-") + "-results";
-  const before = hostCounters();
-  const ticks = cpuSample();
-  try {
-    command(
-      process.execPath,
-      [
-        runner,
-        "--hosted-fixture",
-        control,
-        input,
-        english,
-        output,
-        ...(other ? [other] : []),
-      ],
-      {
-        env: { ...job.env, APPARENT_STOP_BENCH_SPANS: "1" },
-      },
-    );
-  } finally {
-    retain(output, join(job.evidence, label));
-    receipt(join(job.evidence, label + "-host.json"), {
-      before,
-      after: hostCounters(),
-      stealPercent: stealSince(ticks, cpuSample()),
-    });
-  }
-  assert.ok(json(join(job.evidence, label + "-host.json")).stealPercent <= 5);
-  const report = json(join(output, "comparison.json"));
-  assert.equal(report.qualified, true);
-  assert.equal(report.transcription, "whole-file");
-  assert.equal(report.timingEndpoint, "replay-launch-to-verified-clipboard");
-  if (!other) assert.equal(report.timing.score, 100);
-  const raw = json(join(output, "raw.json"));
+function retainWaterfall(evidence: string) {
+  const rawPath = join(evidence, "raw.json");
+  if (!existsSync(rawPath)) return;
+  const raw = json(rawPath);
   waterfall(
-    join(job.evidence, label, "waterfall.html"),
+    join(evidence, "waterfall.html"),
     "Hosted Record Stop",
     "Each arm has its own host clock from replay launch to verified clipboard. Engine panels start at that arm's replay cutoff.",
     raw.trials.flatMap(({ trace }: WaterfallAttempt, index: number) => {
@@ -202,6 +192,54 @@ async function run(label: string, other?: string) {
   );
 }
 
+async function run(label: string, other?: string) {
+  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
+    "cpu",
+    "io",
+  ]);
+  receipt(join(job.evidence, label + "-quiet.json"), { windows: quiet });
+  const output =
+    mkdtempSync("/tmp/apparent-dev-record-hosted-stop-") + "-results";
+  const evidence = join(job.evidence, label);
+  const before = hostCounters();
+  const ticks = cpuSample();
+  try {
+    command(
+      process.execPath,
+      [
+        runner,
+        "--hosted-fixture",
+        control,
+        input,
+        english,
+        output,
+        ...(other ? [other] : []),
+      ],
+      {
+        env: {
+          ...job.env,
+          APPARENT_STOP_BENCH_SPANS: "1",
+          APPARENT_STOP_BENCH_CPUS: affinity,
+        },
+      },
+    );
+  } finally {
+    receipt(join(job.evidence, label + "-host.json"), {
+      before,
+      after: hostCounters(),
+      stealPercent: stealSince(ticks, cpuSample()),
+    });
+    retain(output, evidence);
+    retainWaterfall(evidence);
+  }
+  assert.ok(json(join(job.evidence, label + "-host.json")).stealPercent <= 5);
+  const report = json(join(output, "comparison.json"));
+  assert.equal(report.qualified, true);
+  assert.equal(report.transcription, "whole-file");
+  assert.equal(report.timingEndpoint, "replay-launch-to-verified-clipboard");
+  if (!other) assert.equal(report.timing.score, 100);
+}
+
 await run("baseline");
 if (candidate) await run("comparison", candidate);
 receipt(join(job.evidence, "record-run.json"), {
@@ -216,4 +254,5 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
+  cpuAffinity: "stop-affinity.json",
 });

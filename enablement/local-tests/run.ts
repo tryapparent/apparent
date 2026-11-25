@@ -187,11 +187,14 @@ export function execute(plan: Command[], cwd = root, admission?: Admission, sour
   const env = { ...process.env };
   const gitVariables = sourceOnly ? Object.keys(env).filter(name => name.startsWith('GIT_')) : local.stdout.trim().split('\n');
   for (const name of gitVariables) delete env[name];
-  const run = ({ argv, cwd: directory, env: extra }: Command, environment = env) => {
+  const run = ({ argv, cwd: directory, env: extra }: Command, environment = env, lease?: number) => {
     console.error(`pre-push: [${directory}] ${argv.join(' ')}`);
     const invocation = environment.APPARENT_TIMING_FILE ? [process.execPath, '--experimental-strip-types', resolve(cwd, 'enablement/timing/command.ts'),
       argv.includes('ci') || argv.includes('install') ? 'push-setup' : argv.includes('build') ? 'push-build' : 'push-test', ...argv] : argv;
-    const result = spawnSync(invocation[0], invocation.slice(1), { cwd: resolve(cwd, directory), env: {...environment, ...extra}, stdio: 'inherit' });
+    const result = spawnSync(invocation[0], invocation.slice(1), {
+      cwd: resolve(cwd, directory), env: {...environment, ...extra},
+      stdio: lease === undefined ? 'inherit' : [lease, 'inherit', 'inherit'],
+    });
     if (result.error) throw result.error;
     if (result.status !== 0) throw Error(`Local test command failed (${result.signal || result.status}): ${argv.join(' ')}`);
   };
@@ -205,7 +208,8 @@ export function execute(plan: Command[], cwd = root, admission?: Admission, sour
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
-  if (args.length === 1 && args[0] === '--service-tests') {
+  const only = (flag: string) => args.length === 1 && args[0] === flag;
+  if (only('--service-tests')) {
     const read = (...args: string[]) => {
       const result = spawnSync('git', args, {cwd: root, encoding: 'utf8'});
       if (result.status !== 0) throw Error('Unknown candidate');
@@ -215,24 +219,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     execute(serviceCommands.slice(0, 2), root, {base, head});
     process.exit(0);
   }
-  if (args.length === 1 && args[0] === '--agent-media') {
+  if (only('--agent-media')) {
     execute(agentMediaCommands(), root, undefined, true);
     process.exit(0);
   }
-  if (args.length === 1 && args[0] === '--fixture-mac') {
+  if (only('--fixture-mac')) {
     execute(fixtureMacCommands());
     if (process.env.GITHUB_ACTIONS === 'true') publish(root);
     process.exit(0);
   }
-  if (args.length === 1 && args[0] === '--tooling') {
+  if (only('--tooling')) {
     execute(toolingCommands());
     process.exit(0);
   }
-  if (args.length === 1 && args[0] === '--onboarding') {
+  if (only('--onboarding')) {
     execute(onboardingCommands(), root, undefined, true);
     process.exit(0);
   }
-  if (args.length === 1 && args[0] === '--contracts') {
+  if (only('--contracts')) {
     execute(contractTests());
     process.exit(0);
   }

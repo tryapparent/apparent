@@ -247,7 +247,7 @@ async function main() {
     const start = await startOwnedCapture(captureId);
     assert.equal(start.capture_id, captureId); assert.equal(start.status, 'recording', 'A real captured frame is required');
     await savedForeground({
-      waitForRecordingControls: async () => {
+      prepareRecording: async () => {
         const observe = (retired = 0) => poll(() => native('snapshot'),
           frame => frame.pid !== retired && frame.frontPid === generated.pid,
           'mapped recording controls', 18_000);
@@ -259,12 +259,9 @@ async function main() {
         const {pid: replacement, windowId} = await observe(pid);
         assert.deepEqual(JSON.parse(await cli(['capture', 'state'])).state, {phase: 'recording', capture_id: captureId});
         await evidence('recording-pill-recovery', {pid, replacement, windowId, captureId});
-      },
-      prepareRecording: async () => {
         const prepared = await native('prepare', 'Finish');
-        assert.equal(prepared.prepared, true, 'Native accessibility bootstrap did not acknowledge an actual button');
-        assert.ok(Number.isSafeInteger(prepared.pid) && prepared.pid > 1, 'Prepared accessibility lacks an exact pill PID');
-        assert.equal(prepared.frontPid, generated.pid, 'Accessibility bootstrap changed the foreground');
+        assert.deepEqual([prepared.prepared, prepared.pid, prepared.windowId, prepared.frontPid],
+          [true, replacement, windowId, generated.pid], 'Expected the recovered Finish button and unchanged foreground');
         return prepared;
       },
       stop: async () => {

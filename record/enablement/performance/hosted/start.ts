@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
+import { locate } from "../local/attempt.ts";
 import {
   apt,
   command,
@@ -11,6 +12,7 @@ import {
   json,
   openJob,
   receipt,
+  sha256,
   stageRevision,
   stealSince,
 } from "./job.ts";
@@ -27,7 +29,7 @@ apt(
   "libasound2t64",
 );
 
-function build(checkout: string, revision: string, name: string) {
+async function build(checkout: string, revision: string, name: string) {
   const tree = stageRevision(checkout, revision, job, name);
   const desktop = join(tree, "capture/desktop/ui/frontend");
   const options = { cwd: desktop, env: job.env };
@@ -37,31 +39,56 @@ function build(checkout: string, revision: string, name: string) {
     options,
   );
   command(process.execPath, ["node_modules/electron/install.js"], options);
-  accessSync(
-    join(desktop, "node_modules/electron/dist/electron"),
-    constants.X_OK,
-  );
   command("npm", ["run", "build"], options);
+  const { runtime, host, renderer } = locate(desktop);
+  accessSync(runtime, constants.X_OK);
+  receipt(join(job.evidence, name + "-build.json"), {
+    revision,
+    runtimeSha256: await sha256(runtime),
+    hostSha256: await sha256(host),
+    rendererEntrySha256: await sha256(renderer),
+  });
   return desktop;
 }
 
-const control = build(job.control, job.revisions.control, "control");
+const control = await build(job.control, job.revisions.control, "control");
 const candidate = job.calibrationOnly
   ? undefined
-  : build(job.candidate, job.revisions.candidate, "candidate");
+  : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
+
+function prepare(output: string, desktop: string) {
+  const before = hostCounters();
+  try {
+    command(process.execPath, [runner, "--prepare", desktop, output], {
+      env: job.env,
+    });
+  } finally {
+    receipt(output + "-runner.json", { before, after: hostCounters() });
+  }
+}
 
 async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
-  await waitForQuietStart(AbortSignal.timeout(46_000));
+  await waitForQuietStart(AbortSignal.timeout(46_000), ["cpu", "io"]);
+  prepare(output + "-prepare-control", control);
+  if (other) prepare(output + "-prepare-candidate", other);
+  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
+    "cpu",
+    "io",
+  ]);
+  receipt(join(job.evidence, phase + "-quiet.json"), { windows: quiet });
   const host = hostCounters();
   const before = cpuSample();
+  let failure: unknown;
   try {
     command(
       process.execPath,
       [runner, control, output, ...(other ? [other] : [])],
       { env: job.env },
     );
+  } catch (error) {
+    failure = error;
   } finally {
     receipt(join(job.evidence, phase + "-runner-steal.json"), {
       before,
@@ -69,6 +96,25 @@ async function run(phase: "baseline" | "comparison", other?: string) {
       host,
       hostAfter: hostCounters(),
     });
+  }
+  if (failure) {
+    if (phase === "baseline" && !existsSync(join(output, "comparison.json"))) {
+      try {
+        command(
+          process.execPath,
+          [
+            runner,
+            "--diagnostic",
+            control,
+            join(job.evidence, phase + "-diagnostic"),
+          ],
+          { env: job.env },
+        );
+      } catch (diagnosticError) {
+        console.error(diagnosticError);
+      }
+    }
+    throw failure;
   }
   const snapshot = json(join(job.evidence, phase + "-runner-steal.json"));
   const stealPercent = stealSince(snapshot.before, snapshot.after);

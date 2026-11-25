@@ -3,11 +3,14 @@ import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
   existsSync,
+  mkdtempSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
@@ -80,8 +83,12 @@ export function locate(input: string) {
 
 export type Setup = ReturnType<typeof locate>;
 
-async function until<T>(read: () => T | undefined, label: string) {
-  const deadline = performance.now() + 6000;
+async function until<T>(
+  read: () => T | undefined,
+  label: string,
+  limitMs = 6000,
+) {
+  const deadline = performance.now() + limitMs;
   while (performance.now() < deadline) {
     const result = read();
     if (result !== undefined) return result;
@@ -160,29 +167,39 @@ async function visibleFrame(
   display: ReturnType<typeof watchDisplay>,
   after: number,
   requireTransition: boolean,
+  limitMs?: number,
 ) {
-  return until(() => {
-    const frames = display.frames;
-    const index = frames.findIndex(
-      ({ at, marker }, i) =>
-        i > 0 &&
-        at >= after &&
-        marker &&
-        frames[i + 1]?.marker &&
-        (!requireTransition || frames[i - 1].marker === null),
-    );
-    if (index < 0) return undefined;
-    return {
-      frame: frames[index],
-      gap: frames[index].at - frames[index - 1].at,
-    };
-  }, "painted recording marker");
+  return until(
+    () => {
+      const frames = display.frames;
+      const index = frames.findIndex(
+        ({ at, marker }, i) =>
+          i > 0 &&
+          at >= after &&
+          marker &&
+          frames[i + 1]?.marker &&
+          (!requireTransition || frames[i - 1].marker === null),
+      );
+      if (index < 0) return undefined;
+      return {
+        frame: frames[index],
+        gap: frames[index].at - frames[index - 1].at,
+      };
+    },
+    "painted recording marker",
+    limitMs,
+  );
 }
 
-function launch(setup: Setup, directory: string) {
+function launch(setup: Setup, directory: string, diagnostic: boolean) {
   const child = spawn(
     setup.runtime,
-    ["--no-sandbox", "--ozone-platform=x11", setup.host],
+    [
+      "--no-sandbox",
+      "--ozone-platform=x11",
+      ...(diagnostic ? ["--enable-logging=stderr"] : []),
+      setup.host,
+    ],
     {
       cwd: setup.app,
       env: {
@@ -297,18 +314,23 @@ export async function attempt(
   mode: "cold" | "warm",
   directory: string,
   display?: ReturnType<typeof watchDisplay>,
+  probe: "score" | "diagnostic" | "prepare" = "score",
 ) {
   mkdirSync(directory, { mode: 0o700 });
-  writeFileSync(join(directory, "config.json"), "{}", { mode: 0o600 });
   if (display)
     await until(
       () => (display.frames.at(-1)?.marker === null ? true : undefined),
       "hidden fixture",
     );
   const id = randomUUID();
-  const spawned = performance.now();
-  const runtime = launch(setup, directory);
+  const profile = mkdtempSync(join(tmpdir(), "apparent-dev-pill-profile-"));
+  let launched: ReturnType<typeof launch> | undefined;
+  let spawned = 0;
   try {
+    writeFileSync(join(profile, "config.json"), "{}", { mode: 0o600 });
+    spawned = performance.now();
+    const runtime = launch(setup, profile, probe === "diagnostic");
+    launched = runtime;
     if (mode === "warm") {
       sendState(runtime, 1, "hidden");
       await until(
@@ -320,6 +342,7 @@ export async function attempt(
     const start = mode === "cold" ? spawned : performance.now();
     const sent = performance.now();
     sendState(runtime, revision, "recording");
+    const observationLimitMs = probe === "prepare" ? 10_000 : 6000;
     const acknowledgement = () =>
       until(
         () =>
@@ -327,11 +350,12 @@ export async function attempt(
             ({ value }) => value.revision === revision && value.frame,
           ),
         "revision-specific frame acknowledgement",
+        observationLimitMs,
       );
     const [observed, ack] = await (async () => {
       if (display)
         return Promise.all([
-          visibleFrame(display, sent, true),
+          visibleFrame(display, sent, true, observationLimitMs),
           acknowledgement(),
         ]);
       const acknowledged = await acknowledgement();
@@ -402,7 +426,36 @@ export async function attempt(
           }
         : null,
     };
+  } catch (error) {
+    writeFileSync(
+      join(directory, "failure.json"),
+      JSON.stringify({
+        id,
+        mode,
+        diagnostic: probe !== "score",
+        probe,
+        reason: error instanceof Error ? error.message : String(error),
+        replyTimeline: (launched?.replies ?? []).map(({ value, at }) => ({
+          elapsedMs: at - spawned,
+          ready: value.ready,
+          activated: value.activated,
+          revision: value.revision,
+          frame: Boolean(value.frame),
+        })),
+        sampleCount: display?.frames.length ?? 0,
+        visibleMarkerObserved:
+          display?.frames.some(({ marker }) => marker) ?? false,
+        childExitCode: launched?.child.exitCode ?? null,
+        childSignal: launched?.child.signalCode ?? null,
+      }),
+      { mode: 0o600 },
+    );
+    throw error;
   } finally {
-    await shutDown(runtime.child);
+    try {
+      if (launched) await shutDown(launched.child);
+    } finally {
+      rmSync(profile, { recursive: true, force: true });
+    }
   }
 }

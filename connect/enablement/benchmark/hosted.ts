@@ -125,11 +125,16 @@ async function main(args: string[]) {
   process.env.TMPDIR = scratch;
   process.env.PLAYWRIGHT_BROWSERS_PATH = join(scratch, "browsers");
   const cpu = await readHostedCpu();
+  assert.ok(
+    cpu.cpuQuota.limits.every((limit) => limit.startsWith("max ")),
+    "A hosted replay unit cannot leave a quota-constrained runner cgroup",
+  );
   const runnerProfile = JSON.stringify({
     platform: "github-hosted ubuntu-24.04 x64",
     image,
     topology: cpu.topology,
     cpuQuota: cpu.cpuQuota.limits,
+    replayAccounting: "dedicated-systemd-cgroup-v1",
   });
   const environment = {
     controlSha,

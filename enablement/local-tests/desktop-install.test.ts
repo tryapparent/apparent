@@ -9,7 +9,9 @@ import {receiptStore} from './receipt.ts';
 import {root} from './run.ts';
 import {copyRunnerSources} from './fixtures/runner.ts';
 
-function fixture(action: (dir: string, env: NodeJS.ProcessEnv, git: (...args: string[]) => string) => void) {
+import {interruptedInstall} from './fixtures/install-interruption.ts';
+
+async function fixture(action: (dir: string, env: NodeJS.ProcessEnv, git: (...args: string[]) => string) => void | Promise<void>) {
   const dir = realpathSync(mkdtempSync('/tmp/apparent-dev-install-test-'));
   const env = {...process.env};
   for (const name of Object.keys(env)) if (/^(GIT_|NODE_|CI$|GITHUB_ACTIONS$|APPARENT_TIMING_FILE$)/.test(name)) delete env[name];
@@ -34,7 +36,7 @@ function fixture(action: (dir: string, env: NodeJS.ProcessEnv, git: (...args: st
   execFileSync('npm', ['install', '--package-lock-only', '--ignore-scripts', '--no-audit', '--no-fund'], {cwd: frontend, env, stdio: 'pipe'});
   git('add', '.'); git('commit', '-qm', 'baseline');
   git('update-ref', 'refs/remotes/origin/main', git('rev-parse', 'HEAD'));
-  try { action(dir, env, git); } finally {
+  try { await action(dir, env, git); } finally {
     rmSync(receiptStore(frontend), {recursive: true, force: true});
     rmSync(dir, {recursive: true, force: true});
   }
@@ -170,6 +172,9 @@ test('changing installation inputs during successful checks cannot publish a rec
   desktopDependencies(block(), dir, env, admission, run);
   assert.equal(existsSync(join(receiptStore(path), 'success.json')), false);
 }));
+
+test('an interrupted runner excludes a live install and releases the worktree for a fresh run', () =>
+  fixture((dir, env) => interruptedInstall(dir, env, block().slice(0, 2))));
 
 test('npm ci lifecycle hooks remain fresh after source-only commits', () => fixture((dir, env, git) => {
   const path = join(dir, desktopPackage), pkg = JSON.parse(readFileSync(join(path, 'package.json'), 'utf8'));

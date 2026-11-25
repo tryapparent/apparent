@@ -7,9 +7,8 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   const marker = path.join(captures, 'retention-synthetic.bin');
   await fs.writeFile(marker, Buffer.alloc(1_000_000, 42), {flag:'wx', mode:0o600});
   const original = JSON.parse(await fs.readFile(config, 'utf8'));
-  const expectedLimit = maximumMb => ({...original, retention:{...original.retention, maximumMb},
-    settingsCompatibility:{...original.settingsCompatibility, 'storage.maximumMb':maximumMb},
-    storage:{...original.storage, maximumMb}});
+  const withLimit = maximumMb => ({...original, storage:{...original.storage, maximumMb}, retention:{...original.retention, maximumMb},
+    settingsCompatibility:{...original.settingsCompatibility, 'storage.maximumMb':maximumMb}});
   const field = page.getByRole('spinbutton', {name:'Maximum storage in GB'});
   const save = page.getByRole('button', {name:'Save limit', exact:true});
   const retry = page.getByRole('button', {name:'Check saved limit'});
@@ -22,7 +21,7 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   await field.fill('12.5');
   await field.press('Enter');
   await expect(page.getByText('Storage limit saved.')).toBeVisible();
-  assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')), expectedLimit(12500));
+  assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')), withLimit(12500));
   await page.screenshot({path:path.join(output, 'storage-limit-saved.png')});
   const beforeFailure = await fs.readFile(config);
   await field.fill('10');
@@ -38,7 +37,7 @@ module.exports = async function verifyRetention(page, {config, captures, output}
   await field.fill('0');
   await field.press('Enter');
   await expect(page.getByText('No size limit', {exact:true})).toBeVisible();
-  assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')), expectedLimit(0));
+  assert.deepEqual(JSON.parse(await fs.readFile(config, 'utf8')), withLimit(0));
   const blocked = path.join(captures, 'unreadable-synthetic');
   await fs.mkdir(blocked, {mode:0o700});
   try {
