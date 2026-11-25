@@ -11,6 +11,7 @@ import { locate } from "../local/attempt.ts";
 import {
   driverCpuSnapshot,
   hostedAccountingPolicy,
+  waitForHostedQuiet,
 } from "../fixtures/host-accounting.ts";
 import {
   apt,
@@ -118,11 +119,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
   await prepare(output + "-prepare-control", control);
   if (other) await prepare(output + "-prepare-candidate", other);
-  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
-    "cpu",
-    "io",
-  ]);
-  receipt(join(job.evidence, phase + "-quiet.json"), { windows: quiet });
+  await waitForHostedQuiet(join(job.evidence, phase + "-quiet.json"));
   const host = hostCounters();
   const before = cpuSample();
   const driverBefore = driverCpuSnapshot();

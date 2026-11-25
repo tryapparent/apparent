@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { benchmarkComparison } from "../../../../shared/enablement/performance/comparison.ts";
-import { type HostedAccounting, qualifyAccounting } from "./host-accounting.ts";
+import {
+  type HostedAccounting,
+  processCpuTicks,
+  qualifyAccounting,
+} from "./host-accounting.ts";
 
 const before = {
   atMs: 100,
@@ -23,6 +27,18 @@ const after = {
   ticks: { total: 800, steal: 2 },
   throttledUs: [0, 10],
 };
+
+test("matches persistent driver processes by name and start time", () => {
+  const fields = Array<string>(42).fill("0");
+  fields[11] = "30";
+  fields[12] = "7";
+  fields[19] = "1492";
+  assert.deepEqual(processCpuTicks("8 (runner ) helper) " + fields.join(" ")), {
+    name: "runner ) helper",
+    startTicks: 1492,
+    cpuTicks: 37,
+  });
+});
 
 test("busy owned workers qualify with high total CPU PSI and quiet outside work", () => {
   const result = qualifyAccounting(before, after, 4);

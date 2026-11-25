@@ -53,7 +53,13 @@ and injected-outside CPU probes before preparing the measurement. It waits
 for the injected process to exit before any product timing.
 The service writes output directly to a private benchmark log. The adapter
 waits for the service and prints its summary after the measured process ends.
-The host receipt records the driver's cgroup CPU counters.
+The host receipt records the driver's cgroup CPU counters and persistent
+process snapshots at the measured batch boundaries. No sampling runs during
+the batch.
+Before timing, both lanes require three quiet one-second windows. With the
+benchmark stopped, total guest CPU use must be within the 5% unrelated-work
+limit as well as the existing CPU and I/O pressure limits. The receipt keeps
+all sampled windows, even if it cannot admit the batch.
 Native and standalone local replays retain their existing pressure checks.
 `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing
