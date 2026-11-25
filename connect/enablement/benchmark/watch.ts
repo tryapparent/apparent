@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { coverage, observe } from "./watch-trace.ts";
+import type { nativeSender } from "./native/sender.ts";
 
 type Request = { url(): string; resourceType(): string };
 type Route = {
@@ -41,6 +42,34 @@ type Manifest = { path: string; size: number; sha256: string };
 export const digest = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
 
+async function verifyRevocation(
+  backend: Backend,
+  token: string,
+  captureId: string,
+  url: string,
+) {
+  const list = await backend.call("/v1/shares", { token });
+  assert.ok(list.ok);
+  const { shares } = await list.json();
+  const row = shares.find(
+    (share: { captureId: string }) => share.captureId === captureId,
+  );
+  assert.match(row.id, /^[a-f0-9]{32}$/);
+  const revoked = await backend.call("/v1/shares/" + row.id, {
+    method: "DELETE",
+    token,
+  });
+  assert.ok(revoked.ok);
+  for (const path of ["/manifest.json", "/files/recording.mp4"]) {
+    const response = await fetch(url + path, {
+      redirect: "error",
+      signal: AbortSignal.timeout(10000),
+    });
+    assert.equal(response.status, 410);
+    await response.body?.cancel();
+  }
+}
+
 export async function watchAttempt({
   backend,
   origin,
@@ -51,6 +80,7 @@ export async function watchAttempt({
   variant,
   trace,
   directory,
+  sender,
 }: {
   backend: Backend;
   origin: string;
@@ -61,6 +91,7 @@ export async function watchAttempt({
   variant: "cold" | "warm";
   trace: boolean;
   directory: string;
+  sender?: ReturnType<typeof nativeSender>;
 }) {
   const attemptId = randomUUID();
   const observer = observe(trace);
@@ -126,36 +157,52 @@ export async function watchAttempt({
     fetch(url, { redirect: "error", signal: AbortSignal.timeout(10000) });
 
   try {
-    const started = performance.now();
-    const files = await observer.measure(
-      "prepare-manifest",
-      "share",
-      async () => [...assets].map(manifestFor),
-    );
-    await observer.measure("reserve", "share", async () => {
-      const reply = await call(base, "POST", { body: { files } });
-      assert.equal(reply.id, captureId);
-      assert.equal(reply.status, "pending");
-    });
-    const url = await observer.measure("issue-link", "share", async () => {
-      const reply = await call(base + "/share", "POST");
-      assert.equal(reply.status, "pending");
-      assert.match(reply.url, /\/s\/[a-f0-9]{64}$/);
-      assert.equal(new URL(reply.url).origin, origin);
-      return reply.url as string;
-    });
-    const linkAvailable = performance.now();
-    await observer.measure("transfer", "share", async () => {
-      const bytes = [...assets.values()];
-      for (const [index, file] of files.entries()) {
-        await observer.measure("put-" + index, "transfer", () =>
-          call(base + "/files/" + file.path, "PUT", { raw: bytes[index] }),
-        );
-      }
-    });
-    await observer.measure("publish", "share", async () => {
-      assert.equal((await call(base + "/complete", "POST")).status, "ready");
-    });
+    const syntheticShare = async () => {
+      const started = performance.now();
+      const files = await observer.measure(
+        "prepare-manifest",
+        "share",
+        async () => [...assets].map(manifestFor),
+      );
+      await observer.measure("reserve", "share", async () => {
+        const reply = await call(base, "POST", { body: { files } });
+        assert.equal(reply.id, captureId);
+        assert.equal(reply.status, "pending");
+      });
+      const url = await observer.measure("issue-link", "share", async () => {
+        const reply = await call(base + "/share", "POST");
+        assert.equal(reply.status, "pending");
+        assert.match(reply.url, /\/s\/[a-f0-9]{64}$/);
+        assert.equal(new URL(reply.url).origin, origin);
+        return reply.url as string;
+      });
+      const linkAvailable = performance.now();
+      await observer.measure("transfer", "share", async () => {
+        const bytes = [...assets.values()];
+        for (const [index, file] of files.entries()) {
+          await observer.measure("put-" + index, "transfer", () =>
+            call(base + "/files/" + file.path, "PUT", { raw: bytes[index] }),
+          );
+        }
+      });
+      await observer.measure("publish", "share", async () => {
+        assert.equal((await call(base + "/complete", "POST")).status, "ready");
+      });
+      return { started, url, linkAvailable, files, proof: undefined };
+    };
+    const sendNative = async (sender: NonNullable<typeof sender>) => {
+      const files = [...assets].map(manifestFor);
+      const sent = await sender.share(
+        origin,
+        token,
+        assets,
+        join(directory, variant + "-native"),
+        observer,
+      );
+      return { ...sent, files };
+    };
+    const transfer = sender ? await sendNative(sender) : await syntheticShare();
+    const { started, url, linkAvailable, files } = transfer;
     const paths = await observer.measure(
       "independent-manifest",
       "share",
@@ -279,6 +326,14 @@ export async function watchAttempt({
         path,
       );
     }
+    if (transfer.proof) {
+      await verifyRevocation(
+        backend,
+        token,
+        transfer.proof.requests[0].captureId,
+        url,
+      );
+    }
 
     const spans = observer.spans;
     const duringPlay = network.flatMap(({ startMs, endMs, ...request }) =>
@@ -319,7 +374,14 @@ export async function watchAttempt({
         openToAdvancingFrameAck: duration(opened, finished),
         shareToAdvancingFrameAck: duration(started, finished),
       },
-      proof: { manifest: files, originalBytesVerified: true, playback },
+      proof: {
+        manifest: files,
+        originalBytesVerified: true,
+        playback,
+        ...(transfer.proof
+          ? { nativeSender: { ...transfer.proof, revocationVerified: true } }
+          : {}),
+      },
       clocks: { spans: "node-monotonic-ms", playback: "page-performance-ms" },
       spans: spans.sort((a, b) => a.startMs - b.startMs),
       browserNetwork,
