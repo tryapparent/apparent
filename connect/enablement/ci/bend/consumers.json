@@ -54,6 +54,7 @@
     "web",
     "service"
   ],
+  "connect/service/src/recipient/pending-poll.bend": ["web", "service"],
   "connect/enablement/ci/bend/README.md": ["service"],
   "connect/enablement/ci/bend/": ["service"]
 }

@@ -64,6 +64,35 @@ await bendScratch(async (scratch) => {
       [false, true, true, false],
       [true, true, false],
     ]);
+    const polling = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./pending-poll.mjs";
+      console.log(JSON.stringify([
+        policy.lifetime(),
+        [[1, 23], [1, 24], [0, 1]].map(args => policy.can_poll(...args)),
+        [
+          [120000, 0, 0, true, false],
+          [120000, 0, 0, false, false],
+          [119000, 100, 1, true, false],
+          [118000, 50, 2, true, false],
+          [113000, 2200, 3, true, false],
+          [113000, 2200, 3, true, true],
+          [113000, 100, 3, true, true],
+          [250, 100, 3, true, true],
+          [250, 2200, 3, false, true]
+        ].map(args => policy.wait_ms(...args))
+      ]));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(polling), [
+      120000,
+      [true, false, false],
+      [0, 120000, 900, 3950, 2800, 0, 900, 250, 250],
+    ]);
     const reports = run(
       process.execPath,
       [

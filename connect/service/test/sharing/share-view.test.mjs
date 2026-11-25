@@ -1,9 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import vm from 'node:vm'
 import { renderShare } from '../../src/share-view.ts'
-import { pollReady } from '../../src/recipient/poll.ts'
-const shareViewScript = `(${pollReady.toString()})(document)`
 const model = { url: 'https://share.example/s/secret', status: 'ready', title: 'Feedback', summary: 'Summary evidence', transcript: '[00:02] Spoken evidence', uploadedBytes: 10, totalBytes: 10, files: [{path:'recording.mp4',url:'https://share.example/s/secret/files/recording.mp4',size:10,sha256:'a'.repeat(64)},{path:'frames/frame-01.png',url:'https://share.example/s/secret/files/frames/frame-01.png',size:0,sha256:'b'.repeat(64)}] }
 test('ready evidence is readable without JavaScript and consumption comes first', () => {
  const html = renderShare({...model,thumbnailUrl:model.url+'/thumbnail.png'})
@@ -45,21 +42,6 @@ test('incomplete and terminal states do not disclose ready evidence', () => {
  }
  const html = renderShare({...model,uploadedBytes:9})
  assert.ok(html.includes('Preparing recording')); assert.ok(!html.includes('<video'))
-})
-test('polling is same-origin, bounded, and reloads only when ready', async () => {
- let calls=0,reloads=0; const timers=[]; const status={textContent:''}
- const context={document:{querySelector:()=>({dataset:{manifest:'/s/secret/manifest.json'},querySelector:()=>status})},location:{href:model.url,origin:'https://share.example',reload:()=>reloads++},URL,AbortSignal,fetch:async(url,options)=>{assert.equal(new URL(url).origin,'https://share.example');assert.equal(options.credentials,'omit'); calls++; return {ok:true,json:async()=>({status:'pending'})}},setTimeout:(fn,ms)=>{assert.ok(ms<=5000);timers.push(fn)}}
- vm.runInNewContext(shareViewScript,context)
- for(let i=0;i<40;i++){await new Promise(r=>setImmediate(r));timers.shift()?.()}
- assert.equal(calls,24);assert.equal(reloads,0);assert.match(status.textContent,/Reload/)
- context.fetch=async()=>({ok:true,json:async()=>({status:'ready'})});timers.length=0
- vm.runInNewContext(shareViewScript,context);timers.shift()();await new Promise(r=>setImmediate(r));assert.equal(reloads,1)
-})
-test('network failure and delayed timers stop at the wall-clock deadline', async () => {
- let now=0,calls=0;const timers=[];const output={textContent:''}
- vm.runInNewContext(shareViewScript,{Date:{now:()=>now},document:{querySelector:()=>({dataset:{manifest:model.url+'/manifest.json'},querySelector:()=>output})},location:{href:model.url,origin:'https://share.example',reload:()=>assert.fail('network failure cannot claim ready')},URL,AbortSignal,fetch:async()=>{calls++;throw new Error('synthetic outage')},setTimeout:fn=>timers.push(fn)})
- now=5000;timers.shift()();await new Promise(r=>setImmediate(r));assert.equal(calls,1)
- now=120001;timers.shift()();await new Promise(r=>setImmediate(r));assert.equal(calls,1);assert.match(output.textContent,/Reload/);assert.equal(timers.length,0)
 })
 test('React hydration payload strips all captured evidence until ready and rejects cross-capture assets', () => {
  for(const status of ['pending','paused','failed','expired','revoked','deleted']) {

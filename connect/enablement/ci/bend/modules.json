@@ -4,6 +4,7 @@
     "service/src/captures/recording-list.bend",
     "service/src/reporting/activity-preference.bend",
     "service/src/support/report-policy.bend",
+    "service/src/recipient/pending-poll.bend",
     "client/typescript/src/reader/reader-route.bend",
     "client/typescript/src/account/account-status.bend",
     "client/typescript/src/renewal/credential-renewal.bend"

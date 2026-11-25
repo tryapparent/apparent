@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { fixture, id, digest } from '../helpers.mjs'
+import { checkPendingPage } from './pending-browser.ts'
 const evidence = process.env.RECIPIENT_EVIDENCE || await mkdtemp(join(tmpdir(), 'apparent-recipient-'))
 const movie = join(evidence, 'synthetic.mp4'), image = join(evidence, 'frame.png')
 execFileSync('ffmpeg', ['-y','-v','error','-f','lavfi','-i','color=c=0xf5f0e8:s=640x400:d=4:r=15','-vf',`drawbox=x=100:y=100:w=420:h=180:color=white:t=fill,drawtext=fontfile=${resolve('../../shared/assets/fonts/HostGrotesk-Variable.ttf')}:text='Synthetic capture':x=140:y=140:fontsize=28:fontcolor=0x020102,drawbox=x=140:y=200:w=270:h=40:color=0x7a58c7:t=3`,'-c:v','libx264','-pix_fmt','yuv420p','-movflags','+faststart',movie])
@@ -37,8 +38,7 @@ try {
  page.on('console',msg=>{if(msg.type()==='error'&&!msg.text().startsWith('Failed to load resource:'))errors.push(msg.text())})
  page.on('response',r=>{const path=new URL(r.url()).pathname;if(r.status()>=400&&!(r.status()===404&&path==='/favicon.ico')&&!(revoked&&r.status()===410&&path.startsWith('/s/')))badResponses.push([path,r.status()])})
  const external=[];page.on('request',r=>{if(new URL(r.url()).origin!==origin)external.push(r.url())})
- await page.goto(link.url)
- await page.getByRole('heading',{name:'Preparing recording'}).waitFor()
+ const finishManualCheck=await checkPendingPage(browser,page,link.url)
  assert.equal(await page.locator('video').count(),0)
  assert.ok(!(await page.content()).includes('Look at the billing'))
  mark('preparing');await hold()
@@ -48,6 +48,7 @@ try {
  await page.getByRole('button',{name:'Copy for agent',exact:true}).waitFor({timeout:10000})
  await page.getByRole('heading',{name:'17 November 2026',exact:true}).waitFor()
  await page.waitForFunction(()=>document.querySelector('video')?.readyState>=1)
+ await finishManualCheck()
  mark('ready');await hold()
  assert.equal(await page.locator('video').evaluate(v=>v.controls),true)
  const passage=page.getByRole('button',{name:'0:01 The purple rectangle identifies the field.'})
@@ -75,7 +76,7 @@ try {
  await page.screenshot({path:join(evidence,'ready-desktop-dark.png'),fullPage:true})
  await page.emulateMedia({colorScheme:'light'})
  mark('desktopEnd')
- results.push('real Worker pending→ready; playable native video; transcript seek; actual clipboard; no injected script')
+ results.push('immediate real Worker pending check; no-JS pending until manual reload; playable native video; transcript seek; actual clipboard; no injected script')
  for(const width of [320,390,728]){
   await page.setViewportSize({width,height:900})
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false)
