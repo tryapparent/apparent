@@ -21,6 +21,12 @@ Total guest CPU PSI is diagnostic in hosted receipts. The local replay keeps
 its 2% aggregate CPU PSI gate. Calibration also captures a real cgroup proof
 with a bounded synthetic CPU worker outside the benchmark scope.
 
+Hosted waits sample idle guest I/O before navigation, seeking two consecutive
+100 ms windows within 2% with a six-sample cap. This preflight is outside
+timing. The in-window I/O guard still decides block eligibility. Quiet repeats
+and candidate brackets run before detailed overhead and unscored diagnostics
+write their traces.
+
 To score the hosted campaign across jobs, use the downloaded and independently
 verified evidence directories in a ledger beside the artifacts:
 
