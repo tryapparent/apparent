@@ -6,6 +6,10 @@ use serde::Deserialize;
 
 use crate::capture::desktop::linux::{self, hyprland};
 
+#[path = "pin_focus.rs"]
+mod pin_focus;
+pub use pin_focus::pin_focus;
+
 const REQUEST: Duration = Duration::from_millis(65);
 const EVENTS_LIMIT: usize = 16_384;
 
@@ -59,12 +63,12 @@ pub fn stroke_focused() -> Option<Window> {
     if !window.is_ink() {
         return Some(window);
     }
-    stroke_under_ink(window, read("j/clients")?)
+    previous_under_overlay(&window, read("j/clients")?)
 }
 
-fn stroke_under_ink(ink: Window, clients: Vec<Client>) -> Option<Window> {
+fn previous_under_overlay(ink: &Window, clients: Vec<Client>) -> Option<Window> {
     if !clients.iter().any(|client| {
-        client.window == ink && client.focus_history == Some(0) && client.mapped && !client.hidden
+        client.window == *ink && client.focus_history == Some(0) && client.mapped && !client.hidden
     }) {
         return None;
     }
@@ -143,29 +147,6 @@ impl Window {
             "firefox" | "Firefox" | "org.mozilla.firefox" => Some("DocURL"),
             _ => None,
         }
-    }
-
-    pub fn size(&self) -> [i32; 2] {
-        self.size
-    }
-
-    pub fn pin_tree_identity(&self) -> Option<bool> {
-        let clients = read::<Vec<Client>>("j/clients")?;
-        let mut found = false;
-        let mut unique = true;
-        for client in clients.into_iter().filter(|client| {
-            client.window.pid == self.pid && client.mapped && !client.hidden
-        }) {
-            if client.window == *self {
-                found = true;
-            } else {
-                if client.window.title == self.title {
-                    return None;
-                }
-                unique = false;
-            }
-        }
-        found.then_some(unique)
     }
 
     pub fn unique_mapped_client(&self) -> Option<([i32; 2], String)> {
@@ -260,6 +241,7 @@ pub struct Events {
     ink_title_prefix: String,
     ink_focused: bool,
     watch_title: bool,
+    allowed_focus: Option<Vec<u8>>,
 }
 
 impl Events {
@@ -276,6 +258,7 @@ impl Events {
             ink_title_prefix: format!("Apparent,Apparent Ink {} ", std::process::id()),
             ink_focused: false,
             watch_title: false,
+            allowed_focus: None,
         }
     }
 
@@ -315,7 +298,7 @@ impl Events {
                 if let Some(active) = event.strip_prefix(b"activewindow>>") {
                     self.ink_focused = active.starts_with(self.ink_title_prefix.as_bytes());
                 } else if let Some(active) = event.strip_prefix(b"activewindowv2>>") {
-                    changed |= !std::mem::take(&mut self.ink_focused) && Some(active) != address;
+                    changed |= !std::mem::take(&mut self.ink_focused) && Some(active) != address && Some(active) != self.allowed_focus.as_deref();
                 } else {
                     changed |= changes_layout(event) || (self.watch_title && address.is_some_and(|address| {
                         event.strip_prefix(b"windowtitlev2>>")
@@ -370,8 +353,8 @@ mod tests {
                 "pinned": false, "focusHistoryID": 1
             });
             target.as_object_mut().unwrap().extend(updates.as_object().unwrap().clone());
-            stroke_under_ink(
-                serde_json::from_value(ink.clone()).unwrap(),
+            previous_under_overlay(
+                &serde_json::from_value(ink.clone()).unwrap(),
                 serde_json::from_value(serde_json::json!([overlay, target])).unwrap(),
             )
         };

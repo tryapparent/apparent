@@ -110,7 +110,17 @@ impl Bus {
         })
     }
 
+    pub fn is_showing(&self, object: &Object) -> bool {
+        self.state(object).is_some_and(|state| {
+            state & (VISIBLE | SHOWING | DEFUNCT) == VISIBLE | SHOWING
+        })
+    }
+
     pub fn active_tree(&self, pid: u32) -> Option<Object> {
+        self.window_tree(pid, None)
+    }
+
+    pub fn window_tree(&self, pid: u32, named_visible: Option<&str>) -> Option<Object> {
         let desktop = Object(REGISTRY.into(), OwnedObjectPath::try_from(ROOT).ok()?);
         let apps: Vec<Object> = self
             .proxy(&desktop, ACCESSIBLE)?
@@ -129,13 +139,20 @@ impl Bus {
                 return None;
             }
             for tree in windows {
-                if tree.0 != app.0 || !self.is_active(&tree) {
+                if tree.0 != app.0 {
                     continue;
                 }
-                let role: String = self
-                    .proxy(&tree, ACCESSIBLE)?
-                    .call("GetRoleName", &())
-                    .ok()?;
+                let accessible = self.proxy(&tree, ACCESSIBLE)?;
+                let matched = match named_visible {
+                    Some(title) => !title.is_empty() && self.is_showing(&tree)
+                        && accessible.get_property::<String>("Name").ok().as_deref() == Some(title),
+                    None => self.is_active(&tree),
+                };
+                if !matched {
+                    continue;
+                }
+                let role: String = accessible.call("GetRoleName", &()).ok()?;
+                drop(accessible);
                 if !matches!(role.as_str(), "frame" | "window" | "dialog") {
                     continue;
                 }

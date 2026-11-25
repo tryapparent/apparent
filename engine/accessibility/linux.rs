@@ -32,6 +32,7 @@ struct PinRequest {
     pin: u32,
     t: u64,
     release: u64,
+    note_pid: u32,
     x: f64,
     y: f64,
     at: Instant,
@@ -137,11 +138,11 @@ impl Prober {
         self.send(Request::Pointer(time, x, y, Instant::now()));
     }
 
-    pub fn pin(&self, pin: u32, t: u64, release: u64, x: f64, y: f64) {
+    pub fn pin(&self, pin: u32, t: u64, release: u64, x: f64, y: f64, note_pid: u32) {
         if let Some(queue) = self.0.try_lock().ok()
             .and_then(|session| Some(session.as_ref()?.pins.as_ref()?.requests.clone()))
         {
-            let _ = queue.try_send(PinRequest { pin, t, release, x, y, at: Instant::now() });
+            let _ = queue.try_send(PinRequest { pin, t, release, note_pid, x, y, at: Instant::now() });
         }
     }
 
@@ -247,27 +248,31 @@ impl Work {
         }
         self.events.drain(None)?;
         let rect = window::layout_rect([pin.x.floor() as i32, pin.y.floor() as i32, 1, 1])?;
-        let window = window::focused_for_mark(rect)?;
+        let focus = window::pin_focus(rect, pin.note_pid)?;
+        let window = focus.window;
         if crate::capture::ui_process::owns(window.pid as i32)
-            || !window.is_uncovered(rect)?
+            || !window.pin_point_clear(rect, focus.editor.as_ref())?
             || !window::share_picker_clear(rect)?
+            || pin.at.elapsed() > FRESHNESS
         {
             return None;
         }
-        let tree = self.accessibility.active_tree(window.pid)?;
-        if pin.at.elapsed() > FRESHNESS || self.events.drain_action(&window)? {
-            return None;
-        }
         let unique_client = window.pin_tree_identity()?;
+        let tree = self.accessibility.window_tree(window.pid, Some(&window.title))
+            .or_else(|| {
+                focus.editor.is_none().then(|| self.accessibility.active_tree(window.pid)).flatten()
+            })?;
         let sampled_after_ms = pin.release.saturating_sub(pin.t)
             .saturating_add(pin.at.elapsed().as_millis() as u64);
         let (elements, truncated) =
             self.accessibility.pin_tree(&tree, &window.title, window.size(), unique_client)?;
-        if !self.accessibility.is_active(&tree)
-            || window::focused_for_mark(rect).as_ref() != Some(&window)
-            || !window.is_uncovered(rect)?
+        let after = window::pin_focus(rect, pin.note_pid)?;
+        let editor = after.editor.as_ref().or(focus.editor.as_ref());
+        if after.window != window
+            || !self.accessibility.is_showing(&tree)
+            || !window.pin_point_clear(rect, editor)?
             || !window::share_picker_clear(rect)?
-            || self.events.drain_action(&window)?
+            || self.events.drain_pin(&window, editor)?
             || pin.at.elapsed() > FRESHNESS + DRAIN
         {
             return None;

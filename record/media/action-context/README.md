@@ -71,8 +71,10 @@ bounds in the form `[x, y, width, height]`. Bounds are optional and use the
 window coordinate space.
 
 A dedicated worker checks the compositor window and the accessibility root
-before and after reading. If focus or the title changes during the read, the
-pin remains in the recording without the observation. The producer reads
+before and after reading. Apparent's own note editor may take focus when the
+pin appears. In that case the worker verifies the exact editor process and the
+underlying Chromium or other app window. An unrelated focus or title change
+leaves the pin without the observation. The producer reads
 accessible names and skips editable, password, and terminal subtrees. It does
 not query text or value interfaces. The saved summary and clipboard show up to
 four named elements alongside the matching pin and label them as app data.
