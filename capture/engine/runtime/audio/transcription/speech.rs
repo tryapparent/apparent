@@ -157,7 +157,7 @@ pub(super) fn transcribe_model(audio: &Path, path: &Path) -> Result<TranscriptDa
 
     init_backends()?;
     let model = Model::load(path).with_context(|| format!("Could not load {}", path.display()))?;
-    let mut session = model.session()?;
+    let mut session = parakeet::whole_file_session(&model)?;
     let options = RunOptions {
         timestamps: TimestampKind::Word,
         language: Some("en".into()),

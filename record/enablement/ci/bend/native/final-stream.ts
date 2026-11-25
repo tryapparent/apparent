@@ -13,6 +13,7 @@ export function finalStreamTable(directory: string): {
   allowed: boolean[];
   install: boolean[];
   pause: boolean[];
+  cpuThreads: number[];
 } {
   return JSON.parse(
     run(
@@ -24,6 +25,9 @@ export function finalStreamTable(directory: string): {
         import policy from "./final-stream.mjs";
         console.log(JSON.stringify({
           allowance: policy.eof_punctuation_start_allowance_ms(),
+          cpuThreads: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 64, 4294967295].map(
+            (available) => policy.whole_file_cpu_threads(available),
+          ),
           pause: Array.from({ length: 4 }, (_, mask) =>
             policy.pause_capture(Boolean(mask & 2), Boolean(mask & 1)),
           ),
@@ -54,7 +58,8 @@ if (import.meta.main) {
       undefined,
       "record/transcription/",
     );
-    const { allowance, allowed, install, pause } = finalStreamTable(scratch);
+    const { allowance, allowed, install, pause, cpuThreads } =
+      finalStreamTable(scratch);
     assert(Number.isInteger(allowance) && allowance > 0 && allowance <= 1000);
     assert(
       allowed.length === 8 &&
@@ -65,6 +70,7 @@ if (import.meta.main) {
         install.every((value, index) => value === (index === 6)),
     );
     assert.deepEqual(pause, [false, false, false, true]);
+    assert.deepEqual(cpuThreads, [0, 1, 1, 2, 3, 4, 5, 6, 7, 8, 8, 8, 8]);
     process.stdout.write(
       `pub(crate) const EOF_PUNCTUATION_START_ALLOWANCE_MS: i64 = ${allowance};
 fn allows_resident_final(builtin: bool, installed: bool, preview: bool) -> bool {
@@ -78,6 +84,10 @@ fn allows_resident_install(resident: bool, configured: bool, preparing: bool) ->
 pub(crate) fn allows_capture_pause(local_background: bool, word_probe: bool) -> bool {
     const PAUSE_CAPTURE: [bool; 4] = [${pause.join(", ")}];
     PAUSE_CAPTURE[usize::from(local_background) * 2 + usize::from(word_probe)]
+}
+pub(super) fn whole_file_cpu_threads(available: usize) -> i32 {
+    const WHOLE_FILE_CPU_THREADS: [i32; 10] = [${cpuThreads.slice(0, 10).join(", ")}];
+    WHOLE_FILE_CPU_THREADS[available.min(WHOLE_FILE_CPU_THREADS.len() - 1)]
 }
 `,
     );

@@ -26,6 +26,12 @@ the experiment leaves the microphone and platform permission checks in place.
 macOS uses the existing packaged Metal backend and CPU fallback. Linux uses the
 existing dynamic native backend.
 
+For whole-file Parakeet on the Linux CPU backend, Record's Bend policy leaves
+one logical CPU available for concurrent work when the process has more than
+one. It keeps the provider's eight-thread ceiling and uses automatic sizing
+when the OS cannot report capacity. The Engine adapter reads the effective
+capacity and passes the compiled policy result to the native session.
+
 Run the Record Bend checks and the transcription package tests to verify policy
 and adapter behavior. For native proof, stage verified Parakeet in
 `APPARENT_MODELS_DIR` and Nemotron in its `preview/` subdirectory. Set
