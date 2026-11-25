@@ -110,11 +110,10 @@ from the relevant-input key, permitting reuse across unrelated clean commits.
 Symlink targets and installation changes are bound. Reuse requires the exact
 checked-out candidate, no hidden flags and integration with current origin/main.
 
-Desktop dependency reuse qualifies `npm ci` through its real lock/install graph,
-reviewed lifecycle scripts, local packages, generators, runtime/configuration and
-installed bytes. Selected unit/Electron checks execute fresh even on an install
-hit. The complete block holds a worktree-private Git mutex because npm replaces
-node_modules. Interrupted locks require owner verification before removal.
+Desktop reuse checks the install graph, lifecycle, inputs and installed bytes.
+Unit and Electron checks always run. System Perl `flock` protects the worktree
+until the runner and current command both exit. Preserve the lease file inode.
+Verify ownership before removing a legacy lock directory.
 
 Receipts extend `receipt.ts`. Storage is automatically discovered in a private
 worktree-specific `/tmp/apparent-dev-local-reuse-<hash>-<random>/` job. Caller receipt

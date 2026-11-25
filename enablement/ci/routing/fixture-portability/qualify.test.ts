@@ -10,7 +10,8 @@ import {currentStream} from '../streams.ts';
 import {selection, commands, contractTests, toolingCommands} from '../../../local-tests/run.ts';
 
 const source = process.cwd();
-const blobs = () => new Map([...fixtureInputs].map(path => [path, readFileSync(join(source, path), 'utf8')]));
+const interruption = 'enablement/local-tests/fixtures/install-interruption.ts';
+const blobs = () => new Map([...fixtureInputs, interruption].map(path => [path, readFileSync(join(source, path), 'utf8')]));
 test('module parsing ignores synthetic source strings but sees same-line production imports', () => {
   assert.deepEqual(moduleImports(`const fixture = "import './native.ts';";`), []);
   assert.deepEqual(moduleImports(`const before = 1; import './native.ts';`), ['./native.ts']);
@@ -52,6 +53,7 @@ test('audited real fixture sources qualify; new reachable helpers/tests execute,
   const publisherTest = 'public/enablement/cd/publish-pages.test.ts';
   files.set(publisherTest, readFileSync(join(source,publisherTest),'utf8'));
   assert.deepEqual(qualifyFixtures(files, [...fixtureInputs]), [...fixtureInputs]);
+  assert.deepEqual(qualifyFixtures(files, [interruption]), [interruption]);
   assert.equal(fixturePlatformBoundary('', "execFileSync('cargo', ['test']);"), true);
   const helper = 'enablement/local-tests/fixtures/helper.ts';
   files.set(helper, 'export const value = 1;');

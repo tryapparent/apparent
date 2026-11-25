@@ -15,11 +15,20 @@ function declaration(name: string) {
   assert.ok(end > start);
   return source.slice(start, end + 3);
 }
-test('prepare dispatches through early admission; clicks and snapshots retain their own observation paths', () => {
-  assert.match(source, /op == "prepare" \? observeForPreparation\(req, out\) :\s*\(op == "click" \? observeBeforeInput\(req, out\) : observe\(req, out\)\)/);
+test('Finish prepares through accessibility without OCR while clicks retain OCR and hit verification', () => {
+  const prepare = source.indexOf('let receipt = try preparePillAccessibility(req)');
+  const observe = source.indexOf('op == "click" ? observeBeforeInput(req, out)');
+  assert.ok(prepare > 0 && prepare < observe);
+  assert.doesNotMatch(declaration('preparePillAccessibility'), /\bobserve\(|recognizeWords\(|mouseMoved/);
+  assert.match(declaration('buttonIdentity'), /kAXEnabledAttribute/);
+  assert.match(declaration('ownedAccessibilityButton'), /expected\.rect\.contains\(CGRect/);
+  assert.match(source.slice(observe), /bounds\.contains|OCR target outside owned image/);
+  const consumer = readFileSync(new URL('../../../capture/desktop/ui/frontend/tests/foreground/mac.ts', import.meta.url), 'utf8');
+  assert.match(consumer, /prepareRecording: async \(\) => \{[\s\S]*?native\('prepare', 'Finish'\)/);
+  assert.doesNotMatch(consumer, /waitForRecordingControls|includes\('finish'\)/);
 });
 const swiftTest = process.platform === 'darwin' ? test : test.skip;
-swiftTest('production Swift bootstrap overlaps OCR and refuses changed ownership, foreground, budget and provider failures', () => {
+swiftTest('production Swift bootstrap handles the icon-only control and refuses ownership, foreground, budget and provider failures', () => {
   const job = mkdtempSync(join(tmpdir(), 'mac-pill-bootstrap-'));
   try {
     const path = join(job, 'bootstrap.swift');
@@ -29,12 +38,12 @@ import CoreGraphics
 struct Refusal: Error { let message: String }
 func need(_ yes: @autoclosure () throws -> Bool, _ message: String) throws { if try !yes() { throw Refusal(message: message) } }
 struct Pill { let pid: pid_t; let id: UInt32; let rect: CGRect }
-struct Word {}
 final class Trace {
     func requireComplete() throws { if fault == "trace" { throw Refusal(message: "trace failure") } }
     func add(_ fields: [String: Any]) {}
 }
 var clickTrace: Trace? = Trace()
+let clickTraceName: String? = "private-trace"
 var now = 0.0, admittedAt = -1.0
 var events: [String] = []
 var fault = ""
@@ -51,50 +60,47 @@ func admitPillAccessibility(_ expected: Pill) throws {
     if fault == "admission" { throw Refusal(message: "AX failure") }
     admittedAt = now; now += 0.2
 }
-func observe(_ req: [String: Any], _ png: URL) throws -> ([String: Any], [Word], Set<pid_t>) {
-    events.append("ocr")
-    if fault == "ocr" { throw Refusal(message: "OCR failure") }
-    now += fault == "budget" ? 8 : 5.34
+func ancestry(_ pid: pid_t) throws -> Set<pid_t> {
+    events.append("ancestry")
+    if fault == "ancestry" { throw Refusal(message: "Ancestry failure") }
+    if fault == "budget" { now += 8 }
+    return [pid]
+}
+func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint?, descendants: Set<pid_t>) throws -> [String: Any]? {
+    precondition(label == "Finish" && point == nil && descendants == [42])
+    if events.last != "tree" { events.append("tree") }
+    if fault == "tree" { throw Refusal(message: "ambiguous or unavailable tree") }
+    if ["neverReady", "disabled"].contains(fault) || now - admittedAt < 2 { return nil }
     if fault == "pid" { current = Pill(pid: 43, id: current.id, rect: current.rect) }
     if fault == "window" { current = Pill(pid: current.pid, id: 8, rect: current.rect) }
     if fault == "bounds" { current = Pill(pid: current.pid, id: current.id, rect: .zero) }
     if fault == "foreground" { foreground = 100 }
-    return (["pid": Int(current.pid), "windowId": Int(current.id),
-        "bounds": [current.rect.minX,current.rect.minY,current.rect.width,current.rect.height],
-        "frontPid": fault == "observedFront" ? 100 : Int(foreground)], [], [current.pid])
-}
-func ownedAccessibilityButton(_ expected: Pill, label: String, point: CGPoint, descendants: Set<pid_t>) throws -> [String: Any]? {
-    events.append("tree")
-    if fault == "tree" { throw Refusal(message: "ambiguous or unavailable tree") }
-    if fault == "neverReady" || now - admittedAt < 2 { return nil }
     return ["pid": Int(expected.pid), "label": label]
 }
 // Virtual time only replaces the wait/provider boundary, never the production
 // ordering and guards under test. No AppKit or physical input is linked here.
 enum Thread { static func sleep(forTimeInterval seconds: Double) { now += seconds } }
-` + ['currentPill', 'observeForPreparation', 'preparePillAccessibility'].map(declaration).join('\n') + String.raw`
-let png = URL(fileURLWithPath: "/unused-synthetic.png")
-for scenario in ["", "unowned", "wrongFront", "admission", "ocr", "pid", "window", "bounds", "foreground", "observedFront", "budget", "tree", "neverReady", "trace"] {
+` + ['currentPill', 'preparePillAccessibility'].map(declaration).join('\n') + String.raw`
+for scenario in ["", "unowned", "wrongFront", "admission", "ancestry", "pid", "window", "bounds", "foreground", "disabled", "budget", "tree", "neverReady", "trace"] {
     fault = scenario; now = 0; admittedAt = -1; events = []; foreground = 99
     current = Pill(pid: 42, id: 7, rect: CGRect(x: 1, y: 2, width: 100, height: 30))
-    let expected = current
     var passed = false
     do {
-        _ = try observeForPreparation(["expectedFrontPid": scenario == "wrongFront" ? 100 : 99], png)
-        _ = try preparePillAccessibility([:], expected, label: "Finish", point: .zero, descendants: [42])
+        let result = try preparePillAccessibility(["expectedFrontPid": scenario == "wrongFront" ? 100 : 99])
+        precondition(result["prepared"] as? Bool == true && result["pid"] as? Int == 42 && result["windowId"] as? Int == 7)
         passed = true
     } catch {}
     precondition(passed == scenario.isEmpty, "Unexpected acceptance: \(scenario)")
     if scenario.isEmpty {
-        precondition(events == ["admit", "ocr", "tree"], "Admission must precede OCR exactly once")
-        precondition(now < 8 && now >= 5.34)
+        precondition(events == ["admit", "ancestry", "tree"])
+        precondition(now < 8 && now >= 2)
     }
     if ["unowned", "wrongFront"].contains(scenario) { precondition(events.isEmpty) }
     if scenario == "admission" { precondition(events == ["admit"]) }
-    if ["ocr", "pid", "window", "bounds", "foreground", "observedFront", "budget"].contains(scenario) {
-        precondition(!events.contains("tree"), "Failed observation must never reach receiver acceptance")
+    if ["ancestry", "budget"].contains(scenario) {
+        precondition(!events.contains("tree"), "Preflight failure must never reach the tree")
     }
-    if scenario == "neverReady" { precondition(now >= 8 && now < 8.1) }
+    if ["neverReady", "disabled"].contains(scenario) { precondition(now >= 8 && now < 8.1) }
 }
 print("14 production bootstrap scenarios passed")
 `);
