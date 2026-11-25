@@ -12,10 +12,16 @@ type State = {
   desktopShortcutPossible: boolean;
 };
 
+type StartError = {
+  kind: "record-start-error";
+  title: string;
+  description: string;
+};
+
 declare global {
   interface Window {
     apparentQuit: {
-      state(): Promise<State>;
+      state(): Promise<State | StartError>;
       decide(quit: boolean, checked: boolean | null): Promise<boolean>;
       close(): void;
     };
@@ -117,7 +123,16 @@ void window.apparentQuit
   .state()
   .then((state) => {
     createRoot(document.getElementById("root")!).render(
-      <QuitDialog state={state} />,
+      "kind" in state ? (
+        <ErrorDialog
+          open
+          title={state.title}
+          description={state.description}
+          onClose={() => window.apparentQuit.close()}
+        />
+      ) : (
+        <QuitDialog state={state} />
+      ),
     );
   })
   .catch(() => window.apparentQuit.close());
