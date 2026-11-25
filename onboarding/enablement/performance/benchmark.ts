@@ -19,6 +19,11 @@ import {
   benchmarkComparison,
   type Matched,
 } from "../../../shared/enablement/performance/comparison.ts";
+import {
+  hostedContention,
+  hostedLimits,
+  startHostedMeter,
+} from "./hosted-contention.ts";
 
 const [
   runtime,
@@ -74,10 +79,9 @@ const hostPsiLimitPercent = 10;
 const minimumHostIdlePercent = 30;
 const minimumHostAvailableMemoryKiB = 1024 * 1024;
 const hostWaitLimitMs = 30_000;
-const hostedIoPressureLimitPercent = 5;
-const hostedStealLimitPercent = 5;
 const cohort = process.env.APPARENT_ONBOARDING_HOSTED_COHORT;
 if (hosted) assert.match(cohort ?? "", /^[a-f0-9]{64}$/);
+const hostedMeter = hosted ? await startHostedMeter() : undefined;
 const hostIdentity = {
   hostname: hostname(),
   kernel: (await readFile("/proc/sys/kernel/osrelease", "utf8")).trim(),
@@ -137,6 +141,33 @@ function cpuPercentages(before: string, after: string) {
   return { idle: (100 * delta[3]) / total, steal: (100 * delta[7]) / total };
 }
 async function waitForQuietHost(dir: string) {
+  if (hostedMeter) {
+    const deadline = performance.now() + hostWaitLimitMs;
+    let before = await hostedMeter.sample();
+    const samples = [];
+    for (;;) {
+      await delay(1000);
+      const after = await hostedMeter.sample();
+      const contention = hostedContention(
+        before,
+        after,
+        hostedMeter.ticksPerSecond,
+      );
+      samples.push({ before, after, contention });
+      if (contention.qualified || performance.now() >= deadline) {
+        await writeFile(
+          join(dir, "admission.json"),
+          JSON.stringify(samples, null, 2) + "\n",
+        );
+        assert(
+          contention.qualified,
+          "Hosted runner admission did not meet interference guards",
+        );
+        return;
+      }
+      before = after;
+    }
+  }
   const deadline = performance.now() + hostWaitLimitMs;
   const cpu = async () =>
     (await readFile("/proc/stat", "utf8")).split("\n", 1)[0];
@@ -151,11 +182,7 @@ async function waitForQuietHost(dir: string) {
     const psi = psi10(cpuPressure);
     const io = psi10(ioPressure, "full");
     const admitted =
-      psi <= hostPsiLimitPercent &&
-      idle >= minimumHostIdlePercent &&
-      (!hosted ||
-        (io <= hostedIoPressureLimitPercent &&
-          steal <= hostedStealLimitPercent));
+      psi <= hostPsiLimitPercent && idle >= minimumHostIdlePercent;
     samples.push({
       before,
       after,
@@ -208,6 +235,7 @@ async function observation(
       APPARENT_ONBOARDING_PROFILE_ROOT: scratch,
     };
     delete (env as NodeJS.ProcessEnv).WAYLAND_DISPLAY;
+    const before = await hostedMeter?.sample();
     const child = spawn(
       "xvfb-run",
       [
@@ -226,7 +254,19 @@ async function observation(
       },
     );
     const [code, signal] = await once(child, "exit");
-    assert.equal(code, 0, "Click-through exited " + signal);
+    const after = await hostedMeter?.sample();
+    const hostedTrial =
+      before && after && hostedMeter
+        ? hostedContention(before, after, hostedMeter.ticksPerSecond)
+        : undefined;
+    if (hostedTrial) {
+      await writeFile(
+        join(dir, "hosted-contention.json"),
+        JSON.stringify({ before, after, contention: hostedTrial }, null, 2) +
+          "\n",
+      );
+    }
+    assert.equal(code, 0, "Click-through exited " + (signal ?? code));
     const receiptPath = join(dir, "click-through-1.json");
     const raw = JSON.parse(await readFile(receiptPath, "utf8")) as Raw;
     assert.equal(raw.variant, variant);
@@ -266,18 +306,17 @@ async function observation(
     );
     const { idle, steal } = cpuPercentages(hostCpuBefore, hostCpuAfter);
     const valid =
-      pressure <= hostPsiLimitPercent &&
-      idle >= minimumHostIdlePercent &&
       raw.environment.memAvailableKiB >= minimumHostAvailableMemoryKiB &&
-      (!hosted ||
-        (io <= hostedIoPressureLimitPercent &&
-          steal <= hostedStealLimitPercent));
+      (hostedTrial
+        ? hostedTrial.qualified
+        : pressure <= hostPsiLimitPercent && idle >= minimumHostIdlePercent);
     return {
       valid,
       pressure,
       idle,
       ioPressure: io,
       steal,
+      hostedContention: hostedTrial,
       build,
       receiptPath: relative(job, receiptPath),
       raw,
@@ -444,10 +483,10 @@ const summary = {
   control,
   candidate,
   contention: {
-    hostPsiLimitPercent,
-    minimumHostIdlePercent,
     minimumHostAvailableMemoryKiB,
-    ...(hosted && { hostedIoPressureLimitPercent, hostedStealLimitPercent }),
+    ...(hosted
+      ? { hostedAttribution: "cgroup-v2", ...hostedLimits }
+      : { hostPsiLimitPercent, minimumHostIdlePercent }),
   },
   baseline,
   observations,

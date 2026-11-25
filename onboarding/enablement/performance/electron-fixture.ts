@@ -130,17 +130,51 @@ export function launchElectron(options: {
 
 export type Surface = Awaited<ReturnType<typeof observer.connectToEndpoint>>;
 export async function visible(page: Surface, selector: string) {
-  await observer.waitFor(async () => {
-    const ready = await page.evaluate<boolean>(`(() => {
+  const hosted = process.env.APPARENT_ONBOARDING_HOSTED_SCOPE !== undefined;
+  const readReady = async <T>(observe: () => Promise<T>) => {
+    try {
+      return await observe();
+    } catch (error) {
+      if (
+        hosted &&
+        error instanceof Error &&
+        error.message === "Local CDP timed out on Runtime.evaluate" &&
+        !page.closed()
+      )
+        return undefined;
+      throw error;
+    }
+  };
+  await observer
+    .waitFor(async () => {
+      const ready = await readReady(() =>
+        page.evaluate<boolean>(`(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         const rect = el?.getBoundingClientRect();
         return document.visibilityState === "visible" && !!rect?.width && !!rect.height &&
           getComputedStyle(el).visibility === "visible" && !el.disabled && !el.closest('[inert]') &&
           rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth;
-      })()`);
-    return ready || undefined;
-  }, selector);
+      })()`),
+      );
+      return ready || undefined;
+    }, selector)
+    .catch((cause) => {
+      throw Error("Could not read actionable layout for " + selector, {
+        cause,
+      });
+    });
   const layout = performance.now();
-  await page.painted();
+  const paint = async () =>
+    await readReady(async () => {
+      await page.painted();
+      return true;
+    });
+  await (hosted ? observer.waitFor(paint, selector + " paint") : paint()).catch(
+    (cause) => {
+      throw Error("Could not observe renderer paint for " + selector, {
+        cause,
+      });
+    },
+  );
   return layout;
 }

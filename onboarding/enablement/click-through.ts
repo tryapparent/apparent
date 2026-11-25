@@ -70,6 +70,9 @@ const identity = {
     "./performance/click-trace.ts",
     "./performance/electron-fixture.ts",
     "./performance/whiteboard.ts",
+    ...(process.env.APPARENT_ONBOARDING_HOSTED_SCOPE
+      ? ["./performance/hosted-contention.ts"]
+      : []),
     "../../shared/enablement/performance/electron-observer.ts",
     "../../shared/enablement/performance/measurement.ts",
   ]),

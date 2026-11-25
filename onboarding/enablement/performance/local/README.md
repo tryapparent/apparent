@@ -29,10 +29,14 @@ same-job calibration qualifies. Each batch uses the same serial
 control/candidate/candidate/control order, including the same-build
 calibration and tracing-overhead checks. A failing prerequisite, output
 check or resource guard fails the run and leaves the available evidence.
-The hosted guard retains CPU PSI, idle and memory limits and also requires
-at most 5% full I/O PSI and 5% guest CPU steal. The readings describe the
-runner OS and its exposed vCPU topology. They do not expose hypervisor
-placement.
+The hosted adapter puts the click-through, Electron processes, Xvfb, and
+observer in one owned cgroup without changing the runner's CPU allocation.
+Receipts include total guest CPU PSI and the sampled workload CPU counters.
+The hosted guard subtracts attributable workload CPU from guest-wide CPU
+use and requires at most 5% outside CPU, 5% guest steal, and 5% full I/O
+pressure. It rejects any new throttled periods in the workload hierarchy.
+The readings describe the runner OS and its exposed vCPU topology. They do
+not expose hypervisor placement.
 
 ## Local developer replay
 
@@ -84,10 +88,10 @@ parallel spans twice. Accepted ink and the Whiteboard Close action have their ow
 the first usable surface. Other stage times and CPU, process RSS, output size,
 verification, candidate stage regression and contention guards are in `benchmark.json`. A qualified
 control is normalized to 100. Preserve diagnostic receipts for rejected runs
-and repeat on a quiet host. The scored fixture allows up to 10% host CPU PSI,
-requires at least 30% host idle time and 1 GiB available memory, and retains the
-raw resource observations. Compare native capture resource guardrails in the
-VM lane before retaining a product improvement.
+and repeat on a quiet host. Both runs require at least 1 GiB available memory.
+Local replay retains the original 10% host CPU PSI and 30% host idle guards.
+Compare native capture resource guardrails in the VM lane before retaining
+a product improvement.
 
 A focused campaign ledger is an array of entries with `hypothesis` and
 `activeSeconds`. Add the path to a matched `comparison`, or an `outcome` and a
