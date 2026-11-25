@@ -1,6 +1,25 @@
 {
   "scenarios": [
     {
+      "id": "import-local-movie",
+      "description": "Import a plain movie through the packaged CLI and read the resulting bundle.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Run apparent import clip.mov, then use apparent inspect and apparent zoom on the returned path.",
+      "prerequisites": [
+        "Packaged Apparent CLI and settings runtime, Node 22, and FFmpeg for fixture creation and evidence decoding."
+      ],
+      "runner": {
+        "path": "record/media/test/package.ts",
+        "instructions": "Run node --experimental-strip-types record/media/test/package.ts --binary <packaged-cli> --settings <packaged-settings-root>."
+      },
+      "expectedEvidence": [
+        "The original and imported movie have identical bytes. The private bundle has import provenance, a readable contact sheet and zoom image, and can be reprocessed. Existing destinations and failed input remain safe."
+      ],
+      "limits": [
+        "Synthetic silent and narrated movies verify local import and the transcription handoff. The deterministic transcriber does not measure recognition accuracy."
+      ]
+    },
+    {
       "id": "compact-recording-pill",
       "description": "Verify the compact recording row, live captions, and capture commands.",
       "platforms": ["linux", "macos"],

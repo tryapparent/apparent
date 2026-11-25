@@ -1,11 +1,31 @@
 ---
 name: apparent
-description: Use when the user invokes /apparent, asks to read their latest Connect recording, or provides an Apparent capture or handoff. Match narration to clicks, drawings and annotated frames to understand what the user is showing.
+description: Use when the user invokes /apparent, asks to read their latest Connect recording, or provides an Apparent handoff or a local MP4 or MOV for review. Match narration to clicks, drawings and annotated frames to understand what the user is showing.
 ---
 
 # Apparent captures
 
 Apparent records someone's screen, voice, clicks and red ink, then packs the result into a `.apparent` folder (a bundle). They send it to show you a problem instead of describing it, so the capture is the bug report. Read it closely before you answer, and don't ask them to explain again what the capture already shows. If something is unclear, look closer with `apparent zoom` first.
+
+## Read a plain video attachment
+
+If the user supplies a local MP4 or MOV instead of a bundle, use the actual
+attachment path. Check that the installed CLI offers `apparent import --help`,
+then import into a new private directory you own:
+
+```sh
+apparent import /path/to/clip.mp4 --out /path/to/private/review.apparent
+apparent inspect /path/to/private/review.apparent
+apparent zoom /path/to/private/review.apparent --at 0:17
+```
+
+Open the generated `contact-sheet.png` alongside the timed summary. Use a
+spoken phrase as the zoom target when the transcript is available. Import
+preserves the original movie, uses the configured transcriber, and keeps the
+bundle local. Click events, editable ink, and window metadata are unavailable
+for a plain movie. If the source has no audio or transcription is unavailable,
+continue with the images and state the limitation. If the installed CLI lacks
+import support, use the supported local media tools available in the session.
 
 ## Open the latest Connect recording
 

@@ -264,9 +264,6 @@ pub fn export(
         }
     }
 
-    // The audio: an iPhone movie's own track (full quality, on the movie's clock), else
-    // `audio.wav`, which Apparent records from the bundle's start, `video_offset_ms` before the
-    // video's.
     let wav = bundle
         .audio
         .as_ref()
@@ -282,7 +279,7 @@ pub fn export(
         (None, 0, 0)
     } else {
         generated = None;
-        if bundle.source.as_deref() == Some("iphone") && embedded_audio_usable {
+        if matches!(bundle.source.as_deref(), Some("iphone" | crate::shared::model::IMPORTED_MOVIE_SOURCE)) && embedded_audio_usable {
             (Some(video.clone()), 0, probe.duration_ms)
         } else if let Some(wav) = wav.as_ref() {
             let wav_ms = wav_duration_ms(wav)?;

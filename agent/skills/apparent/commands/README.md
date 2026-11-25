@@ -45,6 +45,7 @@ send to a session or add automatic paste. See `capture/agent/docs/agent-video-wo
 for bounded recovery and video QA. Check installed help before using new flags on an older build.
 
 ```sh
+apparent import <movie.mp4-or-mov> [--out review.apparent]  # build a local bundle
 apparent inspect <bundle>               # summary.md, the text above
 apparent inspect <bundle> --json        # apparent.json
 apparent inspect <bundle> --marks       # the marks, numbered as in the text [--json]

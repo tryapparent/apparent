@@ -6,6 +6,7 @@ import {chmodSync, copyFileSync, mkdtempSync, mkdirSync, readFileSync, rmSync, s
 import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {qualifyMovieImport} from './import/package.ts';
 import {qualifyAudioIngestion} from './audio-package.ts';
 import {qualifyTranscript} from './transcript/package.ts';
 import {qualifySpeechCues} from '../../enablement/media/cues-package.ts';
@@ -77,8 +78,6 @@ try {
   assert(Math.abs(Number(result.format.duration) - 1) <= 0.1);
   ffmpeg(['-xerror', '-i', output, '-f', 'null', '-']);
   assert.equal(hash(movie), original); assert.equal(hash(join(bundle, 'apparent.json')), metadata);
-  // The normal file-ingestion caller uses the same container metadata contract.
-  // A silent fixture avoids installing/running a speech model in package proof.
   const input = join(root, 'ingest.apparent'), rebuilt = join(root, 'rebuilt.apparent');
   mkdirSync(input, {mode: 0o700});
   const silent = join(input, 'recording.mp4');
@@ -104,11 +103,10 @@ try {
     ffmpeg(['-xerror', '-i', file, '-f', 'null', '-']);
   }
   assert.equal(hash(silent), beforeIngestion); assert.equal(hash(join(input, 'apparent.json')), beforeManifest);
-  // Storage consumes this actual assembled bundle through its staged worker and
-  // native CLI. Its owner checks age/policy decisions without executing cleanup.
   execFileSync(process.execPath, ['--experimental-strip-types',
     fileURLToPath(new URL('../../storage/test/package.ts', import.meta.url)),
     '--binary', binary, '--source-bundle', rebuilt], {stdio: 'inherit', timeout: 200_000});
+  qualifyMovieImport({binary, root, home, runtimeDirectory, silent});
   const marked = join(root, 'marked.apparent'), markedOut = join(root, 'marked-rebuilt.apparent');
   mkdirSync(marked, {mode:0o700}); copyFileSync(silent, join(marked,'recording.mp4'));
   chmodSync(join(marked,'recording.mp4'),0o600);

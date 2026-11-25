@@ -47,6 +47,8 @@ pub fn parse_clock_ms(input: &str) -> Option<u64> {
     }
 }
 
+pub const IMPORTED_MOVIE_SOURCE: &str = "importedMovie";
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApparentBundle {
@@ -82,7 +84,6 @@ pub struct ApparentBundle {
     pub video_offset_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<String>,
-    /// Where the pictures came from when it isn't this Mac's screen (`"iphone"`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

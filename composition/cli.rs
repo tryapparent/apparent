@@ -1,3 +1,6 @@
+#[path = "../engine/native/movie_import/mod.rs"]
+mod movie_import;
+
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -321,6 +324,12 @@ enum Command {
     Retranscribe {
         /// Path to `.apparent` bundle directory or `latest`.
         bundle: PathBuf,
+    },
+    #[command(about = "Import a local MP4 or MOV as an Apparent bundle")]
+    Import {
+        movie: PathBuf,
+        #[arg(long, value_name = "BUNDLE")]
+        out: Option<PathBuf>,
     },
     /// Rebuild a bundle from its own video, audio, and input log with the current transcriber
     /// and keyframe rules.
@@ -1068,6 +1077,11 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             print!("{summary}");
             Ok(())
         }
+        Command::Import { movie, out } => {
+            let bundle = movie_import::import(&movie, out.as_deref())?;
+            println!("{}", bundle.display());
+            Ok(())
+        }
         Command::Retranscribe { bundle } => {
             let (dir, _) = handoff::load_bundle(&bundle)?;
             if speech_model::transcribe_again(&dir)? {
@@ -1108,6 +1122,10 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 .filter(|m| m.shape == Shape::Flag)
                 .map(|m| m.t0)
                 .collect();
+            let movie_bundle = movie_import::uses_movie_assembly(
+                old.source.as_deref() == Some(model::IMPORTED_MOVIE_SOURCE),
+                old.device.is_some(),
+            );
             if let Some(iters) = bench {
                 let iters = iters.max(1);
                 let prep_iter = |i: u32| -> Result<(PathBuf, PathBuf)> {
@@ -1121,25 +1139,11 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                     )
                 };
                 let mut runs_ms = Vec::with_capacity(iters as usize);
-                if let Some(device) = old.device.clone() {
+                if movie_bundle {
                     for i in 0..iters {
                         let (iter_out, linked) = prep_iter(i)?;
                         let t0 = std::time::Instant::now();
-                        phone::build_movie_bundle(
-                            &iter_out,
-                            phone::MovieCapture {
-                                movie: linked,
-                                target: old.target.clone(),
-                                device: device.clone(),
-                                events: old.events.clone(),
-                                strokes: old.strokes.clone(),
-                                flags: flags.clone(),
-                                note: old.note.clone(),
-                                context: old.context.clone(),
-                                context_changes: old.context_changes.clone(),
-                                screens: old.screens.clone(),
-                            },
-                        )?;
+                        movie_import::rebuild(&iter_out, linked, &old, &flags)?;
                         let _ = handoff::copy_bundle_to_clipboard(&iter_out);
                         runs_ms.push(t0.elapsed().as_secs_f64() * 1_000.0);
                         if i + 1 != iters {
@@ -1263,23 +1267,8 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             if timeline_src.is_file() {
                 let _ = std::fs::copy(&timeline_src, out.join("timeline.json"));
             }
-            let summary = if let Some(device) = old.device.clone() {
-                phone::build_movie_bundle(
-                    &out,
-                    phone::MovieCapture {
-                        movie: copied,
-                        target: old.target,
-                        device,
-                        events: old.events,
-                        strokes: old.strokes,
-                        flags,
-                        note: old.note,
-                        context: old.context,
-                        context_changes: old.context_changes,
-                        screens: old.screens,
-                    },
-                )?
-                .2
+            let summary = if movie_bundle {
+                movie_import::rebuild(&out, copied, &old, &flags)?
             } else {
                 if let Some(audio) = old.audio.map(|a| dir.join(a)).filter(|p| p.is_file()) {
                     std::fs::copy(audio, out.join("audio.wav"))?;
