@@ -246,6 +246,23 @@ async function arm(
     }, "native editor window");
     assert.match(editorWindow.address, /^0x[0-9a-f]+$/i);
 
+    const settleStart = now();
+    let quietSince = settleStart;
+    let lastCpuTicks = resources(pid).cpuTicks;
+    const settled = await until(() => {
+      const sample = resources(pid);
+      const sampledAt = now();
+      if (sample.cpuTicks !== lastCpuTicks) {
+        quietSince = sampledAt;
+        lastCpuTicks = sample.cpuTicks;
+      }
+      if (sampledAt - quietSince >= 400) return sample;
+    }, "400 ms of app CPU quiescence before warmup");
+    const startup = {
+      settleMs: now() - settleStart,
+      appCpuMs: (1000 * settled.cpuTicks) / ticksPerSecond,
+    };
+
     let expectedDraft = "";
     const admitted = () =>
       readFileSync(log, "utf8").match(
@@ -309,6 +326,7 @@ async function arm(
         "editor focus at action",
       );
       const pressureBefore = guestPressure();
+      const preAction = resources(pid);
       const start = now();
       await run(executable, ["shortcut", "paste"], { env, timeout: 4000 });
       let rapidGapMs: number | undefined;
@@ -359,7 +377,20 @@ async function arm(
       const post = resources(pid);
       const appCpuMs =
         (1000 * (post.cpuTicks - beforeApp.cpuTicks)) / ticksPerSecond;
-      assert.ok(appCpuMs >= 0 && appCpuMs <= 250);
+      const actionAndReadbackCpuMs =
+        (1000 * (post.cpuTicks - preAction.cpuTicks)) / ticksPerSecond;
+      assert.ok(
+        appCpuMs >= 0 && appCpuMs <= 250,
+        JSON.stringify({
+          batch,
+          index,
+          build,
+          kind,
+          startup,
+          appCpuMs,
+          actionAndReadbackCpuMs,
+        }),
+      );
       assert.ok(post.rssKiB <= 384 * 1024);
       report({
         batch,
@@ -369,6 +400,8 @@ async function arm(
         endpointMs,
         rapidGapMs,
         appCpuMs,
+        actionAndReadbackCpuMs,
+        startup: kind === "warmup" ? startup : undefined,
         appRssKiB: post.rssKiB,
         guestPressure: { before: pressureBefore, after: pressureAfter },
         clipboardBytes: expectedClipboard.length,

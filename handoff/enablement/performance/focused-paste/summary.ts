@@ -7,6 +7,8 @@ type Row = {
   build: string;
   endpointMs: number;
   appCpuMs: number;
+  actionAndReadbackCpuMs: number;
+  startup?: { settleMs: number; appCpuMs: number };
   appRssKiB: number;
   draftSha256: string;
   clipboardSha256: string;
@@ -54,11 +56,18 @@ export function summarize(
         ],
       );
       assert.ok(arm.every((row) => row.build === build));
+      const startup = arm[0].startup;
+      assert.ok(startup && Number.isFinite(startup.appCpuMs));
+      assert.ok(startup.settleMs >= 400);
       const normal = arm.filter((row) => row.kind === "normal");
       return {
         build,
+        startup,
         endpointMs: stats(normal.map((row) => row.endpointMs)),
         appCpuMs: stats(normal.map((row) => row.appCpuMs)),
+        actionAndReadbackCpuMs: stats(
+          normal.map((row) => row.actionAndReadbackCpuMs),
+        ),
         appRssKiB: stats(normal.map((row) => row.appRssKiB)),
         receipts: arm.map(
           ({ draftSha256, clipboardSha256, durableInputs }) => ({
