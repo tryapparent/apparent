@@ -21,7 +21,7 @@
         "vm/result.json records verified artifact retention and completed cleanup of the disposable guest."
       ],
       "limits": [
-        "The onboarding Electron window-coach smoke independently checks the coach buttons, keyboard access, and their practice commands in both themes at 380px and 320px.",
+        "The Electron window-coach smoke checks coach buttons, keyboard access, and commands in both themes at 380px and 320px. The Composition Onboarding renderer test checks that prompt changes keep the mascot mounted and equivalent compact prompts at the same position. The Composition Onboarding and Whiteboard renderer tests check the fade and Reduce Motion.",
         "This starts at the resumed practice lesson. Initial launch, permissions setup, and shortcut selection are outside its coverage.",
         "The probe verifies the clipboard offer. Pasting into another app, macOS, and independent theme or window-size coverage require separate checks."
       ]

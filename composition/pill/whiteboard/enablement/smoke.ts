@@ -192,11 +192,14 @@ test("the practice board keeps accepted ink until the user closes it", {
   const { page, home, edits, reply } = await launch(t, true, blank);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await expect(page.getByText("Your turn")).toBeVisible();
+  const prompt = page.getByRole("status").locator("span");
+  await expect(prompt).toHaveCSS("animation-name", "none");
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollHeight),
     await page.evaluate(() => innerHeight),
   );
   assert.deepEqual(edits(), []);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const canvas = page.getByRole("img", { name: "Whiteboard drawing canvas" });
   await canvas.click({ position: { x: 60, y: 100 } });
   await reply("end", { ...blank, strokes: [[[60, 100]]] });
@@ -204,6 +207,7 @@ test("the practice board keeps accepted ink until the user closes it", {
   assert.equal(edits().at(-1)?.operation, "end");
   await expect(canvas.locator("circle")).toHaveCount(1);
   await expect(page.getByRole("status")).toHaveText("Close when you’re done.");
+  await expect(prompt).toHaveCSS("animation-name", "onboarding-prompt-enter");
   await expect(page.locator(".native-board-lesson path")).toHaveCount(0);
   const metrics = await home.newCDPSession(page);
   for (const width of [720, 320]) {
