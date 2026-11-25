@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { hostedAccountingPolicy } from "../fixtures/host-accounting.ts";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
 import {
   apt,
@@ -23,6 +24,7 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
+import { runInMeasurementScope } from "./measurement-scope.ts";
 import { fixture, model } from "./stop-input.ts";
 import { waterfall } from "./waterfall.ts";
 
@@ -181,10 +183,9 @@ async function run(label: string, other?: string) {
   const before = hostCounters();
   const ticks = cpuSample();
   try {
-    command(
-      process.execPath,
+    runInMeasurementScope(
+      runner,
       [
-        runner,
         "--hosted-fixture",
         control,
         input,
@@ -192,9 +193,7 @@ async function run(label: string, other?: string) {
         output,
         ...(other ? [other] : []),
       ],
-      {
-        env: { ...job.env, APPARENT_STOP_BENCH_SPANS: "1" },
-      },
+      { ...job.env, APPARENT_STOP_BENCH_SPANS: "1" },
     );
   } finally {
     receipt(join(job.evidence, label + "-host.json"), {
@@ -227,4 +226,5 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
+  resourcePolicy: hostedAccountingPolicy,
 });

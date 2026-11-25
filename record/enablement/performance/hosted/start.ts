@@ -8,6 +8,7 @@ import {
   waitForQuietStart,
 } from "../fixtures/host-pressure.ts";
 import { locate } from "../local/attempt.ts";
+import { hostedAccountingPolicy } from "../fixtures/host-accounting.ts";
 import {
   apt,
   command,
@@ -20,6 +21,8 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
+import { runInMeasurementScope } from "./measurement-scope.ts";
+import { verifyAccounting } from "./accounting-proof.ts";
 import { startWaterfall } from "./start-waterfall.ts";
 
 const job = openJob("start");
@@ -121,7 +124,11 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   const before = cpuSample();
   let failure: unknown;
   try {
-    runFixture([control, output, ...(other ? [other] : [])]);
+    runInMeasurementScope(
+      runner,
+      [control, output, ...(other ? [other] : [])],
+      job.env,
+    );
   } catch (error) {
     failure = error;
   } finally {
@@ -171,6 +178,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
     );
 }
 
+await verifyAccounting(job);
 await run("baseline");
 if (candidate) await run("comparison", candidate);
 receipt(join(job.evidence, "record-run.json"), {
@@ -185,4 +193,5 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
+  resourcePolicy: hostedAccountingPolicy,
 });
