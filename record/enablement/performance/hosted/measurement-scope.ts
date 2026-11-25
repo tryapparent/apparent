@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   accountingHierarchy,
@@ -12,6 +12,7 @@ export function runInMeasurementScope(
   entry: string,
   args: string[],
   env: NodeJS.ProcessEnv,
+  output?: string,
 ) {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
@@ -26,7 +27,7 @@ export function runInMeasurementScope(
       );
   }
   const unit = "apparent-record-bench-" + randomUUID() + ".scope";
-  command("sudo", [
+  const invocation = [
     "-n",
     "/usr/bin/systemd-run",
     "--scope",
@@ -52,5 +53,12 @@ export function runInMeasurementScope(
     process.execPath,
     entry,
     ...args,
-  ]);
+  ];
+  const outputFd =
+    output === undefined ? undefined : openSync(output, "wx", 0o600);
+  try {
+    command("sudo", invocation, { outputFd });
+  } finally {
+    if (outputFd !== undefined) closeSync(outputFd);
+  }
 }

@@ -50,6 +50,9 @@ for diagnosis. The adapters also retain CPU topology and allowed CPU lists.
 The Start adapter exercises the accounting through separate unscored owned
 and injected-outside CPU probes before preparing the measurement. It waits
 for the injected process to exit before any product timing.
+Timed subprocess output goes directly to a private benchmark log. The adapter
+prints its summary after the measured work finishes. The host receipt records
+the driver's cgroup CPU counters so runner activity stays visible.
 Native and standalone local replays retain their existing pressure checks.
 `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing
