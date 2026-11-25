@@ -69,8 +69,12 @@ before launching it. Both the process affinity and effective cgroup mask
 must match. The receipt records the guest topology, selection, counter tick
 rate and effective logical CPU capacity. Start accounts for unrelated work
 on the selected CPUs and verifies that an independent worker on those same
-CPUs is rejected. Global PSI, CPU steal, I/O and throttling evidence remain.
-Stop uses the full runner allocation.
+CPUs is rejected. Linux exports each per-CPU busy field in whole ticks. The
+Start receipt records the nominal outside CPU percentage and an upper bound
+that allows one tick per busy field per selected CPU. The 5% limit applies to
+the upper bound. A workload counter above that bound on total sampled busy
+time still rejects the arm. Global PSI, CPU steal, I/O and throttling evidence
+remain. Stop uses the full runner allocation.
 Native and standalone local replays retain their existing pressure checks.
 `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing

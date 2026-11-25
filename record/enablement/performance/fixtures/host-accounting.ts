@@ -8,10 +8,11 @@ import {
   type CpuSubset,
   cpuNumbers,
   readSelectedCpuTimes,
+  selectedCpuRoundingUs,
 } from "./smt-subset.ts";
 
 export const hostedAccountingPolicy = "record-host-attribution-v1";
-export const hostedSubsetPolicy = "record-start-complete-smt-v1";
+export const hostedSubsetPolicy = "record-start-complete-smt-v2";
 const cgroupRoot = "/sys/fs/cgroup";
 const outsideCpuLimitPercent = 5;
 const stealLimitPercent = 5;
@@ -169,7 +170,8 @@ export function qualifyAccounting(
   const workloadCpuUs = after.workloadUs - before.workloadUs;
   const outsideCpuUs = Math.max(0, measuredBusyUs - workloadCpuUs);
   assert.ok(guestBusyUs >= 0 && measuredBusyUs >= 0 && workloadCpuUs >= 0);
-  const lagAllowanceUs = (cpus * 2_000_000) / (subset?.clockTicks ?? 100);
+  const roundingUs = subset ? selectedCpuRoundingUs(subset) : 0;
+  const lagAllowanceUs = subset ? roundingUs : (cpus * 2_000_000) / 100;
   const countersConsistent = measuredBusyUs + lagAllowanceUs >= workloadCpuUs;
   if (!countersConsistent) {
     const counters = subset && {
@@ -188,6 +190,11 @@ export function qualifyAccounting(
     );
   }
   const unrelatedCpuPercent = (100 * outsideCpuUs) / cpuCapacityUs;
+  const outsideCpuUpperUs = Math.max(
+    0,
+    measuredBusyUs + roundingUs - workloadCpuUs,
+  );
+  const unrelatedCpuUpperPercent = (100 * outsideCpuUpperUs) / cpuCapacityUs;
   const totalGuestCpuPsiPercent =
     (100 * (after.cpuPsiUs - before.cpuPsiUs)) / elapsedUs;
   const guestIoPsiPercent =
@@ -200,7 +207,7 @@ export function qualifyAccounting(
   assert.ok(throttledUs.every((value) => value >= 0));
   assert.ok(totalGuestCpuPsiPercent >= 0 && guestIoPsiPercent >= 0);
   const guards = {
-    unrelatedCpu: unrelatedCpuPercent <= outsideCpuLimitPercent,
+    unrelatedCpu: unrelatedCpuUpperPercent <= outsideCpuLimitPercent,
     steal:
       stealPercent <= stealLimitPercent &&
       (selectedStealPercent ?? 0) <= stealLimitPercent,
@@ -215,7 +222,15 @@ export function qualifyAccounting(
     cpus,
     elapsedUs,
     guestBusyUs,
-    ...(subset ? { measuredBusyUs, subset, selectedStealPercent } : {}),
+    ...(subset
+      ? {
+          measuredBusyUs,
+          roundingUs,
+          unrelatedCpuUpperPercent,
+          subset,
+          selectedStealPercent,
+        }
+      : {}),
     workloadCpuUs,
     outsideCpuUs,
     unrelatedCpuPercent,
