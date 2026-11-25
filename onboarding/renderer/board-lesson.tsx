@@ -12,7 +12,7 @@ export function BoardLesson({
   onExampleEnd: () => void;
 }) {
   const prompt = !ready
-    ? "Let me show you how to draw."
+    ? "Watch me draw, or start drawing now."
     : hasInk
       ? "Close when you’re done."
       : "Your turn";
