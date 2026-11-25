@@ -19,6 +19,6 @@ Discuss larger changes in an issue. Describe changes and tests in your PR. See [
 
 ## Guard local pushes
 
-From the checkout you push, run `git config extensions.worktreeConfig true` once for the repository, then `git config --worktree core.hooksPath "$(git rev-parse --show-toplevel)/.githooks"`. This enables the tracked pre-push hook **for this worktree only**. Each push of a commit runs the offline Cargo build and full test suite, and rejects a dirty checkout, a ref that is not its checked-out `HEAD`, or a failed check. A ref deletion needs no build. Install it separately in each worktree; Git does not install tracked hooks automatically. The hook uses `taskpolicy` if available, or plain Cargo with the same job limit otherwise; its offline dependencies must already be installed.
+Use the [tracked pre-push verifier](enablement/local-tests/README.md) to run checks for the files your branch changes. For native checks that need the Connect TypeScript build, the verifier builds the locked package before its Cargo tests.
 
-This is a local safety rail, not server enforcement: `git push --no-verify`, another checkout without the hook, or a direct API write can bypass it. Protect the branch with required CI checks on GitHub if you need a rule that applies to everyone.
+If your worktree still uses the old unconditional Cargo hook, follow the [hook retirement procedure](enablement/directory-width/README.md#hook-activation-and-preservation). It checks the old hook's fingerprint and preserves its bytes before the maintained verifier is activated.

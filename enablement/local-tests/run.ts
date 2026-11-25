@@ -140,7 +140,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
   }
   result.push(...tools.filter(command => rustChanged && selected.includes('capture') && command.env?.APPARENT_BIN));
   if (rustChanged && selected.includes('client')) {
-    if (!selected.includes('capture') && !selected.includes('engine'))
+    if (!selected.includes('capture'))
       add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--prepare-connect-typescript']);
     const cargo = platform === 'darwin' ? ['taskpolicy', '-c', 'utility', 'cargo'] : ['cargo'];
     for (const action of ['build', 'test']) add([...cargo, action, '--manifest-path', 'connect/client/Cargo.toml',
