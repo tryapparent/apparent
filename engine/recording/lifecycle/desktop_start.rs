@@ -152,7 +152,7 @@ impl ApparentCoordinator {
         #[cfg(target_os = "linux")]
         if let Some(warning) = crate::capture::desktop::linux::media::encoder_warning() {
             apparent_log(&warning);
-            crate::capture::desktop::linux::shell::notify("Apparent setup: H.264 encoder missing", &warning);
+            crate::capture::desktop::linux::shell::notify("Apparent: H.264 preflight failed", &warning);
             self.cancel_recording(cx);
             return;
         }
