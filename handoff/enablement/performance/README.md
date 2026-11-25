@@ -33,7 +33,10 @@ When all four pressure attempts for a hosted trial slot fail, the driver
 takes a separate diagnostic replay and retains `scheduler-diagnostic.json`.
 It samples idle guest pressure before launch, process CPU and thread scheduler
 counters at the Electron and Handoff boundaries, and observer and cgroup
-accounting through cleanup. Snapshot work can perturb the replay. The file is
+accounting through cleanup. Process ticks outside the replay cgroup are
+attributed across successive snapshots. Guest counters retain IRQ and softirq
+ticks separately. Processes that exit between snapshots can leave a residual.
+Snapshot work can perturb the replay. The file is
 unscored and cannot qualify a repeat. A missing counter or disabled scheduler
 accounting remains visible in the artifact.
 
