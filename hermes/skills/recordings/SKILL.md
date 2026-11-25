@@ -33,6 +33,27 @@ and open its output image with Hermes's vision tools. The installed CLI's
 `apparent skill` explains marks, full frames and media expiry. Investigate with
 available tools before asking the user to repeat an explanation.
 
+## Check a one-frame visual state
+
+If a visual state could last one frame, use the contact sheet and `apparent
+zoom` to locate the interval. They sample the movie. To establish whether
+the state appeared, decode every source frame in that interval and retain
+its presentation timestamp (PTS). Run this from a fresh private working
+directory, using the preserved movie in the bundle as input. This example
+uses a synthetic clip:
+
+```sh
+ffmpeg -hide_banner -nostdin -copyts -i /path/to/synthetic.mp4 \
+  -map 0:v:0 -vf "select='between(t,1.8,2.2)',showinfo" \
+  -fps_mode passthrough -start_number 0 frame-%04d.png 2>frames.log
+```
+
+Match PNG numbers to `showinfo`'s `n` and report the observed `pts_time`.
+Inspect every frame before claiming a brief state was absent within that
+interval. For a small UI element, insert `crop=W:H:X:Y` before `showinfo`.
+If import is unavailable and the original movie is accessible, use the same
+direct extraction on the original file.
+
 Connect inspection fetches through the CLI's configured origin and existing
 read grant. Downloaded snapshots are removed after each tool call; returned
 pixels are embedded. Reuse the original ID for frame requests. For temporal
