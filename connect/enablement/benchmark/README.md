@@ -141,10 +141,10 @@ observations.
 The score is the mean of the cold and warm Share-to-advancing-frame waits,
 normalized to 100 for the two qualified traced main repeats. Lower is faster.
 The baseline separately reports same-build speed variation and traced-minus-
-untraced probe overhead. GNU time records replay process-family CPU seconds
-and peak single-process RSS, including setup, and the manifest records
-verified stored capture bytes. These are local resource proxies. Linux CPU
-counter deltas minus replay CPU estimate outside work on the selected cores.
+untraced probe overhead. Hosted replay cgroups account for descendant CPU.
+GNU time retains CPU diagnostics and peak single-process RSS. The manifest
+records verified stored bytes. Guest CPU counters minus replay CPU estimate
+outside work on the selected cores.
 More than 5% outside CPU or host I/O/steal on selected cores invalidates the
 batch. Compare CPU and RSS against the higher matched incumbent repeat plus
 10%, and require the same stored bytes and exact output. Each cold/warm share

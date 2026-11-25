@@ -5,6 +5,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Matched } from "../../../shared/enablement/performance/comparison.ts";
 import { readCpuUsage } from "./hosted/quota.ts";
+import { runReplayUnit } from "./hosted/replay-unit.ts";
 import type { watchAttempt } from "./watch.ts";
 
 export type Replay = {
@@ -129,29 +130,30 @@ export async function sample(
   );
   const scopeBefore = hostedCgroup && (await readCpuUsage(hostedCgroup));
   const before = await cpuCounters(cpus);
-  const replayPath = execFileSync(
-    "taskset",
-    [
-      "-c",
-      cpuSpec,
-      "/usr/bin/time",
-      "-o",
-      log,
-      "-f",
-      "%U %S %M",
-      process.execPath,
-      command,
-      result,
-      chrome,
-      traced ? "watch-traced" : "watch-untraced",
-    ],
-    {
-      cwd: join(tree, "connect/service"),
+  const args = [
+    "-c",
+    cpuSpec,
+    "/usr/bin/time",
+    "-o",
+    log,
+    "-f",
+    "%U %S %M",
+    process.execPath,
+    command,
+    result,
+    chrome,
+    traced ? "watch-traced" : "watch-untraced",
+  ];
+  const cwd = join(tree, "connect/service");
+  const unit = hostedCgroup ? runReplayUnit(args, cwd, result) : undefined;
+  const replayPath =
+    unit?.replayPath ??
+    execFileSync("taskset", args, {
+      cwd,
       encoding: "utf8",
       timeout: 90000,
       env: { ...process.env, TMPDIR: result },
-    },
-  ).trim();
+    }).trim();
   const after = await cpuCounters(cpus);
   const scopeAfter = hostedCgroup && (await readCpuUsage(hostedCgroup));
   const replay = await read<Replay>(replayPath);
@@ -173,7 +175,10 @@ export async function sample(
     .trim()
     .split(" ")
     .map(Number);
-  const cpuSeconds = user + system;
+  const gnuTimeSeconds = user + system;
+  const cpuSeconds = unit
+    ? (unit.replayCgroup.afterUsec - unit.replayCgroup.beforeUsec) / 1000000
+    : gnuTimeSeconds;
   const deltas = after.map((row, index) => [
     row.total - before[index].total,
     row.busy - before[index].busy,
@@ -204,6 +209,8 @@ export async function sample(
     log,
     cpuAccounting: {
       clockTicks,
+      gnuTimeSeconds,
+      replayCgroup: unit?.replayCgroup,
       cpus,
       before,
       after,
