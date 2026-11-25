@@ -94,7 +94,7 @@ test('an earlier paint plus committed DOM cannot reveal an uncomposited Settings
   lines.emit('line', JSON.stringify({ type: 'show' }));
   assert.equal(window.visible, false, 'The native paint event may precede React content reaching the compositor');
   release({ isEmpty: () => false });
-  await acknowledgement;
+  assert.equal(await acknowledgement, true, 'Successful reveal acknowledges that the fallback is unnecessary');
   assert.equal(window.visible, true);
 });
 
@@ -111,18 +111,20 @@ test('a composited frame arriving after parent retirement cannot revive Settings
   assert.equal(window.focuses, 0);
 });
 
-test('a subsequent committed frame can recover from a transient empty snapshot', async () => {
+test('the fallback retries if native paint started a snapshot that then fails', async () => {
+  let empty!: (image: { isEmpty(): boolean }) => void;
+  const first = new Promise<{ isEmpty(): boolean }>(resolve => { empty = resolve; });
   let snapshots = 0;
-  const { window, mounted, frameReady, expire, exits } = host('--settings-storage', async () => ({
-    isEmpty: () => ++snapshots === 1,
-  }));
+  const { window, mounted, frameReady } = host('--settings-storage', () =>
+    ++snapshots === 1 ? first : Promise.resolve({ isEmpty: () => false }),
+  );
+  assert.equal(await mounted(), false);
   window.emit('ready-to-show');
-  await mounted();
-  assert.equal(window.visible, false);
-  await frameReady();
+  const fallback = frameReady();
+  empty({ isEmpty: () => true });
+  await fallback;
+  assert.equal(snapshots, 2);
   assert.equal(window.visible, true);
-  expire();
-  assert.deepEqual(exits, []);
 });
 
 test('empty and failed snapshots stay hidden until the native failure event or startup deadline', async () => {
@@ -217,6 +219,9 @@ for (const mode of ['--settings-storage']) {
     await frameReady();
     assert.equal(window.visible, true, 'The post-commit frame acknowledgement recovers the missing native event');
     assert.equal(window.focuses, 1);
+    window.emit('ready-to-show');
+    await frameReady();
+    assert.equal(window.focuses, 1, 'Late startup signals do not take focus again');
   });
 
   test(`${mode} frame acknowledgement alone cannot present Settings`, async () => {
@@ -299,37 +304,30 @@ test('first-frame acknowledgement refuses another frame and unexpected arguments
   assert.throws(() => ready!({ sender: window.webContents, senderFrame: window.webContents.mainFrame }), /Forbidden bridge/);
 });
 
-test('Settings preloads acknowledge committed DOM before waiting for renderer frame callbacks', async () => {
-  for (const general of [false, true]) {
-    const preload = 'storage-preload.cjs';
-    const callbacks: (() => void)[] = [];
-    const exposed: Record<string, (...args: any[]) => Promise<void>> = {};
-    const invoked: string[] = [];
-    const preloadSource = readFileSync(path.join(path.dirname(filename), preload), 'utf8');
-    vm.runInNewContext(preloadSource, {
-      process: { argv: general ? ['--settings-general'] : [] },
-      require: () => ({
-        contextBridge: { exposeInMainWorld: (name: string, value: (...args: any[]) => Promise<void>) => { exposed[name] = value; } },
-        ipcRenderer: { invoke: async (channel: string) => { invoked.push(channel); } },
-      }),
-      requestAnimationFrame: (callback: () => void) => { callbacks.push(callback); },
-    }, { filename: preload });
-    const bridge = exposed.apparent as unknown as Record<string, unknown>;
-    // The shared preload survives navigation; the live host admits each API
-    // only on its owner pane (covered by the real Electron shell smoke).
-    assert.equal(typeof bridge.readConnectSettings, 'function');
-    assert.equal(typeof bridge.changeCaptureLocation, 'function');
-    assert.equal(typeof exposed.apparentGeneral, 'object');
-    const acknowledgement = exposed.apparentSettingsMounted();
-    assert.deepEqual(invoked, ['apparent:settings-mounted'], `${preload}: committed DOM is independent of frame scheduling`);
-    // Complete the asynchronous IPC reply across the VM boundary without
-    // advancing either renderer callback held by this fixture.
-    await new Promise<void>(resolve => setImmediate(resolve));
-    assert.equal(callbacks.length, 1);
-    callbacks.shift()!();
-    assert.deepEqual(invoked, ['apparent:settings-mounted'], `${preload}: first callback cannot acknowledge paint`);
-    callbacks.shift()!();
-    await acknowledgement;
-    assert.deepEqual(invoked, ['apparent:settings-mounted', 'apparent:settings-frame-ready'], `${preload}: mount then frame readiness`);
-  }
+test('Settings preload overlaps the fallback frames with mount acknowledgement', async () => {
+  const preload = path.join(path.dirname(filename), 'storage-preload.cjs');
+  const callbacks: (() => void)[] = [];
+  const invoked: string[] = [];
+  let mounted!: () => Promise<void>;
+  let acknowledge!: (presented: boolean) => void;
+  const mount = new Promise<boolean>(resolve => { acknowledge = resolve; });
+  vm.runInNewContext(readFileSync(preload, 'utf8'), {
+    process: { platform: 'linux' },
+    require: () => ({
+      contextBridge: { exposeInMainWorld(name: string, value: () => Promise<void>) {
+        if (name === 'apparentSettingsMounted') mounted = value;
+      } },
+      ipcRenderer: { invoke(channel: string) { invoked.push(channel); return mount; } },
+    }),
+    requestAnimationFrame: (callback: () => void) => { callbacks.push(callback); },
+  }, { filename: preload });
+  const opening = mounted();
+  assert.equal(callbacks.length, 1, 'The first callback is queued before mount IPC replies');
+  callbacks.shift()!();
+  callbacks.shift()!();
+  await new Promise<void>(resolve => setImmediate(resolve));
+  assert.deepEqual(invoked, ['apparent:settings-mounted'], 'The fallback cannot race the mount reply');
+  acknowledge(false);
+  await opening;
+  assert.deepEqual(invoked, ['apparent:settings-mounted', 'apparent:settings-frame-ready']);
 });

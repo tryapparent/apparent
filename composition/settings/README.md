@@ -27,6 +27,14 @@ existing owners.
 Settings opens with a fixed 740 × 580 content area on Linux and macOS, regardless
 of its starting pane. Electron disables user resize and fullscreen, and macOS
 also disables maximize. Longer panes and enlarged text scroll within Settings.
+macOS centers the inset titlebar window after construction.
+
+On open, the hidden Electron window waits for both the React shell commit
+and a paint opportunity. The preload starts its two animation callbacks
+alongside the mount IPC as a fallback for a missing native paint event. The
+host copies a composited frame before raising the window and retries a failed
+first copy when the fallback arrives. Once shown, late startup signals leave
+focus alone. Section data arrives independently through the existing bridges.
 
 Settings has one Electron presentation on Linux and macOS. A child exit closes
 the session, releases the Recording meter and shortcut editor, and allows the

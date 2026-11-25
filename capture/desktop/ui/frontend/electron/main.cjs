@@ -134,7 +134,6 @@ app.whenReady().then(() => {
   session.defaultSession.setPermissionCheckHandler(() => false);
   const window = new BrowserWindow({
     show: !settings,
-    // The preload needs a render opportunity before the first presentation.
     ...(settings ? { paintWhenInitiallyHidden: true } : {}),
     ...(settings ? frame.settingsWindowOptions(process.platform) : {
       width: 920, height: 760, minWidth: 640, minHeight: 620,
@@ -147,7 +146,6 @@ app.whenReady().then(() => {
       webSecurity: true, spellcheck: false,
     },
   });
-  // A parent show must not expose Chromium's empty initial document.
   let settingsPainted = false;
   let settingsMounted = false;
   let settingsCommitted = false;
@@ -181,15 +179,14 @@ app.whenReady().then(() => {
     window.focus();
   };
   if (settings) {
-    // First paint alone can be an empty document with a missing entry module.
     startupTimer = setTimeout(failSettings, 15000);
     startupTimer.unref();
     window.once('ready-to-show', () => {
+      if (settingsMounted) return;
       settingsPainted = true;
       showSettings();
     });
   }
-  // AppKit applies the inset titlebar metrics after constructor-time centering.
   if (settings && process.platform === 'darwin') window.center();
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
@@ -213,7 +210,7 @@ app.whenReady().then(() => {
     if (!settings) throw new Error('Unavailable outside Settings');
     if (settingsClosing || window.isDestroyed()) return;
     settingsCommitted = true;
-    return showSettings();
+    return Promise.resolve(showSettings()).then(() => settingsMounted);
   });
   ipcMain.handle('apparent:settings-route', (event, ...args) => {
     validate(event, args);
@@ -223,8 +220,11 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
+    if (settingsMounted) return;
     settingsPainted = true;
-    return showSettings();
+    return Promise.resolve(settingsFrame).then(() => {
+      if (!settingsMounted) return showSettings();
+    });
   });
   ipcMain.handle('apparent:general-read', (event, ...args) => {
     validate(event, args);
