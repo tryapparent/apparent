@@ -146,13 +146,8 @@ if (mode === "prepare" || (mode === "baseline" && !existsSync(baselineFile))) {
       "shared/enablement/performance/comparison.bend",
     );
   if (!existsSync(journeyModule))
-    await buildBend(
-      root,
-      "enablement",
-      join(job, "policy"),
-      undefined,
-      "timing/journey/journey-scoring.bend",
-    );
+    await buildBend(root, "enablement", join(job, "policy"));
+  assert.ok(existsSync(comparisonModule) && existsSync(journeyModule));
 }
 if (mode === "prepare") process.exit(0);
 const { contractHash, hillClimb } = JSON.parse(
