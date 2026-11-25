@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Matched } from "../../../../shared/enablement/performance/comparison.ts";
+import { hostedInterference } from "./hosted-guard/interference.ts";
 
 const read = async <T>(path: string) =>
   JSON.parse(await readFile(path, "utf8")) as T;
@@ -13,6 +14,7 @@ export type Result = {
   eligible: boolean;
   verifiedMs: number;
   cpuPressurePercent: number;
+  interference?: { passed: boolean };
   chromiumCpuMs: number;
   sampledChromiumPssKiB: number;
   pageTiming: {
@@ -24,6 +26,7 @@ export type Receipt = {
   compatible: {
     detailed: boolean;
     scenario: string;
+    hostedInterference?: string;
     probeSha256: string;
     runner: {
       host: string;
@@ -186,6 +189,7 @@ export function browserContract(compatible: Receipt["compatible"]) {
   const { browser, viewport, mobile, theme, node } = compatible.runner;
   return {
     scenario: compatible.scenario,
+    hostedInterference: compatible.hostedInterference,
     probe: compatible.probeSha256,
     browser,
     viewport,
@@ -193,6 +197,18 @@ export function browserContract(compatible: Receipt["compatible"]) {
     theme,
     node,
   };
+}
+
+export function pressureQualified(receipt: Receipt, result: Result) {
+  if (
+    !Number.isFinite(result.cpuPressurePercent) ||
+    result.cpuPressurePercent < 0
+  )
+    return false;
+  return receipt.compatible.hostedInterference
+    ? receipt.compatible.hostedInterference === hostedInterference &&
+        result.interference?.passed === true
+    : result.cpuPressurePercent <= 2;
 }
 
 export async function verifyDemoProof(
