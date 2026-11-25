@@ -73,14 +73,12 @@ taskset and libx264. The workflow uploads synthetic receipts, resource
 logs and waterfalls even on failure. `calibration.json` and
 `comparison.json` index the receipts. Fixture media and caches stay local.
 
-Both phases run serially in the same job with the same Chromium executable.
-The sampler selects all CPUs in the Linux process affinity and checks that
-each visible SMT sibling is included. Preflight waits up to twelve
-five-second windows for quiet. Preflight and per-sample guards use guest
-`/proc/stat` for outside CPU, I/O wait and steal at the 5% limits. I/O PSI is recorded
-as diagnostic context. The runner reports its visible virtual topology and
-does not certify the cloud host's physical cores. Receipt compatibility uses
-the runner image, visible CPU profile, quota, and browser/tool revisions.
+The job records a post-build window and runs one unscored staging replay
+per build to warm immutable files. Timed replays still start new Worker and
+browser processes. Preflight waits up to twelve five-second windows. Guest
+`/proc/stat` guards outside CPU and I/O wait plus steal at 5%. PSI and
+dirty/writeback counters diagnose setup activity. Affinity includes all
+visible SMT siblings. Receipts pin image, virtual topology, quota and tools.
 
 For local developer diagnostics, build the Worker with the commands above
 and choose complete visible SMT sibling sets. Local output and historical

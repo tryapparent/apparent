@@ -36,9 +36,15 @@ export async function readHostedCpu() {
 export async function quietPreflight(cpus: number[]) {
   const before = await cpuCounters(cpus);
   const pressureBefore = await linux("/proc/pressure/io");
+  const writeback = async () =>
+    (await linux("/proc/meminfo"))
+      .split("\n")
+      .filter((line) => /^(Dirty|Writeback):/.test(line));
+  const writebackBefore = await writeback();
   await setTimeout(5000);
   const after = await cpuCounters(cpus);
   const pressureAfter = await linux("/proc/pressure/io");
+  const writebackAfter = await writeback();
   let total = 0;
   let busy = 0;
   const perCpuWaitPercent = after.map((row, index) => {
@@ -59,6 +65,8 @@ export async function quietPreflight(cpus: number[]) {
     peakHostWaitPercent,
     pressureBefore,
     pressureAfter,
+    writebackBefore,
+    writebackAfter,
     before,
     after,
   };

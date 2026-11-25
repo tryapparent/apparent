@@ -15,7 +15,7 @@ import { hostname } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { quietPreflight, readHostedCpu, waitForQuiet } from "./hosted/cpu.ts";
-import { hash } from "./watch-sample.ts";
+import { hash, sample } from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
 
 const service = "connect/service";
@@ -135,6 +135,7 @@ async function main(args: string[]) {
     topology: cpu.topology,
     cpuQuota: cpu.cpuQuota.limits,
     replayAccounting: "dedicated-systemd-cgroup-v1",
+    preparation: "unscored-replay-per-build-v1",
   });
   const environment = {
     controlSha,
@@ -235,6 +236,24 @@ async function main(args: string[]) {
       ),
       chromium: await hash(chrome),
     });
+
+    await record("post-setup-window.json", await quietPreflight(cpu.cpus));
+    for (const [label, tree] of calibrationOnly
+      ? [["control", control]]
+      : [
+          ["control", control],
+          ["candidate", candidate],
+        ]) {
+      const staged = await sample(
+        tree,
+        samples,
+        chrome,
+        cpu.cpuSpec,
+        false,
+        accounting.cgroup,
+      );
+      await record(`prestage-${label}.json`, { scored: false, ...staged });
+    }
 
     assert.ok(
       await preflight("calibration-preflight.json"),
