@@ -28,7 +28,7 @@ The default-off native launch experiment and explicit AppImage/desktop URL-handl
 registration are documented in [native launch](../native-launch.md). Opening a URL never
 installs or changes the selected desktop handler.
 
-Read this before changing `capture/engine/runtime/platform/linux.rs`, `capture/desktop/ui/linux.rs`, `src/linux/`, `capture/desktop/ink_view.rs`, `capture/engine/runtime/audio/transcription/speech.rs`, or anything behind a `platform::` call in `capture/engine/runtime/mod.rs` and `capture/desktop/mod.rs`. The shared GPUI UI uses platform adapters for the macOS and Linux shells. Windows code is retained but unsupported.
+Read this before changing `capture/engine/runtime/platform/linux.rs`, `capture/desktop/ui/linux.rs`, `src/linux/`, `capture/desktop/ink_view.rs`, `capture/engine/runtime/audio/transcription/speech.rs`, or anything behind a `platform::` call in `capture/engine/runtime/mod.rs` and `capture/desktop/mod.rs`. The shared GPUI UI uses platform adapters for the macOS and Linux shells.
 
 The playback lowering experiment has been retired. If you manually set it up,
 see [how to remove its audio components](linux-playback.md).

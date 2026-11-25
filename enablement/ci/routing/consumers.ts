@@ -184,8 +184,8 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
   const publicSelected = selected.includes('public');
   const updater = unknown || !!orchestration || !!effective?.some(path =>
     ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
-    ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',
-      'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path));
+    ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/updates/update.rs',
+      'capture/desktop/settings/settings.rs'].includes(path));
   const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, (unknown && stream !== 'engine') || !!paths?.some(path => affectsStream(stream as Stream, path))]));
   const requiredStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || plan.tools || plan.onboarding,
     connect: plan.browser || plan.service || plan.client || plan.foreground, public: plan.public, hermes: plan.hermes,
