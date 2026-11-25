@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
   pressureTotalUs,
@@ -9,10 +10,12 @@ import {
 } from "../fixtures/host-pressure.ts";
 import { locate } from "../local/attempt.ts";
 import {
+  allowedCpuList,
   driverCpuSnapshot,
-  hostedAccountingPolicy,
+  hostedSubsetPolicy,
   waitForHostedQuiet,
 } from "../fixtures/host-accounting.ts";
+import { completePairs, readSelectedCpuTimes } from "../fixtures/smt-subset.ts";
 import {
   apt,
   command,
@@ -60,15 +63,47 @@ const candidate = job.calibrationOnly
   : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
-function runFixture(args: string[]) {
-  command(process.execPath, [runner, ...args], { env: job.env });
+const allowed = allowedCpuList();
+const topology = hostCounters().topology;
+const clockTicks = Number(command("getconf", ["CLK_TCK"], { capture: true }));
+assert.ok(Number.isSafeInteger(clockTicks) && clockTicks > 0);
+const pairs = completePairs(topology, allowed);
+assert.ok(pairs.length, "No complete allowed two-vCPU subset");
+const idleBefore = pairs.map(
+  (cpus) => readSelectedCpuTimes({ cpus, clockTicks }).busyUs,
+);
+await delay(1000);
+const choices = pairs.map((cpus, index) => ({
+  cpus,
+  busyUs: readSelectedCpuTimes({ cpus, clockTicks }).busyUs - idleBefore[index],
+}));
+assert.ok(choices.every(({ busyUs }) => busyUs >= 0));
+choices.sort((a, b) => a.busyUs - b.busyUs);
+const subset = { cpus: choices[0].cpus, clockTicks };
+receipt(join(job.evidence, "start-cpu-placement.json"), {
+  allowed,
+  topology,
+  choices,
+  subset,
+  effectiveLogicalCpus: subset.cpus.length,
+  siblingGroups: [
+    ...new Set(
+      topology
+        .filter(({ cpu }) => subset.cpus.includes(cpu))
+        .map(({ siblings }) => siblings),
+    ),
+  ],
+});
+
+function runFixture(args: string[], log: string) {
+  runInMeasurementUnit(runner, args, job.env, log, subset);
 }
 
 function prepareAttempt(output: string, desktop: string) {
   const before = hostCounters();
   const started = performance.now();
   try {
-    runFixture(["--prepare", desktop, output]);
+    runFixture(["--prepare", desktop, output], output + "-benchmark.log");
   } finally {
     const after = hostCounters();
     const elapsedMs = performance.now() - started;
@@ -119,16 +154,14 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
   await prepare(output + "-prepare-control", control);
   if (other) await prepare(output + "-prepare-candidate", other);
-  await waitForHostedQuiet(join(job.evidence, phase + "-quiet.json"));
+  await waitForHostedQuiet(join(job.evidence, phase + "-quiet.json"), subset);
   const host = hostCounters();
   const before = cpuSample();
   const driverBefore = driverCpuSnapshot();
   let failure: unknown;
   try {
-    runInMeasurementUnit(
-      runner,
+    runFixture(
       [control, output, ...(other ? [other] : [])],
-      job.env,
       join(job.evidence, phase + "-benchmark.log"),
     );
   } catch (error) {
@@ -159,11 +192,10 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   if (failure) {
     if (phase === "baseline" && !result) {
       try {
-        runFixture([
-          "--diagnostic",
-          control,
-          join(job.evidence, phase + "-diagnostic"),
-        ]);
+        runFixture(
+          ["--diagnostic", control, join(job.evidence, phase + "-diagnostic")],
+          join(job.evidence, phase + "-diagnostic.log"),
+        );
       } catch (diagnosticError) {
         console.error(diagnosticError);
       }
@@ -192,7 +224,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
     );
 }
 
-await verifyAccounting(job);
+await verifyAccounting(job, subset);
 await run("baseline");
 if (candidate) await run("comparison", candidate);
 receipt(join(job.evidence, "record-run.json"), {
@@ -207,5 +239,6 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
-  resourcePolicy: hostedAccountingPolicy,
+  resourcePolicy: hostedSubsetPolicy,
+  cpuPlacement: "start-cpu-placement.json",
 });

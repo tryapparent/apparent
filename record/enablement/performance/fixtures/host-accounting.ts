@@ -4,8 +4,14 @@ import { availableParallelism } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { cpuSample, receipt, stealSince } from "../hosted/job.ts";
 import { pressureTotalUs, waitForQuietStart } from "./host-pressure.ts";
+import {
+  type CpuSubset,
+  cpuNumbers,
+  readSelectedCpuTimes,
+} from "./smt-subset.ts";
 
 export const hostedAccountingPolicy = "record-host-attribution-v1";
+export const hostedSubsetPolicy = "record-start-complete-smt-v1";
 const cgroupRoot = "/sys/fs/cgroup";
 const outsideCpuLimitPercent = 5;
 const stealLimitPercent = 5;
@@ -97,8 +103,8 @@ export function processCpuTicks(stat: string) {
   return { name: stat.slice(open + 1, close), startTicks, cpuTicks };
 }
 
-export async function waitForHostedQuiet(path: string) {
-  const cpus = availableParallelism();
+export async function waitForHostedQuiet(path: string, subset?: CpuSubset) {
+  const cpus = subset?.cpus.length ?? availableParallelism();
   const observed: { resource: string; percent: number }[][] = [];
   let windows: typeof observed | undefined;
   try {
@@ -106,14 +112,23 @@ export async function waitForHostedQuiet(path: string) {
       AbortSignal.timeout(46_000),
       ["cpu", "io"],
       {
-        resource: "guest-cpu",
+        resource: subset ? "selected-cpu" : "guest-cpu",
         limitPercent: outsideCpuLimitPercent,
-        counter: () => usage(cgroupRoot)("usage_usec") / cpus,
+        counter: () =>
+          (subset
+            ? readSelectedCpuTimes(subset).busyUs
+            : usage(cgroupRoot)("usage_usec")) / cpus,
         record: (window) => observed.push(window),
       },
     );
   } finally {
-    receipt(path, { cpus, windows, observed, admitted: windows !== undefined });
+    receipt(path, {
+      cpus,
+      subset,
+      windows,
+      observed,
+      admitted: windows !== undefined,
+    });
   }
 }
 
@@ -126,18 +141,37 @@ type Sample = {
   ioPsiUs: number;
   ticks: ReturnType<typeof cpuSample>;
   throttledUs: number[];
+  selectedBefore?: ReturnType<typeof readSelectedCpuTimes>;
+  selectedAfter?: ReturnType<typeof readSelectedCpuTimes>;
 };
 
-export function qualifyAccounting(before: Sample, after: Sample, cpus: number) {
+export function qualifyAccounting(
+  before: Sample,
+  after: Sample,
+  cpus: number,
+  subset?: CpuSubset,
+) {
   const elapsedUs = (after.atMs - before.atMs) * 1000;
   assert.ok(elapsedUs > 0 && Number.isInteger(cpus) && cpus > 0);
   const cpuCapacityUs = elapsedUs * cpus;
   const guestBusyUs = after.guestAfterUs - before.guestBeforeUs;
+  let measuredBusyUs = guestBusyUs;
+  let selectedStealPercent: number | undefined;
+  if (subset) {
+    assert.equal(cpus, subset.cpus.length);
+    assert.ok(before.selectedBefore && after.selectedAfter);
+    measuredBusyUs = after.selectedAfter.busyUs - before.selectedBefore.busyUs;
+    selectedStealPercent = stealSince(
+      before.selectedBefore,
+      after.selectedAfter,
+    );
+  }
   const workloadCpuUs = after.workloadUs - before.workloadUs;
-  const outsideCpuUs = Math.max(0, guestBusyUs - workloadCpuUs);
-  assert.ok(guestBusyUs >= 0 && workloadCpuUs >= 0);
+  const outsideCpuUs = Math.max(0, measuredBusyUs - workloadCpuUs);
+  assert.ok(guestBusyUs >= 0 && measuredBusyUs >= 0 && workloadCpuUs >= 0);
+  const lagAllowanceUs = (cpus * 2_000_000) / (subset?.clockTicks ?? 100);
   assert.ok(
-    guestBusyUs + cpus * 20_000 >= workloadCpuUs,
+    measuredBusyUs + lagAllowanceUs >= workloadCpuUs,
     "Guest and workload CPU counters are inconsistent",
   );
   const unrelatedCpuPercent = (100 * outsideCpuUs) / cpuCapacityUs;
@@ -154,18 +188,21 @@ export function qualifyAccounting(before: Sample, after: Sample, cpus: number) {
   assert.ok(totalGuestCpuPsiPercent >= 0 && guestIoPsiPercent >= 0);
   const guards = {
     unrelatedCpu: unrelatedCpuPercent <= outsideCpuLimitPercent,
-    steal: stealPercent <= stealLimitPercent,
+    steal:
+      stealPercent <= stealLimitPercent &&
+      (selectedStealPercent ?? 0) <= stealLimitPercent,
     throttling: throttledUs.every((value) => value === 0),
     io: guestIoPsiPercent <= ioLimitPercent,
   };
   return {
-    policy: hostedAccountingPolicy,
+    policy: subset ? hostedSubsetPolicy : hostedAccountingPolicy,
     qualified: Object.values(guards).every(Boolean),
     guards,
     limits: { outsideCpuLimitPercent, stealLimitPercent, ioLimitPercent },
     cpus,
     elapsedUs,
     guestBusyUs,
+    ...(subset ? { measuredBusyUs, subset, selectedStealPercent } : {}),
     workloadCpuUs,
     outsideCpuUs,
     unrelatedCpuPercent,
@@ -187,17 +224,36 @@ export function hostedAccounting() {
   const { membership, hierarchy } = accountingHierarchy();
   assert.ok(basename(membership) === unit, "Missing owned benchmark cgroup");
   const cpuList = allowedCpuList();
-  assert.equal(
-    cpuList,
-    process.env.APPARENT_RECORD_HOST_CPU_LIST,
+  const expected = process.env.APPARENT_RECORD_HOST_CPU_LIST;
+  assert.ok(expected);
+  assert.deepEqual(
+    cpuNumbers(cpuList),
+    cpuNumbers(expected),
     "Benchmark scope changed the runner CPU allocation",
   );
   const scope = join(cgroupRoot, membership);
   const cpus = availableParallelism();
+  const clockTicks = Number(process.env.APPARENT_RECORD_HOST_SUBSET_TICKS);
+  const subset = process.env.APPARENT_RECORD_HOST_SUBSET_TICKS
+    ? { cpus: cpuNumbers(expected), clockTicks }
+    : undefined;
+  if (subset) {
+    assert.ok(Number.isSafeInteger(clockTicks) && clockTicks > 0);
+    assert.equal(cpus, subset.cpus.length);
+    assert.deepEqual(
+      cpuNumbers(
+        readFileSync(join(scope, "cpuset.cpus.effective"), "utf8").trim(),
+      ),
+      subset.cpus,
+      "Service has an unexpected effective CPU affinity",
+    );
+  }
   const sample = (): Sample => {
     const atMs = performance.now();
     const guestBeforeUs = usage(cgroupRoot)("usage_usec");
+    const selectedBefore = subset && readSelectedCpuTimes(subset);
     const workloadUs = usage(scope)("usage_usec");
+    const selectedAfter = subset && readSelectedCpuTimes(subset);
     const guestAfterUs = usage(cgroupRoot)("usage_usec");
     return {
       atMs,
@@ -208,13 +264,15 @@ export function hostedAccounting() {
       ioPsiUs: pressureTotalUs(readFileSync("/proc/pressure/io", "utf8")),
       ticks: cpuSample(),
       throttledUs: hierarchy.map((path) => usage(path)("throttled_usec")),
+      selectedBefore,
+      selectedAfter,
     };
   };
   return {
     start() {
       const before = sample();
       return () => ({
-        ...qualifyAccounting(before, sample(), cpus),
+        ...qualifyAccounting(before, sample(), cpus, subset),
         cpuList,
         scope: membership,
       });

@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { hostedAccounting } from "../fixtures/host-accounting.ts";
+import { type CpuSubset, cpuNumbers } from "../fixtures/smt-subset.ts";
 import { json, receipt, type HostedJob } from "./job.ts";
 import { runInMeasurementUnit } from "./measurement-unit.ts";
 
@@ -18,20 +19,25 @@ function busyFor(milliseconds: number) {
   return witness;
 }
 
-export async function verifyAccounting(job: HostedJob) {
+export async function verifyAccounting(job: HostedJob, subset: CpuSubset) {
   const isolated = join(job.evidence, "accounting-owned-work.json");
   runInMeasurementUnit(
     entry,
     ["sample", isolated],
     job.env,
     join(job.evidence, "accounting-owned-work.log"),
+    subset,
   );
   assert.ok(json(isolated).workloadCpuUs > 100_000);
 
-  const outside = spawn(process.execPath, [entry, "outside"], {
-    env: job.env,
-    stdio: ["ignore", "pipe", "inherit"],
-  });
+  const outside = spawn(
+    "taskset",
+    ["--cpu-list", subset.cpus.join(","), process.execPath, entry, "outside"],
+    {
+      env: job.env,
+      stdio: ["ignore", "pipe", "inherit"],
+    },
+  );
   const exited = once(outside, "exit");
   try {
     await Promise.race([
@@ -47,15 +53,26 @@ export async function verifyAccounting(job: HostedJob) {
       "/proc/" + outside.pid + "/cgroup",
       "utf8",
     ).trim();
+    const status = readFileSync("/proc/" + outside.pid + "/status", "utf8");
+    const injectedCpuList = /^Cpus_allowed_list:\s+([0-9,-]+)$/m.exec(
+      status,
+    )?.[1];
+    assert.ok(injectedCpuList);
+    assert.deepEqual(cpuNumbers(injectedCpuList), subset.cpus);
     const path = join(job.evidence, "accounting-outside-work.json");
     runInMeasurementUnit(
       entry,
       ["sample", path],
       job.env,
       join(job.evidence, "accounting-outside-work.log"),
+      subset,
     );
     const measured = json(path);
-    receipt(path, { ...measured, injectedMembership: membership });
+    receipt(path, {
+      ...measured,
+      injectedMembership: membership,
+      injectedCpuList,
+    });
     assert.notEqual(membership, "0::" + measured.scope);
     assert.equal(
       measured.guards.unrelatedCpu,

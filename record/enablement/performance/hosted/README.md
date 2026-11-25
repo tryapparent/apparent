@@ -57,9 +57,20 @@ The host receipt records the driver's cgroup CPU counters and persistent
 process snapshots at the measured batch boundaries. No sampling runs during
 the batch.
 Before timing, both lanes require three quiet one-second windows. With the
-benchmark stopped, total guest CPU use must be within the 5% unrelated-work
-limit as well as the existing CPU and I/O pressure limits. The receipt keeps
-all sampled windows, even if it cannot admit the batch.
+benchmark stopped, CPU use in its allocation must be within the 5%
+unrelated-work limit as well as the existing CPU and I/O pressure limits.
+The receipt keeps all windows, including rejected windows.
+
+Start selects two vCPUs that form one or more complete visible sibling
+groups. It chooses among eligible pairs from idle CPU counters after builds
+finish, then holds that pair for preparation, calibration and matched arms.
+The service pins the entire process tree, including Xvfb and observation,
+before launching it. Both the process affinity and effective cgroup mask
+must match. The receipt records the guest topology, selection, counter tick
+rate and effective logical CPU capacity. Start accounts for unrelated work
+on the selected CPUs and verifies that an independent worker on those same
+CPUs is rejected. Global PSI, CPU steal, I/O and throttling evidence remain.
+Stop uses the full runner allocation.
 Native and standalone local replays retain their existing pressure checks.
 `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing
