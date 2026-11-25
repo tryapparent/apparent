@@ -11,3 +11,8 @@ def pause_capture(local_background: Bool, word_probe: Bool) -> Bool:
 
 def eof_punctuation_start_allowance_ms() -> U32:
   80
+
+def whole_file_cpu_threads(+available: U32) -> U32:
+  usable = U32.max(available, 1)
+  reserved = U32.max(1, U32.sub(usable, 1))
+  Bool.pick(U32, U32.is_eq(available, 0), 0, U32.min(reserved, 8))

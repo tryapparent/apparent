@@ -126,3 +126,19 @@ impl Incremental {
         Ok(transcript)
     }
 }
+
+pub(super) fn whole_file_session(model: &Model) -> Result<Session> {
+    #[cfg(target_os = "linux")]
+    if model
+        .device()
+        .is_ok_and(|device| device.device_type == DeviceType::Cpu)
+        && model.arch() == "parakeet"
+    {
+        let available = std::thread::available_parallelism().map_or(0, |cpus| cpus.get());
+        return Ok(model.session_with(&SessionOptions {
+            n_threads: super::resident_final::whole_file_cpu_threads(available),
+            ..Default::default()
+        })?);
+    }
+    Ok(model.session()?)
+}
