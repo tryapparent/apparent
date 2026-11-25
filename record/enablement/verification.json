@@ -236,24 +236,24 @@
       ]
     },
     {
-      "id": "hyprland-pin-window-context",
+      "id": "pin-window-context",
       "description": "Verify bounded native accessibility context and clipboard text for a pin.",
-      "platforms": ["linux-hyprland"],
-      "userEntryPoint": "Enable Recording context for agents in Labs and place a Shift-click pin during a Screen recording.",
+      "platforms": ["linux-hyprland", "macos"],
+      "userEntryPoint": "Enable Recording context for agents in Labs and place a pin during a Screen recording.",
       "prerequisites": [
-        "A candidate running in an isolated Omarchy desktop and a synthetic app publishing AT-SPI controls.",
+        "A candidate running in an isolated macOS or Omarchy desktop and a synthetic app exposing accessible controls.",
         "Desktop accessibility and live screen recording available."
       ],
       "runner": {
         "path": "record/media/action-context/README.md",
-        "instructions": "record/media/action-context/README.md#verify-in-an-isolated-omarchy-desktop"
+        "instructions": "record/media/action-context/README.md#verify-in-an-isolated-native-desktop"
       },
       "expectedEvidence": [
         "A disabled button and checked checkbox appear in the pinWindow observation and the relevant keyframe handoff.",
         "The password value is absent. The pin still saves with the lab off or when the target has no accessibility tree."
       ],
       "limits": [
-        "Bounds are best-effort, window-relative coordinates. This check exercises the available AT-SPI provider on Hyprland."
+        "Bounds are best-effort, window-relative coordinates. This check exercises Accessibility on macOS or AT-SPI on Hyprland."
       ]
     }
   ]
