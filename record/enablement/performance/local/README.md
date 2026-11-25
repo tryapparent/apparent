@@ -1,5 +1,8 @@
 # Measure pill startup without a VM
 
+Use the [hosted gateway](../hosted/README.md) for new campaign scores. Local
+execution is for developer replay and diagnostics.
+
 On Linux, install Node 22, Xvfb, FFmpeg with X11 capture, xdotool and the
 repository's Bend2 toolchain. Pass the unpacked directory of a verified Linux
 AppImage, or the Desktop frontend directory of an exact build with the built
@@ -81,3 +84,52 @@ The command uses the repository journey's Bend2 material-gain and stop
 decisions. It prints the best qualified score, same-build speed variation,
 complete active-effort windows, early and recent gain rates, and the distinct
 ideas since the last accepted gain.
+
+## Replay the native Stop fixture without a VM
+
+Use Node 22, Xvfb, Weston with its X11 backend and software renderer, GNU time,
+FFmpeg, the repository Bend2 toolchain, and a verified unpacked Linux AppImage.
+Pass an integrity-verified native `threshold-27` [recording report](../README.md#collect-native-reports)
+with its adjacent retained `vm/` directory. The command copies only the synthetic
+manifest, movie and narration from that take. It checks the two saved ink
+strokes, pins the English Parakeet model and records the build and fixture digests.
+Use a new owner-only `/tmp/apparent-dev-…` result path.
+
+```sh
+node record/enablement/performance/local/stop.ts "$control_appdir" "$native_report" "$model" "$results"
+node record/enablement/performance/local/stop.ts "$control_appdir" "$native_report" "$model" "$comparison" "$candidate_appdir"
+```
+
+For a shared host, the same command accepts `--collect` with the positional
+arguments above and `--score "$results"` after collection. Keep packaging and
+the Bend2 scorer outside the sealed timing run.
+
+The real AppImage replays the fixed movie and narration through
+`apparent reprocess --bench 1`. The native fixture uses whole-file transcription
+with its streaming and live-word experiments off. Retaining that route keeps
+recognition work on the same side of the cutoff. Each arm runs in a new process
+with its own home. Weston inside Xvfb supplies a private Wayland clipboard. The
+packaged clipboard reader first checks a unique seed and then independently
+reads the exact newly saved bundle reference. FFmpeg decodes both output
+tracks, and the runner verifies the pinned transcript source, the word clocks,
+the saved ink, and the output size. A test of the physical Finish chord or
+Desktop completion worker uses the native Stop lane.
+
+The comparison normalizes the command's finalization-entry-to-clipboard-return
+stopwatch to 100. The separate host spans cover command launch, full replay
+and independent clipboard readback. The app reports local stage durations
+that can overlap. The baseline repeats with logging enabled, disabled,
+disabled and enabled to measure same-build variation and logging overhead.
+The candidate comparison uses matched control, candidate, candidate, control
+runs with logging enabled throughout. The receipt includes CPU pressure,
+whole-replay CPU time and peak RSS, filesystem output count, bundle bytes,
+and transcript edit distance against the verified fixture. Use the native
+lane for post-Finish process resources and peak scratch allocation.
+
+For a build with the Engine's local Finish trace emitter, set
+`APPARENT_STOP_BENCH_SPANS=1` on the collection command. The probe records
+content-free spans with the exact arm ID and a common finalization cutoff.
+The raw receipt contains span boundaries, parallel work, gaps, and the last
+measured prerequisite before bundle assembly. In calibration, the inner arms
+leave tracing off. Restore the same probe setting on every arm of a candidate
+comparison. The flag writes only to the replay log.

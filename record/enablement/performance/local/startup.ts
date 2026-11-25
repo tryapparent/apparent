@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream, mkdirSync, writeFileSync } from "node:fs";
+import {
+  createReadStream,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { benchmarkComparison } from "../../../../shared/enablement/performance/comparison.ts";
 import { schedulerPressureUs } from "../fixtures/host-pressure.ts";
@@ -78,36 +85,44 @@ if (args[0] !== "--xvfb-child") {
     "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD]",
   );
   mkdirSync(output, { mode: 0o700 });
-  const child = spawnSync(
-    "xvfb-run",
-    [
-      "-a",
-      "-f",
-      resolve(output, "display.xauth"),
-      "-s",
-      `-screen 0 ${width}x320x24 -nolisten tcp`,
-      process.execPath,
-      process.argv[1],
-      "--xvfb-child",
-      ...[control, output, ...(candidate ? [candidate] : [])].map((path) =>
-        resolve(path),
-      ),
-    ],
-    {
-      env: {
-        PATH: process.env.PATH,
-        HOME: process.env.HOME,
-        TMPDIR: process.env.TMPDIR,
+  const privateDisplay = mkdtempSync(join(tmpdir(), "apparent-dev-xvfb-"));
+  const authority = join(privateDisplay, "display.xauth");
+  try {
+    const child = spawnSync(
+      "xvfb-run",
+      [
+        "-a",
+        "-f",
+        authority,
+        "-s",
+        `-screen 0 ${width}x320x24 -nolisten tcp`,
+        process.execPath,
+        process.argv[1],
+        "--xvfb-child",
+        authority,
+        ...[control, output, ...(candidate ? [candidate] : [])].map((path) =>
+          resolve(path),
+        ),
+      ],
+      {
+        env: {
+          PATH: process.env.PATH,
+          HOME: process.env.HOME,
+          TMPDIR: process.env.TMPDIR,
+        },
+        stdio: "inherit",
       },
-      stdio: "inherit",
-    },
-  );
-  if (child.error) throw child.error;
-  process.exitCode = child.status ?? 1;
+    );
+    if (child.error) throw child.error;
+    process.exitCode = child.status ?? 1;
+  } finally {
+    rmSync(privateDisplay, { recursive: true, force: true });
+  }
 } else {
-  const [, control, output, candidate] = args;
+  const [, authority, control, output, candidate] = args;
   assert.match(process.env.DISPLAY ?? "", /^:\d+$/);
-  assert.equal(process.env.XAUTHORITY, join(output, "display.xauth"));
+  assert.ok(authority);
+  assert.equal(process.env.XAUTHORITY, authority);
   const controlSetup = locate(control);
   const candidateSetup = candidate ? locate(candidate) : undefined;
   assert.ok(

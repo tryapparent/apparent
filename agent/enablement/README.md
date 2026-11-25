@@ -134,7 +134,8 @@ guest-visible CPUs. Hypervisor topology beyond those counters is unavailable.
 Before scoring, the adapter pins a competing subprocess to the selected CPU
 and requires the same contention guard to reject it. The worker exits before
 calibration. Both batches use the selected CPU and its guest-visible peers
-with the existing 10% guard. A missing native probe or failed resource,
+with the existing 10% guard. The CPU resource guard compares medians of seven verified process samples
+per fixture and retains every sample. A missing native probe or failed resource,
 output or contention guard exits nonzero and retains the available evidence.
 
 The evidence directory contains exact command arguments, build logs, CPU

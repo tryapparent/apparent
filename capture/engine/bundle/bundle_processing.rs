@@ -3,7 +3,7 @@
 //! This is an in-crate migration seam, not a standalone Engine. Acquisition and
 //! caller effects stay outside; existing config, media and recovery adapters remain.
 
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, time::Instant};
 use crate::recording_trace::{self as trace, Operation};
 
 use anyhow::{Context, Result};
@@ -65,7 +65,7 @@ fn merge_full_keyframes(
 /// Per-stage timing breakdown logged on every finish (`finish timings: ...`).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct StageTimings {
-    pub started_at: Option<std::time::Instant>,
+    pub started_at: Option<Instant>,
     pub stop_ms: Option<u64>,
     pub audio_ms: Option<u64>,
     pub candidates_ms: Option<u64>,
@@ -324,12 +324,12 @@ pub fn finalize_capture_bundle_with_transcript(
     interaction_telemetry: Option<model::InteractionTelemetry>,
     transcript: Option<TranscriptData>,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
-    publication::publish_after(bundle_dir, || {
+    trace::local_finish(activity.stop_started, || publication::publish_after(bundle_dir, || {
         let mut events = events;
         merge_capture_notes(bundle_dir, &mut events).stage(Stage::NotesRead)?;
         let started_at = activity
             .stop_started
-            .unwrap_or_else(std::time::Instant::now);
+            .unwrap_or_else(Instant::now);
         let stop_ms = activity.stop_ms;
         let capture::ScreenRecording {
             frames,
@@ -366,7 +366,7 @@ pub fn finalize_capture_bundle_with_transcript(
             let recorded_audio = &recorded_audio;
             let transcribe_handle = scope.spawn(trace::propagate(move || {
                 let _span = trace::span(Operation::Transcribe);
-                let t0 = std::time::Instant::now();
+                let t0 = Instant::now();
                 let tr = transcript.unwrap_or_else(|| transcribe::transcribe(
                     has_wav.then_some(wav_path.as_path()),
                     recorded_audio.as_ref(),
@@ -482,7 +482,7 @@ pub fn finalize_capture_bundle_with_transcript(
             return Err(anyhow::anyhow!("captured audio disappeared during bundle construction")).stage(Stage::AudioMissing);
         }
         Ok(built)
-    })
+    }))
 }
 
 pub fn rebuild_screen_bundle(
@@ -513,7 +513,7 @@ fn rebuild_screen_bundle_from(
     let _coordination = publication::coordinate(out)?;
     let mut old = old;
     merge_capture_notes(out, &mut old.events)?;
-    let started_at = std::time::Instant::now();
+    let started_at = Instant::now();
     let video = old
         .video
         .as_ref()

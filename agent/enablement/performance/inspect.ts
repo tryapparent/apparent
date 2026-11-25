@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { hostname, release } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   benchmarkComparison,
   type Matched,
@@ -284,16 +284,27 @@ const resources = binaries.map((binary) =>
       .split(" ")
       .map(Number);
     assert([peakRssKiB, outputBlocks].every(Number.isFinite));
-    const { cpuMs, stdout }: { cpuMs: number; stdout: string } = JSON.parse(
+    const samples: { cpuMs: number; stdout: string }[] = JSON.parse(
       run("bun", [
         new URL("./process-cpu.ts", import.meta.url).pathname,
         binary.path,
         fixture.bundle,
       ]),
     );
-    assert(Number.isFinite(cpuMs) && cpuMs > 0);
-    assert.equal(fixture.verify(stdout), wait.stdoutSha256);
-    return { name: fixture.name, id: wait.id, cpuMs, peakRssKiB, outputBlocks };
+    assert.equal(samples.length, 7);
+    for (const { cpuMs, stdout } of samples) {
+      assert(Number.isFinite(cpuMs) && cpuMs > 0);
+      assert.equal(fixture.verify(stdout), wait.stdoutSha256);
+    }
+    const cpuSamplesMs = samples.map(({ cpuMs }) => cpuMs);
+    return {
+      name: fixture.name,
+      id: wait.id,
+      cpuMs: median(cpuSamplesMs),
+      cpuSamplesMs,
+      peakRssKiB,
+      outputBlocks,
+    };
   }),
 );
 type DiagnosticWait = Wait & { case: Fixture["name"] };
@@ -335,7 +346,7 @@ for (const binary of control.sha256 === candidate.sha256
     .filter(
       ({ bundle }) =>
         bundle.startsWith(job + "/") ||
-        (hosted && bundle.startsWith(dirname(work) + "/")),
+        (hosted && bundle.startsWith(work + "/")),
     )
     .map((fixture) => {
       const index = join(fixture.bundle, "apparent.json");

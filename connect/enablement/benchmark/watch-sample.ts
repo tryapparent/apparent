@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Matched } from "../../../shared/enablement/performance/comparison.ts";
+import { readCpuUsage } from "./hosted/quota.ts";
 import type { watchAttempt } from "./watch.ts";
 
 export type Replay = {
@@ -95,6 +96,7 @@ export async function sample(
   chrome: string,
   cpuSpec: string,
   traced: boolean,
+  hostedCgroup?: string,
 ) {
   const cpus = await affinity(cpuSpec);
   const command = join(tree, self, "recipient.ts");
@@ -125,6 +127,7 @@ export async function sample(
   const clockTicks = Number(
     execFileSync("getconf", ["CLK_TCK"], { encoding: "utf8" }),
   );
+  const scopeBefore = hostedCgroup && (await readCpuUsage(hostedCgroup));
   const before = await cpuCounters(cpus);
   const replayPath = execFileSync(
     "taskset",
@@ -150,6 +153,7 @@ export async function sample(
     },
   ).trim();
   const after = await cpuCounters(cpus);
+  const scopeAfter = hostedCgroup && (await readCpuUsage(hostedCgroup));
   const replay = await read<Replay>(replayPath);
   assert.equal(replay.revision, revision);
   assert.deepEqual(
@@ -191,7 +195,29 @@ export async function sample(
     ),
   };
   assert.ok(Object.values(resource).every(Number.isFinite));
-  return { replay, replayPath, workerHash, harness, resource, log };
+  return {
+    replay,
+    replayPath,
+    workerHash,
+    harness,
+    resource,
+    log,
+    cpuAccounting: {
+      clockTicks,
+      cpus,
+      before,
+      after,
+      ...(typeof scopeBefore === "number" && typeof scopeAfter === "number"
+        ? {
+            runnerCgroup: {
+              path: hostedCgroup,
+              beforeUsec: scopeBefore,
+              afterUsec: scopeAfter,
+            },
+          }
+        : {}),
+    },
+  };
 }
 
 export type Sample = Awaited<ReturnType<typeof sample>>;

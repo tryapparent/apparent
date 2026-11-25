@@ -1,3 +1,10 @@
 {
-  "handoff": "handoff/enablement/ci/hosted-performance.ts"
+  "handoff": "handoff/enablement/ci/hosted-performance.ts",
+  "onboarding": "onboarding/enablement/performance/hosted.ts",
+  "connect": "connect/enablement/benchmark/hosted.ts",
+  "agent": "agent/enablement/performance/hosted.ts",
+  "public": "public/enablement/browser-proof/homepage-performance/hosted.ts",
+  "record-start": "record/enablement/performance/hosted/start.ts",
+  "record-stop": "record/enablement/performance/hosted/stop.ts",
+  "record-native-probe": "record/enablement/performance/hosted/native-probe.ts"
 }

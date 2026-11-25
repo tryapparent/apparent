@@ -10,11 +10,12 @@ declare const Bun: {
 };
 
 const [binary, bundle] = process.argv.slice(2);
-const child = Bun.spawnSync([binary, "inspect", bundle]);
-assert.equal(child.exitCode, 0, Buffer.from(child.stderr).toString());
-console.log(
-  JSON.stringify({
+const samples = Array.from({ length: 7 }, () => {
+  const child = Bun.spawnSync([binary, "inspect", bundle]);
+  assert.equal(child.exitCode, 0, Buffer.from(child.stderr).toString());
+  return {
     cpuMs: Number(child.resourceUsage.cpuTime.total) / 1000,
     stdout: Buffer.from(child.stdout).toString(),
-  }),
-);
+  };
+});
+console.log(JSON.stringify(samples));
