@@ -1,4 +1,0 @@
-{
-  "$comment": "motion-lint settings for `apparent lab pill` traces: the lab already waits before its first step, so nothing is skipped as a launch.",
-  "global": { "launchSettleMs": 0 }
-}

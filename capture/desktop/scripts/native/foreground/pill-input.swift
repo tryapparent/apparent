@@ -394,8 +394,6 @@ func preparePillAccessibility(_ req: [String: Any]) throws -> [String: Any] {
     while true {
         try withinBudget()
         try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")
-        // Before hover the native panel is intentionally click-through. Tree
-        // readiness is not a physical-hit assertion; click checks that separately.
         if let identity = try ownedAccessibilityButton(expected, label: "Finish", point: nil, descendants: descendants) {
             _ = try currentPill(req, expected)
             try need(frontPID() == frontBefore, "Foreground drift during accessibility bootstrap")

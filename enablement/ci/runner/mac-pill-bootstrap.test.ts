@@ -115,7 +115,7 @@ print("14 production bootstrap scenarios passed")
 test('actual foreground consumer requires one successful Darwin regression before continuing and retains failures', async () => {
   const consumer = readFileSync(new URL('../../../capture/desktop/ui/frontend/tests/foreground/mac.ts', import.meta.url), 'utf8');
   const start = consumer.indexOf('    // Once per case, before app launch/capture/input.');
-  const end = consumer.indexOf('    // Login registration', start);
+  const end = consumer.indexOf('    await writeFile(configFile', start);
   assert.ok(start > 0 && end > start);
   const block = consumer.slice(start, end);
   assert.equal(consumer.match(/mac-pill-bootstrap\.test\.ts/g)?.length, 1);

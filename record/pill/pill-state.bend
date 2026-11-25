@@ -26,7 +26,6 @@ type Phase is Data:
   Recording{reveal: Reveal}
   Processing{released: Bool}
   Completed{result: Completion}
-  Dismissing{}
 
 type PillEvent is Data:
   PickerOpened{mode: Mode}
@@ -37,7 +36,6 @@ type PillEvent is Data:
   CaptureSaved{recovery: Bool}
   CaptureFailed{}
   Dismiss{}
-  SurfaceHidden{}
   Hide{}
   RevealOpened{activity: U32}
   RevealClosed{}
@@ -94,7 +92,7 @@ def expire(phase: Phase) -> Phase:
     case Recording{reveal}:
       Recording{Closed{}}
     case Completed{result}:
-      Dismissing{}
+      Hidden{}
     case other:
       other
 
@@ -190,12 +188,6 @@ def phase_event(phase: Phase, event: PillEvent, now: U32) -> Phase:
           phase
     case Completed{result}:
       completed_event(result, event, now)
-    case Dismissing{}:
-      match event:
-        case SurfaceHidden{}:
-          Hidden{}
-        case other:
-          phase
     case Hidden{}:
       phase
 
@@ -215,17 +207,9 @@ def step(event: PillEvent, phase: Phase, now: U32) -> Phase:
     case Hide{}:
       Hidden{}
     case Dismiss{}:
-      match phase:
-        case Hidden{}:
-          phase
-        case other:
-          Dismissing{}
+      Hidden{}
     case CaptureFailed{}:
-      match phase:
-        case Hidden{}:
-          phase
-        case other:
-          Dismissing{}
+      Hidden{}
     case PickerOpened{mode}:
       idle_event(phase, Selecting{mode})
     case CaptureStarted{}:
@@ -237,12 +221,12 @@ def step(event: PillEvent, phase: Phase, now: U32) -> Phase:
     case other:
       phase_event(phase, other, now)
 
-law stale_surface_cannot_hide_a_recording:
-  for +reveal: Reveal
+law failed_capture_hides_pill:
+  for phase: Phase
   for now: U32
-  {step(SurfaceHidden{}, Recording{reveal}, now) == Recording{reveal} : Phase}
+  {step(CaptureFailed{}, phase, now) == Hidden{} : Phase}
 
-def stale_surface_cannot_hide_a_recording(reveal, now):
+def failed_capture_hides_pill(phase, now):
   {==}
 
 type Share is Data:

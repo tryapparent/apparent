@@ -10,7 +10,6 @@ pub(super) mod linux;
 #[cfg(target_os = "macos")]
 pub(super) mod macos;
 pub(super) mod motion;
-pub(super) mod pill_theme;
 pub(super) mod recording_completion;
 pub(super) mod whiteboard;
 

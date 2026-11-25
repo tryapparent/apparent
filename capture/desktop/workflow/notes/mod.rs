@@ -34,7 +34,6 @@ pub enum CommandMessage {
         pin: u32,
     },
     Dismiss,
-    List,
     Windows {
         ids: Vec<u32>,
     },
@@ -61,7 +60,6 @@ enum Message {
     Action(CommandMessage),
     Stop,
     BadgePosition([i32; 4]),
-    Embedded(bool),
     List { focus: u64, owner: u32 },
     Finish,
     ChildEof,
@@ -74,7 +72,6 @@ pub struct Session {
     saved_count: Arc<std::sync::atomic::AtomicUsize>,
     pub(crate) tip_checked: bool,
     pub(crate) tip_since: Option<std::time::Instant>,
-    last_sent_embedded: bool,
     last_sent_badge_rect: Option<[i32; 4]>,
     lifecycle: Arc<std::sync::Mutex<lifecycle::Lifecycle>>,
 }
@@ -182,8 +179,7 @@ impl Session {
                                 match &action {
                                     CommandMessage::Ready => admission.observed_ready(),
                                     CommandMessage::Draft { .. } | CommandMessage::Save { .. } |
-                                    CommandMessage::Delete { .. } | CommandMessage::Edit { .. } |
-                                    CommandMessage::List => admission.observed_note_request(),
+                                    CommandMessage::Delete { .. } | CommandMessage::Edit { .. } => admission.observed_note_request(),
                                     _ => {},
                                 }
                             }
@@ -261,7 +257,6 @@ impl Session {
                     match message {
                         Message::Stop | Message::ChildEof => return Ok(()),
                         Message::BadgePosition(rect) => presentation_events.push(serde_json::json!({"kind": "badge", "rect": rect})),
-                        Message::Embedded(value) => presentation_events.push(serde_json::json!({"kind": "embedded", "value": value})),
                         Message::List { focus: target, owner: target_owner } => {
                             presentation_admission.requested();
                             focus = target;
@@ -333,10 +328,6 @@ impl Session {
                                 store.dismiss();
                                 presentation_events.push(serde_json::json!({"kind": "dismiss"}));
                             }
-                            CommandMessage::List => {
-                                presentation_admission.requested();
-                                presentation_events.push(serde_json::json!({"kind": "list"}));
-                            },
                             CommandMessage::Surface {
                                 id,
                                 rect,
@@ -461,7 +452,6 @@ impl Session {
             saved_count,
             tip_checked: false,
             tip_since: None,
-            last_sent_embedded: false,
             last_sent_badge_rect: None,
             lifecycle,
         })
@@ -478,12 +468,6 @@ impl Session {
 
     pub fn show_list(&self, focus: u64, owner: u32) {
         let _ = self.sender.try_send(Message::List { focus, owner });
-    }
-
-    pub fn set_embedded(&mut self, embedded: bool) {
-        if self.last_sent_embedded != embedded && self.sender.try_send(Message::Embedded(embedded)).is_ok() {
-            self.last_sent_embedded = embedded;
-        }
     }
 
     pub fn outside(&self) {
@@ -624,7 +608,6 @@ mod transport_tests {
         };
         // Never accept injected Store commands as proof that Electron actually started.
         wait(&|| session.lifecycle.lock().unwrap().ready());
-        session.set_embedded(true);
         session.position_badge([0.0, 0.0, 600.0, 56.0]);
         session.open(Anchor { pin: 1, t: 100, x: 0.5, y: 0.5, screen_x: 500.0, screen_y: 350.0, focus: 0, owner: 0 });
         wait(&|| observed.notes_editing.load(Ordering::Acquire));

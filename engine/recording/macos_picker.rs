@@ -178,14 +178,11 @@ mod tests {
     const LAPTOP: screens::Screen = screens::Screen {
         id: 1,
         frame: [0., 0., 1440., 900.],
-        visible: [0., 0., 1440., 900.],
         scale: 2.,
-        safe_top: 0.,
     };
     const MONITOR: screens::Screen = screens::Screen {
         id: 2,
         frame: [-1440., -150., 1440., 900.],
-        visible: [-1440., -150., 1440., 900.],
         ..LAPTOP
     };
 

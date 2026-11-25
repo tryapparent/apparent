@@ -589,29 +589,6 @@ mod tests {
         assert_eq!(excluded, vec![41]);
     }
 
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn recording_equalizer_is_available_without_an_experiment() {
-        assert!(recording_equalizer_enabled());
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn equalizer_only_moves_for_new_samples_and_decays_on_stall() {
-        let mut meter = InputEqualizer::default();
-        meter.step(None, false); // lab recording / missing microphone
-        assert_eq!(meter.level, 0.0);
-        meter.step(Some((1280, 0.8)), false);
-        assert!(meter.level > 0.0 && meter.level < 0.8);
-        let last = meter.level;
-        meter.step(Some((1280, 0.8)), false); // same samples, not proof of continued input
-        assert!(meter.level < last);
-        meter.step(Some((2560, 0.0)), true); // fresh silent callback
-        assert_eq!(meter.level, 0.0);
-        meter.step(Some((128, 0.5)), true); // new capture resets count
-        assert_eq!(meter.level, 0.5);
-    }
-
     #[test]
     fn completed_capture_distinguishes_missing_audio_from_no_words_and_model_failure() {
         let empty = crate::shared::model::TranscriptData::default();
@@ -754,26 +731,6 @@ mod tests {
     }
 
     #[test]
-    fn recording_controls_offer_whiteboard_on_every_desktop() {
-        assert!(whiteboard_enabled());
-        let controls = trail_keys(false, false, &[], "hud-");
-        assert_eq!(
-            controls.iter().any(|item| item
-                .as_ref()
-                .is_some_and(|(name, _)| name == "hud-whiteboard")),
-            true
-        );
-    }
-
-    #[test]
-    fn island_geometry_is_concentric() {
-        assert_eq!(ISLAND_RADIUS, CHIP_RADIUS + ISLAND_INSET);
-        assert_eq!(ISLAND_PAD + 1.0, ISLAND_INSET);
-        assert_eq!(CHIP_H + 2.0 * ISLAND_INSET, ISLAND_H);
-        assert!(ISLAND_H <= PILL_WINDOW_H);
-    }
-
-    #[test]
     fn a_held_drag_needs_room_for_an_area() {
         let laptop = [0.0, 0.0, 1728.0, 1117.0];
         assert_eq!(
@@ -788,16 +745,12 @@ mod tests {
         let first = crate::capture::engine::runtime::screens::Screen {
             id: 1,
             frame: [0.0, 0.0, 1920.0, 1200.0],
-            visible: [0.0, 0.0, 1920.0, 1200.0],
             scale: 1.25,
-            safe_top: 0.0,
         };
         let second = crate::capture::engine::runtime::screens::Screen {
             id: 2,
             frame: [1920.0, 0.0, 1280.0, 800.0],
-            visible: [1920.0, 0.0, 1280.0, 800.0],
             scale: 1.0,
-            safe_top: 0.0,
         };
         let screens = [first, second];
         let selected_capture = second.frame;
@@ -847,16 +800,12 @@ mod tests {
             crate::capture::engine::runtime::screens::Screen {
                 id: 1,
                 frame: [0.0, 0.0, 1728.0, 1117.0],
-                visible: [0.0, 0.0, 1728.0, 1117.0],
                 scale: 2.0,
-                safe_top: 0.0,
             },
             crate::capture::engine::runtime::screens::Screen {
                 id: 2,
                 frame: left.map(f64::from),
-                visible: left.map(f64::from),
                 scale: 1.0,
-                safe_top: 0.0,
             },
         ];
         let area = area_rect([-150.0, 200.0], [160.0, 400.0], left).unwrap();
@@ -907,100 +856,6 @@ mod tests {
         assert_eq!(pick("0", true), None);
         assert_eq!(pick("5", true), None);
         assert_eq!(pick("a", true), None);
-    }
-
-    #[test]
-    fn selecting_row_width_mirrors_layout() {
-        let segment = |label: f32| label + 2.0 * SEG_PX + SEG_ICON + SEG_ICON_GAP;
-        let divider = 1.0 + 2.0 * DIVIDER_MX;
-        // Three segments, divider, ✕: four gaps between five items.
-        assert_eq!(
-            selecting_row_width(&[30.0, 50.0, 45.0], None),
-            segment(30.0) + segment(50.0) + segment(45.0) + divider + CHIP_H + 4.0 * CHIP_GAP
-        );
-        // A fourth segment and the Record chip each add their width and one gap.
-        assert_eq!(
-            selecting_row_width(&[30.0, 50.0, 45.0, 42.0], Some(70.0)),
-            selecting_row_width(&[30.0, 50.0, 45.0], None) + segment(42.0) + 70.0 + 2.0 * CHIP_GAP
-        );
-        // The widest row (generous label estimates) still fits the pill window.
-        let widest = selecting_row_width(&[34.0, 56.0, 50.0, 46.0], Some(2.0 * CHIP_PX + 52.0));
-        assert!(
-            widest + 2.0 * ISLAND_INSET <= PILL_WINDOW_W - 16.0,
-            "{widest}"
-        );
-    }
-
-    #[test]
-    fn island_spring_settles_without_large_overshoot() {
-        let (mut x, mut v) = (200.0_f32, 0.0_f32);
-        let mut peak = x;
-        for _ in 0..90 {
-            (x, v) = spring_step(x, v, 300.0, 1.0 / 60.0, motion::Tune::DEFAULT.island);
-            peak = peak.max(x);
-        }
-        assert!((x - 300.0).abs() < 0.5, "settled at {x}");
-        assert!(peak < 300.0 + 100.0 * 0.05, "overshoot peak {peak}");
-    }
-
-    #[test]
-    fn reveal_springs_lead_the_morph_palette_and_settle() {
-        let t = motion::Tune::DEFAULT;
-        // Width leads morph .42/.16 open and .38/.08 close on a slightly faster spring.
-        assert!(t.reveal_open.response < 0.42);
-        assert!(t.reveal_close.response < 0.38);
-        assert!(t.reveal_close.response < t.reveal_open.response);
-        assert!((t.reveal_open.bounce - 0.16).abs() < 1e-6);
-        assert!(t.reveal_exit_s < t.reveal_enter_s && t.reveal_exit_s >= 0.75 * t.reveal_enter_s);
-        assert!(t.reveal_blur_px <= 4.0);
-        for (spring, from, to) in [
-            (t.reveal_open, ISLAND_OPEN_FROM_W, 430.0),
-            (t.reveal_close, 430.0, 330.0),
-        ] {
-            let (mut x, mut v) = (from, 0.0_f32);
-            for _ in 0..60 {
-                (x, v) = spring_step(x, v, to, 1.0 / 60.0, spring);
-            }
-            assert!((x - to).abs() < 0.5, "settled at {x}");
-        }
-    }
-
-    #[test]
-    fn trailing_items_fade_in_as_the_edge_uncovers_them() {
-        let offsets = trail_offsets(100.0, &[50.0, 60.0]);
-        assert_eq!(offsets, vec![100.0, 100.0 + 50.0 + CHIP_GAP]);
-        assert_eq!(edge_alpha(100.0, 100.0, 50.0), 0.0);
-        assert!((edge_alpha(125.0, 100.0, 50.0) - 0.5).abs() < 1e-6);
-        assert_eq!(edge_alpha(150.0, 100.0, 50.0), 1.0);
-        assert_eq!(edge_alpha(400.0, 100.0, 50.0), 1.0);
-    }
-
-    #[test]
-    fn a_switch_chip_morph_starts_where_the_pill_was_and_rests_centred() {
-        let (width, target, clock_w) = (336.0, 298.0, 35.0);
-        let start = SwitchLayout::new(SwitchMorph { slide: None }, width, target, clock_w);
-        // The lead is still pinned to the left edge and the chips start behind its divider.
-        assert!(start.ghost_left().abs() < 1e-3, "{}", start.ghost_left());
-        let chips_x = CHIP_H + clock_w + LEAD_TRAIL + 2.0 * CHIP_GAP + 1.0 + 2.0 * DIVIDER_MX;
-        assert!((start.row_left() - chips_x).abs() < 1e-3);
-        assert_eq!(start.ghost_alphas(), [1.0, 1.0, 1.0]);
-        // At rest the picker row is centred in the capsule, the lead past its edge and gone.
-        let rest = SwitchLayout::new(
-            SwitchMorph {
-                slide: Some((0.0, 0.0)),
-            },
-            target,
-            target,
-            clock_w,
-        );
-        assert!(rest.row_left().abs() < 1e-3);
-        assert_eq!(rest.ghost_alphas(), [0.0, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn island_spring_is_stable_for_long_frames() {
-        let (x, _) = spring_step(200.0, 0.0, 300.0, 0.05, motion::Tune::DEFAULT.island);
-        assert!(x > 200.0 && x < 300.0);
     }
 
     #[test]

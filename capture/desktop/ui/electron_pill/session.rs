@@ -225,7 +225,7 @@ impl Session {
                         Err(_) => break ReaderStop::InvalidJson,
                     };
                     #[cfg(target_os = "linux")]
-                    if let Some(id) = value.get("releasePickerFocus").and_then(|v| v.as_u64()) {
+                    if let Some(id) = value.get("releaseFocus").and_then(|v| v.as_u64()) {
                         let current = identified.load(Ordering::Acquire);
                         if current != 0 && id == u64::from(current)
                             && crate::capture::desktop::linux::hyprland::running()
@@ -298,7 +298,6 @@ impl Session {
                                 Ok(false) => {}, // Older Hyprlang retains compositor-owned motion.
                                 Err(error) => {
                                     crate::capture::engine::runtime::apparent_log(format!("Pill motion preparation failed: {error:#}"));
-                                    // Even a partial registration must be retired.
                                     motion_rules.push(id);
                                     break ReaderStop::PinPreparation;
                                 }
@@ -432,8 +431,7 @@ impl Session {
                 self.activated.load(Ordering::Acquire) || since.elapsed() < Duration::from_secs(1)
             })
     }
-    /// Sample before recovery drops/kills the exact owned child. These are
-    /// observations only; the existing health and dispatch gates stay authoritative.
+
     pub(super) fn failure_context(&mut self) -> serde_json::Value {
         let child = self.child.as_mut().map(|child| diagnostics::child_status(child.try_wait()));
         serde_json::json!({
@@ -538,7 +536,7 @@ impl Session {
         drop(pending);
         wake.notify_one();
     }
-    pub fn actions(&mut self) -> Vec<crate::capture::desktop::native::pill::PillAction> {
+    pub fn actions(&mut self) -> Vec<super::PillAction> {
         let mut admitted = vec![];
         let before = self.view.revision;
         while let Ok((received, command)) = self.actions.try_recv() {

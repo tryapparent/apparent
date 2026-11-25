@@ -40,7 +40,6 @@ async function boot(t: TestContext) {
     removeMenu() {}
     setAlwaysOnTop() {}
     setVisibleOnAllWorkspaces() {}
-    setPosition() {}
     hide() {}
     getMediaSourceId() { return `window:${windows.indexOf(this) + 1}:0`; }
   }
@@ -63,7 +62,7 @@ async function boot(t: TestContext) {
       argv: ['electron', entry, '--capture-frame=0,0,1280,800', '--notes-profile=/unused'],
       stdin: input, stdout: {write: (line: string) => messages.push(JSON.parse(line))}},
   }, {filename: entry});
-  await tick(); assert.equal(documents.length, 2);
+  await tick(); assert.equal(documents.length, 1);
   return {messages, notifications, documents, acknowledge, quits: () => quits,
     loading: () => { popupLoading = true; },
     loaded: async () => { popupLoading = false; windows[0]!.webContents.emit('did-finish-load'); await tick(); },
@@ -72,13 +71,11 @@ async function boot(t: TestContext) {
   };
 }
 
-test('Finish during startup cannot acknowledge before both documents announce Ready', async t => {
+test('Finish during startup waits for the notes popup to announce Ready', async t => {
   const f = await boot(t);
   await f.finish();
   assert.deepEqual([...f.messages], [], 'Finish acknowledged while startup was still pending');
-  f.documents[0]!.resolve(); await tick();
-  assert.deepEqual([...f.messages], [], 'One loaded document cannot establish notes readiness');
-  f.documents[1]!.resolve(); await tick();
+  await f.ready();
   assert.deepEqual(f.messages.map(message => message.action), ['windows', 'ready', 'finished']);
   assert.equal(f.notifications.filter(channel => channel === 'notes:finish').length, 1);
 });
@@ -100,7 +97,7 @@ test('an unsolicited popup acknowledgement cannot precede the actual finish noti
 
 test('failed startup never fabricates a successful finish receipt', async t => {
   const f = await boot(t); await f.finish();
-  f.documents[1]!.reject(Error('Synthetic renderer startup failure')); await tick();
+  f.documents[0]!.reject(Error('Synthetic renderer startup failure')); await tick();
   assert.ok(f.quits() > 0);
   assert.deepEqual([...f.messages], []);
 });

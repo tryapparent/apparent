@@ -163,7 +163,7 @@ test('packaged Notes admits its renderer crash before its existing quit', { time
     child!.once('exit', () => { clearTimeout(timer); reject(Error('Notes exited before debugger readiness')); });
   });
   browser = await chromium.connectOverCDP(endpoint);
-  await expect.poll(() => browser!.contexts()[0].pages().length).toBe(2);
+  await expect.poll(() => browser!.contexts()[0].pages().length).toBe(1);
   const page = browser.contexts()[0].pages()[0];
   // CDP exposes pages before loadURL resolves. Inject into a running notes
   // renderer, not the separate startup/load-failure fallback path.

@@ -4,7 +4,6 @@ import { initialPresentation, transition, validEvents, popupBounds, projectSnaps
 
 test('fresh list requests replace anchoring and request focus even with the list already open', () => {
   let state = initialPresentation([20, 30]);
-  state = transition(state, { kind: 'embedded', value: true });
   state = transition(state, { kind: 'badge', rect: [100, 40, 584, 56] });
   state = transition(state, { kind: 'list' });
   assert.equal(state.mode, 'list');
@@ -16,15 +15,6 @@ test('fresh list requests replace anchoring and request focus even with the list
   assert.equal(state.focusRevision, revision + 1);
   assert.deepEqual(popupBounds({ x: -16, y: 136 }, { x: -800, y: 0, width: 800, height: 600 }, 350),
     { x: -332, y: 148, width: 332, height: 350 });
-});
-
-test('embedded hide and restore preserve editor, draft selection, and popup position', () => {
-  const editor = transition(initialPresentation([1, 2]), { kind: 'open', pin: 7, position: [240, 180] });
-  const hiddenBadge = transition(editor, { kind: 'embedded', value: true });
-  assert.equal(hiddenBadge.embedded, true);
-  assert.equal(hiddenBadge.mode, 'editor');
-  assert.deepEqual(transition(hiddenBadge, { kind: 'embedded', value: false }), editor);
-  assert.deepEqual(transition(editor, { kind: 'list' }).position, [240, 180]);
 });
 
 test('only admitted save/delete effects transition; failed writes and draft snapshots keep recovery state', () => {
@@ -48,7 +38,7 @@ test('only admitted save/delete effects transition; failed writes and draft snap
 });
 
 test('private event protocol rejects malformed and competing presentation authority', () => {
-  assert.equal(validEvents([{ kind: 'list' }, { kind: 'embedded', value: true }]), true);
+  assert.equal(validEvents([{ kind: 'list' }, { kind: 'badge', rect: [0, 0, 50, 20] }]), true);
   for (const events of [[{ kind: 'list', mode: 'editor' }], [{ kind: 'open', pin: 1, position: [NaN, 0] }],
     [{ kind: 'edit', pin: -1 }], [{ kind: 'embedded', value: 1 }], [{ kind: 'badge', rect: [0, 0] }]]) {
     assert.equal(validEvents(events), false);

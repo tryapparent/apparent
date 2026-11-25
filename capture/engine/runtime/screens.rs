@@ -24,12 +24,8 @@ pub struct Screen {
     pub id: u32,
     /// Global points.
     pub frame: Rect,
-    /// The frame less the menu bar and the Dock, global points.
-    pub visible: Rect,
     /// Backing pixels per point (2 for Retina, 1 for most external displays).
     pub scale: f64,
-    /// The safe area's top inset (the notch), points.
-    pub safe_top: f64,
 }
 
 /// AppKit rect → global rect (and back: the flip is its own inverse). `primary_h` is the
@@ -146,19 +142,9 @@ pub fn with_scale(frame: Rect, scale: f64) -> TargetFrame {
     }
 }
 
-/// Where the capsule's panel (`width` points wide) goes on `screen`: centred, its top
-/// `PANEL_Y` below the screen's top, and lower when a taller menu bar or the notch needs it.
-pub fn pill_origin(screen: &Screen, width: f64, panel_y: f64) -> [f64; 2] {
-    let menu_bar = screen.visible[1] - screen.frame[1];
-    let top = panel_y.max(menu_bar - 3.0).max(screen.safe_top + 2.0);
-    [
-        screen.frame[0] + ((screen.frame[2] - width) / 2.0).round(),
-        screen.frame[1] + top,
-    ]
-}
-
 /// Move a recording capsule without changing the pointer's grab offset or leaving its display.
 /// All coordinates are global top-left points on macOS, pixels on Linux.
+#[cfg(any(test, target_os = "linux"))]
 pub fn drag_pill_origin(
     screen: &Screen,
     initial_panel: Rect,
@@ -173,17 +159,6 @@ pub fn drag_pill_origin(
     ]
 }
 
-/// The GPUI pill window's rect on `screen` (Windows, global pixels): `w`×`h` points at the
-/// screen's scale, placed as `pill_origin` places the capsule (below a taskbar on top).
-#[cfg_attr(target_os = "macos", allow(dead_code))]
-pub fn pill_window_rect(screen: &Screen, w: f64, h: f64, top: f64) -> Rect {
-    let width = (w * screen.scale).round();
-    let [x, y] = pill_origin(screen, width, top * screen.scale);
-    [x, y, width, (h * screen.scale).round()]
-}
-
-/// Every active display from CoreGraphics (any thread). `visible` is the whole frame and
-/// `safe_top` 0: only `NSScreen` knows the menu bar and the notch (`current`).
 #[cfg(target_os = "macos")]
 pub fn displays() -> Vec<Screen> {
     use core_graphics::display::CGDisplay;
@@ -208,9 +183,7 @@ pub fn displays() -> Vec<Screen> {
             Screen {
                 id,
                 frame,
-                visible: frame,
                 scale,
-                safe_top: 0.0,
             }
         })
         .collect();
@@ -219,8 +192,6 @@ pub fn displays() -> Vec<Screen> {
     out
 }
 
-/// Every screen with its menu bar, Dock and notch, from `NSScreen` (main thread only; falls
-/// back to `displays` elsewhere).
 #[cfg(target_os = "macos")]
 pub fn current() -> Vec<Screen> {
     use objc2::MainThreadMarker;
@@ -237,23 +208,17 @@ pub fn current() -> Vec<Screen> {
     for ns in screens.iter() {
         let frame = flip(rect(ns.frame()), primary_h);
         let scale = ns.backingScaleFactor();
-        let visible = flip(rect(ns.visibleFrame()), primary_h);
-        let safe_top = ns.safeAreaInsets().top;
         match out
             .iter_mut()
             .find(|s| (0..4).all(|i| (s.frame[i] - frame[i]).abs() < 1.0))
         {
             Some(s) => {
-                s.visible = visible;
-                s.safe_top = safe_top;
                 s.scale = scale;
             }
             None => out.push(Screen {
                 id: 0,
                 frame,
-                visible,
                 scale,
-                safe_top,
             }),
         }
     }
@@ -274,9 +239,7 @@ pub fn displays() -> Vec<Screen> {
         .map(|m| Screen {
             id: os::monitor_id(&m),
             frame: m.rect,
-            visible: m.work,
             scale: m.scale,
-            safe_top: 0.0,
         })
         .collect()
 }
@@ -303,9 +266,7 @@ mod tests {
         Screen {
             id,
             frame,
-            visible: frame,
             scale,
-            safe_top: 0.0,
         }
     }
 
@@ -458,51 +419,5 @@ mod tests {
             (-1920.0, 37.0, 1920.0, 1080.0, 1.0)
         );
         assert_eq!(with_scale(LAPTOP, f64::NAN).scale, 2.0);
-    }
-
-    #[test]
-    fn the_capsule_sits_below_each_displays_menu_bar_and_notch() {
-        // The notched laptop: a 37 pt menu bar, a 32 pt notch.
-        let laptop = Screen {
-            visible: [0.0, 37.0, 1728.0, 1080.0],
-            safe_top: 32.0,
-            ..screen(1, LAPTOP, 2.0)
-        };
-        assert_eq!(pill_origin(&laptop, 640.0, 34.0), [544.0, 34.0]);
-        // An external display left of it with a 24 pt menu bar: same 34 pt from its top.
-        let left = Screen {
-            visible: [-1920.0, 61.0, 1920.0, 1056.0],
-            ..screen(2, [-1920.0, 37.0, 1920.0, 1080.0], 1.0)
-        };
-        assert_eq!(pill_origin(&left, 640.0, 34.0), [-1280.0, 71.0]);
-        // Above, with no menu bar of its own.
-        let above = screen(3, [0.0, -1440.0, 2560.0, 1440.0], 2.0);
-        assert_eq!(pill_origin(&above, 640.0, 34.0), [960.0, -1406.0]);
-        // A notched display with a taller menu bar pushes it down.
-        let tall = Screen {
-            visible: [0.0, 44.0, 1512.0, 938.0],
-            safe_top: 40.0,
-            ..screen(4, [0.0, 0.0, 1512.0, 982.0], 2.0)
-        };
-        assert_eq!(pill_origin(&tall, 640.0, 34.0)[1], 42.0);
-    }
-
-    #[test]
-    fn the_windows_pill_window_lands_on_its_own_monitor_in_pixels() {
-        // A 150% monitor left of the primary, taskbar at the bottom: centred, 14 pt down.
-        let left = screen(1, [-2880.0, 0.0, 2880.0, 1620.0], 1.5);
-        assert_eq!(
-            pill_window_rect(&left, 400.0, 100.0, 14.0),
-            [-1740.0, 21.0, 600.0, 150.0]
-        );
-        // The primary at 100% with the taskbar on top (48 px): below it.
-        let top_bar = Screen {
-            visible: [0.0, 48.0, 1920.0, 1032.0],
-            ..screen(0, [0.0, 0.0, 1920.0, 1080.0], 1.0)
-        };
-        assert_eq!(
-            pill_window_rect(&top_bar, 400.0, 100.0, 14.0),
-            [760.0, 45.0, 400.0, 100.0]
-        );
     }
 }

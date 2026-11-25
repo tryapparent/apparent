@@ -102,7 +102,7 @@ for (const layout of ['apparent-hash/out', 'apparent/hash/out']) {
     assert.ok((statSync(helper).mode & 0o111) !== 0);
     rmSync(helper);
     assert.equal(f.run('aarch64', preview).status, 0);
-    assert.equal(f.count().length, 5, 'verified native outputs are reused');
+    assert.equal(f.count().length, 3, 'verified native outputs are reused');
     assert.equal(readFileSync(helper, 'utf8'), 'synthetic compiled swiftc\n');
     assert.ok((statSync(helper).mode & 0o111) !== 0);
   });
@@ -120,7 +120,7 @@ test('an unrecognized Cargo output layout fails before native execution or recei
 test('native outputs: cold build, verified reuse, restaging and per-artifact invalidation', t => {
   const f = fixture(t);
   assert.equal(f.run().status, 0);
-  assert.deepEqual(f.count(), ['metal', 'metallib', 'metal', 'metallib', 'swiftc']);
+  assert.deepEqual(f.count(), ['metal', 'metallib', 'swiftc']);
   const swift = readFileSync(join(f.root, 'swiftc-arguments'), 'utf8').trim().split('\n');
   assert.deepEqual(swift.slice(0, 6), ['-O', '-swift-version', '5', '-target', 'x86_64-apple-macos15.0', join(f.root, 'capture/engine/native/Export.swift')]);
   assert.deepEqual(swift.filter(arg => arg.endsWith('.swift')).map(arg => arg.slice(arg.lastIndexOf('/') + 1)),
@@ -129,18 +129,18 @@ test('native outputs: cold build, verified reuse, restaging and per-artifact inv
   assert.deepEqual(swift.slice(-8, -1), ['-Xlinker', '-sectcreate', '-Xlinker', '__TEXT', '-Xlinker', '__info_plist', '-Xlinker']);
   rmSync(join(f.root, 'target/debug/apparent-helper'));
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 5);
+  assert.equal(f.count().length, 3);
   assert.equal(readFileSync(join(f.root, 'target/debug/apparent-helper'), 'utf8'), 'synthetic compiled swiftc\n');
   f.put('capture/engine/native/Media.swift', 'changed native input');
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 6);
-  writeFileSync(join(f.out, 'pill.metallib'), 'corrupted');
+  assert.equal(f.count().length, 4);
+  writeFileSync(join(f.out, 'laser_overlay.metallib'), 'corrupted');
   assert.equal(f.run().status, 0);
-  assert.deepEqual(f.count().slice(6), ['metal', 'metallib']);
+  assert.deepEqual(f.count().slice(4), ['metal', 'metallib']);
   f.put('shared/native/Info.plist', '<string>dev.kitlangton.apparent.helper</string> changed');
   assert.equal(f.run().status, 0);
   assert.equal(f.count().at(-1), 'swiftc');
-  assert.equal(f.count().length, 9);
+  assert.equal(f.count().length, 7);
 });
 
 test('SDK, exact tool bytes, target and preview identity cannot reuse incompatible outputs', t => {
@@ -148,21 +148,21 @@ test('SDK, exact tool bytes, target and preview identity cannot reuse incompatib
   assert.equal(f.run().status, 0);
   f.put('sdk/SDKSettings.json', '{"Version":"26.1"}');
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 10);
+  assert.equal(f.count().length, 6);
   f.put('bin/swiftc', 'new compiler bytes, same reported version');
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 15);
+  assert.equal(f.count().length, 9);
   assert.equal(f.run('aarch64').status, 0);
-  assert.equal(f.count().length, 20);
+  assert.equal(f.count().length, 12);
   assert.equal(f.run('aarch64', { APPARENT_HELPER_BUNDLE_ID: 'dev.simonvanlaak.apparent.preview.helper' }).status, 0);
-  assert.equal(f.count().length, 25);
+  assert.equal(f.count().length, 15);
   assert.equal(readFileSync(join(f.root, 'helper-plist'), 'utf8'), '<string>dev.simonvanlaak.apparent.preview.helper</string>');
   assert.match(readFileSync(join(f.root, 'swiftc-arguments'), 'utf8'), /arm64-apple-macos15\.0/);
   assert.equal(f.run('aarch64').status, 0);
-  assert.equal(f.count().length, 30);
+  assert.equal(f.count().length, 18);
   assert.equal(readFileSync(join(f.root, 'helper-plist'), 'utf8'), '<string>dev.kitlangton.apparent.helper</string>');
   assert.notEqual(f.run('aarch64', { APPARENT_HELPER_BUNDLE_ID: 'untrusted' }).status, 0);
-  assert.equal(f.count().length, 30);
+  assert.equal(f.count().length, 18);
 });
 
 test('partial compilation never publishes a successful receipt or replaces a prior output', t => {
@@ -175,10 +175,10 @@ test('partial compilation never publishes a successful receipt or replaces a pri
   assert.equal(readFileSync(join(f.out, 'native-build.json'), 'utf8'), receipt);
   assert.equal(readFileSync(join(f.out, 'apparent-helper'), 'utf8'), output);
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 7);
+  assert.equal(f.count().length, 5);
   writeFileSync(join(f.out, 'native-build.json'), 'broken');
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 12);
+  assert.equal(f.count().length, 8);
 });
 
 test('cached helper mode and destination symlinks do not bypass executable validation or overwrite an unrelated file', t => {
@@ -189,7 +189,7 @@ test('cached helper mode and destination symlinks do not bypass executable valid
   rmSync(join(f.root, 'target/debug/apparent-helper'));
   symlinkSync(join(f.root, 'unrelated'), join(f.root, 'target/debug/apparent-helper'));
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 6);
+  assert.equal(f.count().length, 4);
   assert.equal(readFileSync(join(f.root, 'unrelated'), 'utf8'), 'preserve');
 });
 
@@ -259,9 +259,9 @@ test('invalid developer discovery fails without publishing or replacing a succes
   const receipt = readFileSync(join(f.out, 'native-build.json'), 'utf8');
   assert.notEqual(f.run('x86_64', missing).status, 0);
   assert.equal(readFileSync(join(f.out, 'native-build.json'), 'utf8'), receipt);
-  assert.equal(f.count().length, 5);
+  assert.equal(f.count().length, 3);
   assert.equal(f.run().status, 0);
-  assert.equal(f.count().length, 5);
+  assert.equal(f.count().length, 3);
 });
 
 function cargoFixture(t: { after: (fn: () => void) => void }) {
@@ -285,20 +285,20 @@ test('the production Cargo adapter remains fresh on no-op and reuses native outp
     let r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.equal(readFileSync(join(f.root, 'target/debug/apparent-helper'), 'utf8'), 'synthetic compiled swiftc\n');
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stderr, /Fresh native-cache-fixture/);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     f.put('metadata', 'second revision');
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /verified reuse/);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stderr, /Fresh native-cache-fixture/);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
   });
 
 test('Cargo with explicit selection ignores unrelated Xcode descendants but schedules selected native identity changes',
@@ -315,7 +315,7 @@ test('Cargo with explicit selection ignores unrelated Xcode descendants but sche
     build(true);
     f.select(f.otherDeveloper);
     build(true);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     let builds = 1;
     for (const path of ['Xcode.app/Contents/Info.plist', 'Xcode.app/Contents/version.plist',
       'bin/swiftc', 'bin/metal', 'bin/metallib', 'bin/swift-frontend', 'bin/clang', 'bin/ld', 'sdk/SDKSettings.json']) {
@@ -342,12 +342,12 @@ test('Cargo without an explicit override tracks global selection and preserves r
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /native-build helper: verified reuse/);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     f.select(f.otherDeveloper);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /native-build helper: compiling/);
-    assert.equal(f.count().length, 10);
+    assert.equal(f.count().length, 6);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stderr, /Fresh native-cache-fixture/);
@@ -357,10 +357,10 @@ test('Cargo without an explicit override tracks global selection and preserves r
     r = cargo({ DEVELOPER_DIR: join(f.root, 'missing') });
     assert.notEqual(r.status, 0);
     assert.equal(readFileSync(manifest, 'utf8'), receipt);
-    assert.equal(f.count().length, 10);
+    assert.equal(f.count().length, 6);
     r = cargo();
     assert.equal(r.status, 0, r.stderr);
-    assert.equal(f.count().length, 10);
+    assert.equal(f.count().length, 6);
   });
 
 for (const kind of ['developer', 'app', 'parent', 'global'] as const) {
@@ -374,7 +374,7 @@ for (const kind of ['developer', 'app', 'parent', 'global'] as const) {
       const env = { DEVELOPER_DIR: kind === 'parent' ? join(alias, 'Developer') : alias };
       let r = f.cargo(env);
       assert.equal(r.status, 0, r.stderr);
-      assert.equal(f.count().length, 5);
+      assert.equal(f.count().length, 3);
       r = f.cargo(env);
       assert.equal(r.status, 0, r.stderr);
       assert.match(r.stderr, /Fresh native-cache-fixture/);
@@ -387,7 +387,7 @@ for (const kind of ['developer', 'app', 'parent', 'global'] as const) {
       r = f.cargo(env);
       assert.equal(r.status, 0, r.stderr);
       assert.match(r.stderr, /Fresh native-cache-fixture/);
-      assert.equal(f.count().length, 10);
+      assert.equal(f.count().length, 6);
     });
 }
 
@@ -397,7 +397,7 @@ function checkRetarget(t: Parameters<typeof cargoFixture>[0],
   const { extra = {}, retarget } = prepare(f);
   let r = f.cargo(extra);
   assert.equal(r.status, 0, r.stderr);
-  assert.equal(f.count().length, 5);
+  assert.equal(f.count().length, 3);
   r = f.cargo(extra);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /Fresh native-cache-fixture/);
@@ -411,7 +411,7 @@ function checkRetarget(t: Parameters<typeof cargoFixture>[0],
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /Fresh native-cache-fixture/);
   assert.doesNotMatch(r.stderr, /Running `/);
-  assert.equal(f.count().length, 10);
+  assert.equal(f.count().length, 6);
 }
 
 for (const kind of ['intermediate', 'target-parent', 'target-parent-traversal'] as const) {
@@ -563,12 +563,12 @@ test('Cargo refuses dangling and cyclic cryptex aliases without replacing a rece
       assert.notEqual(failed.status, 0, target);
       assert.match(failed.stderr, /Mac helper\/shader build failed/);
       assert.equal(readFileSync(manifest, 'utf8'), receipt);
-      assert.equal(f.count().length, 5);
+      assert.equal(f.count().length, 3);
       rmSync(join(f.metalBin, 'metallib')); symlinkSync('air-lld', join(f.metalBin, 'metallib'));
       const recovered = f.cargo();
       assert.equal(recovered.status, 0, recovered.stderr);
       assert.match(recovered.stdout, /native-build helper: verified reuse/);
-      assert.equal(f.count().length, 5);
+      assert.equal(f.count().length, 3);
       const warm = f.cargo();
       assert.equal(warm.status, 0, warm.stderr);
       assert.match(warm.stderr, /Fresh native-cache-fixture/);
@@ -587,7 +587,7 @@ test('unresolvable native aliases fail before accepting or replacing a receipt',
     const failed = f.run();
     assert.notEqual(failed.status, 0, target);
     assert.equal(readFileSync(join(f.out, 'native-build.json'), 'utf8'), receipt);
-    assert.equal(f.count().length, 5);
+    assert.equal(f.count().length, 3);
     rmSync(alias);
   }
 });

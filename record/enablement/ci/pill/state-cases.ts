@@ -45,12 +45,10 @@ test("picker, capture, processing and dismissal use observations from their live
     false,
   );
   assert.equal(send("CaptureStarted", 3).phase, "Recording");
-  assert.equal(send("SurfaceHidden", 4).phase, "Recording");
   assert.equal(send("CaptureSaved", 5, { recovery: true }).phase, "Recording");
   assert.equal(send("CaptureSealed", 6).phase, "Processing");
-  assert.equal(send("CaptureFailed", 7).phase, "Dismissing");
-  assert.equal(send("CaptureSaved", 8, { recovery: true }).phase, "Dismissing");
-  assert.equal(send("SurfaceHidden", 9).phase, "Hidden");
+  assert.equal(send("CaptureFailed", 7).phase, "Hidden");
+  assert.equal(send("CaptureSaved", 8, { recovery: true }).phase, "Hidden");
 });
 
 test("a processing capture releases the recording controls only after native teardown", () => {
@@ -100,7 +98,7 @@ test("completion keeps the same authority when a renderer detaches and another r
   assert.equal(send("ConsentChanged", 16000, { open: false }).wakeInMs, 15000);
   assert.deepEqual(present(), before);
   assert.equal(send("Deadline", 30999).phase, "Completed");
-  assert.equal(send("Deadline", 31000).phase, "Dismissing");
+  assert.equal(send("Deadline", 31000).phase, "Hidden");
 });
 
 test("typed upload progress, retry and recovery ignore changes to display copy", () => {

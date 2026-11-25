@@ -109,7 +109,7 @@ fn pcm_waveform_preserves_captured_history_direction_and_silence() {
 }
 
 #[test]
-fn input_activity_reads_capture_pcm_and_expires_a_stalled_stream() {
+fn input_waveform_reads_capture_pcm_and_expires_a_stalled_stream() {
     let now = Instant::now();
     let recorder = AudioRecorder {
         worker: None, stop_sender: None,
@@ -125,19 +125,14 @@ fn input_activity_reads_capture_pcm_and_expires_a_stalled_stream() {
         #[cfg(target_os = "linux")]
         buffered: None,
     };
-    assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
     assert_eq!(recorder.input_waveform(), Some([0.0; 24]));
     recorder.health.lock().unwrap().sample(now, 0.2);
-    assert!(recorder.input_activity().unwrap().1 > 0.0);
     assert!(recorder.input_waveform().unwrap()[23] > 0.0);
     recorder.health.lock().unwrap().last_sample = Some(now - Duration::from_secs(1));
-    assert_eq!(recorder.input_activity(), Some((1280, 0.0)));
     recorder.samples.lock().unwrap().extend(vec![0.0; 1280]);
     recorder.health.lock().unwrap().sample(Instant::now(), 0.0);
-    assert_eq!(recorder.input_activity(), Some((2560, 0.0)));
     assert_eq!(recorder.input_waveform().unwrap()[23], 0.0);
     let held = recorder.samples.lock().unwrap();
-    assert_eq!(recorder.input_activity(), None, "meter must never block capture");
     assert_eq!(recorder.input_waveform(), None);
     drop(held);
 }
