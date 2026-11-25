@@ -55,6 +55,7 @@ export function onboardingInput(path: string) {
 }
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (path === 'shared/enablement/ci/public-inputs.ts') return ['public', 'tooling'];
   if (branchCleanupInput(path) || admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('engine/diagnostics/')) return ['capture'];
@@ -145,9 +146,8 @@ const directoryPaths = {
     'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path)],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
-  public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
-    apparentSkill + '**', 'capture/agent/docs/usage.md',
-    'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
+  public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml',
+    apparentSkill + '**', ...publicMarkdown],
   hermes: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     frontend + 'src/hermes/**', '.github/workflows/hermes.yml'],
   engine: automaticPaths,

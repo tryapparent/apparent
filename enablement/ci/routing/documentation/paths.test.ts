@@ -55,3 +55,10 @@ test("the legacy skill forwarder has no Public publication route", () => {
   assert.equal(decision.selected.includes("public"), false);
   assert.equal(decision.publicationStreams.public, false);
 });
+
+test("edits to shared Public inputs still select Public verification", () => {
+  const decision = routeDecision(["shared/enablement/ci/public-inputs.ts"]);
+  assert.deepEqual(decision.selected, ["public", "tooling"]);
+  assert.equal(decision.streams.public, true);
+  assert.equal(decision.publicationStreams.public, true);
+});
