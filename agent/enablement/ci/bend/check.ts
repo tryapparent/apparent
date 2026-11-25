@@ -24,15 +24,28 @@ await bendScratch(async (directory) => {
     [
       "--input-type=module",
       "-e",
-      `import { handoffLine, windowAgrees, windowHeading, windowSuffix, keepFrameHead } from "./agent-handoff-line.mjs";
+      `import { handoffLine, windowAgrees, windowHeading, windowSuffix, keepFrameHead,
+  agreedPage, pageScope, samePage, joinPageClicks, pageHeading, pageLine } from "./agent-handoff-line.mjs";
 import { readFileSync } from "node:fs";
 const { lines, windows, headings, frames } = JSON.parse(readFileSync(0, "utf8"));
+const url = "https://example.com/";
 console.log(JSON.stringify({
   lines: lines.map(args => handoffLine(...args)),
   windows: windows.map(observations => windowSuffix(JSON.stringify(observations))),
   agreements: windows.map(observations => windowAgrees(JSON.stringify(observations))),
   headings: headings.map(pair => windowHeading(JSON.stringify(pair))),
   frames: frames.map(args => keepFrameHead(...args)),
+  pages: [
+    agreedPage(JSON.stringify([url, url])),
+    agreedPage(JSON.stringify([url, ""])),
+    agreedPage(JSON.stringify([url, url + "next"])),
+    pageScope(false, "Nearby: Firefox"),
+    samePage(url, "Nearby: Firefox", url, "Nearby: Chrome"),
+    joinPageClicks("clicked", "clicked"),
+    joinPageClicks("Circled “Next”", "Circled “Next”"),
+    pageLine("0:02", "clicked", ""),
+    pageLine("0:03", "clicked", pageHeading(url, pageScope(true, "Nearby: Firefox"))),
+  ],
 }));`,
     ],
     {
@@ -78,7 +91,8 @@ console.log(JSON.stringify({
       }),
     },
   );
-  const { lines, windows, agreements, headings, frames } = JSON.parse(rendered);
+  const { lines, windows, agreements, headings, frames, pages } =
+    JSON.parse(rendered);
   assert.deepEqual(lines, [
     "0:20 Circled: target unidentified",
     "0:20 Circled: ② “Save” (2 strokes)",
@@ -108,6 +122,17 @@ console.log(JSON.stringify({
     "Nearby: chromium · Search",
   ]);
   assert.deepEqual(frames, ["", "yes", "yes", ""]);
+  assert.deepEqual(pages, [
+    "https://example.com/",
+    "",
+    "",
+    "",
+    "",
+    "yes",
+    "",
+    "0:02 clicked",
+    "0:03 clicked · https://example.com/ · Nearby: Firefox",
+  ]);
   function run(overrides: object) {
     const request = {
       moment: "10000",

@@ -184,7 +184,8 @@
         "instructions": "record/settings/renderer/README.md#verify-browser-handoff-on-a-native-desktop"
       },
       "expectedEvidence": [
-        "The clipboard and saved summary contain the matching page path at the click and circle times.",
+        "The clipboard groups successive clicks and circles under one verified page URL with their action times. A multi-stroke circle on the same page has one entry.",
+        "The saved summary retains individual browser page observations at their original times.",
         "The synthetic query and fragment are absent from the full handoff, including interaction labels.",
         "The next recording omits browser URLs after disabling the lab."
       ],

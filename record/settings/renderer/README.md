@@ -44,7 +44,11 @@ visible away from the control. Stop the recording and run `apparent copy <bundle
 for the saved bundle.
 
 Check that the clipboard text and bundle summary contain the correct page
-path at each click and circle time. Look for the test query and fragment in
-the full summary and clipboard text, including the button and circle labels.
+path at each click and circle time. For consecutive actions on one page, the
+clipboard shows the URL once with the action times underneath. Draw a circle
+with two strokes on the same page and check for one circle entry with its URL.
+The saved summary retains the individual browser observations. Look for the
+test query and fragment in the full summary and clipboard text, including the
+button and circle labels.
 Neither marker should appear. Repeat with the Labs switch off to verify that
 the next recording omits browser URLs.

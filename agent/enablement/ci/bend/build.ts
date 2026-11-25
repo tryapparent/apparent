@@ -57,6 +57,24 @@ export function windowHeading(observations) {
 export function keepFrameHead(compact, scene, empty) {
   return kernel.keep_frame_head(compact, scene, empty) ? "yes" : "";
 }
+export function agreedPage(pages) {
+  return kernel.agreed_page(list(JSON.parse(pages)));
+}
+export function pageScope(pathEmpty, nearby) {
+  return kernel.page_scope(pathEmpty, nearby);
+}
+export function samePage(url, scope, otherUrl, otherScope) {
+  return kernel.same_page(url, scope, otherUrl, otherScope) ? "yes" : "";
+}
+export function joinPageClicks(text, other) {
+  return kernel.join_page_clicks(text, other) ? "yes" : "";
+}
+export function pageHeading(url, scope) {
+  return kernel.page_heading(url, scope);
+}
+export function pageLine(clock, text, heading) {
+  return heading === "" ? kernel.page_line(clock, text) : kernel.single_page_line(clock, text, heading);
+}
 `,
   );
 }
