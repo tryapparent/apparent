@@ -306,15 +306,17 @@ fn arrow_tip(points: &[[f32; 2]], big: f32) -> Option<usize> {
 }
 
 pub fn marks_of(strokes: &[Stroke]) -> Vec<Mark> {
+    const JOIN: [bool; 16] = include!("../../record/media/src/assembly/target/mark-stroke-group.json");
+    let ink: Vec<_> = strokes.iter().map(|stroke| (!stroke.laser).then(|| ink_of(stroke))).collect();
+    let open = |i: usize| !matches!(ink[i].as_ref().unwrap().shape, Shape::Pin | Shape::Circle);
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (i, stroke) in strokes.iter().enumerate().filter(|(_, s)| !s.laser) {
         if let Some(group) = groups.last_mut() {
-            let prev = &strokes[*group.last().unwrap()];
-            if prev.pin.is_none()
-                && stroke.pin.is_none()
-                && stroke.t0.saturating_sub(prev.t1) <= MARK_GAP_MS
-                && group.len() < MAX_MARK_STROKES
-            {
+            let prev = *group.last().unwrap();
+            let flags = usize::from(stroke.t0.saturating_sub(strokes[prev].t1) <= MARK_GAP_MS)
+                | (usize::from(group.len() < MAX_MARK_STROKES) << 1)
+                | (usize::from(open(prev)) << 2) | (usize::from(open(i)) << 3);
+            if JOIN[flags] {
                 group.push(i);
                 continue;
             }
@@ -364,16 +366,15 @@ pub fn marks_of(strokes: &[Stroke]) -> Vec<Mark> {
                         let pts = s.normalized_points();
                         let b = bounds(&pts);
                         let size = (b[2] - b[0]) * s.fw as f32 + (b[3] - b[1]) * s.fh as f32;
-                        (s, ink_of(s), b, pts, size)
+                        (s, ink[j].as_ref().unwrap(), b, pts, size)
                     })
                     .collect();
                 sized.sort_by(|a, b| b.4.total_cmp(&a.4));
                 let (main, ink, _, pts, _) = &sized[0];
-                let shape = &ink.shape;
                 let rest = &sized[1..];
                 let a = pts.first().copied().unwrap_or([0.0; 2]);
                 let z = pts.last().copied().unwrap_or(a);
-                if matches!(shape, Shape::Line | Shape::Underline) && (1..=2).contains(&rest.len())
+                if matches!(ink.shape, Shape::Line | Shape::Underline) && (1..=2).contains(&rest.len())
                 {
                     let px = |p: [f32; 2]| [p[0] * main.fw as f32, p[1] * main.fh as f32];
                     let len = distance(px(a), px(z));
@@ -391,26 +392,11 @@ pub fn marks_of(strokes: &[Stroke]) -> Vec<Mark> {
                         mark.to = Some(if near(z) { z } else { a });
                     }
                 }
-                if mark.shape != Shape::Arrow
-                    && (rest.iter().all(|r| r.1.shape == *shape) || *shape == Shape::Circle)
-                {
-                    match shape {
+                if mark.shape != Shape::Arrow && rest.iter().all(|r| r.1.shape == ink.shape) {
+                    match ink.shape {
                         Shape::Circle => {
                             mark.shape = Shape::Circle;
-                            // What was circled: the loops, without any lead-in or tail.
-                            mark.box_norm = if rest.iter().all(|r| r.1.shape == Shape::Circle) {
-                                bounds(
-                                    &sized
-                                        .iter()
-                                        .flat_map(|r| {
-                                            let [x0, y0, x1, y1] = r.1.region;
-                                            [[x0, y0], [x1, y1]]
-                                        })
-                                        .collect::<Vec<_>>(),
-                                )
-                            } else {
-                                ink.region
-                            };
+                            mark.box_norm = ink.region;
                         }
                         Shape::Line if rest.is_empty() => {
                             mark.shape = Shape::Line;
@@ -422,7 +408,7 @@ pub fn marks_of(strokes: &[Stroke]) -> Vec<Mark> {
                             mark.from = ink.ends.map(|e| e.0);
                             mark.to = ink.ends.map(|e| e.1);
                         }
-                        Shape::Tap | Shape::Underline => mark.shape = *shape,
+                        Shape::Tap | Shape::Underline => mark.shape = ink.shape,
                         _ => {}
                     }
                 }

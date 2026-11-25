@@ -1,5 +1,8 @@
 import Base
 
+def join_mark_strokes(nearby: Bool, room: Bool, previous_open: Bool, next_open: Bool) -> Bool:
+  Bool.and(nearby, Bool.and(room, Bool.and(previous_open, next_open)))
+
 def admit_focused_mark(inside: Bool, clear: Bool, same_window: Bool, same_tree: Bool) -> Bool:
   Bool.and(inside, Bool.and(clear, Bool.and(same_window, same_tree)))
 
