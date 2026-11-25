@@ -1,1 +1,1 @@
-{"name":"apparent-hermes-build","private":true,"type":"module","devDependencies":{"esbuild":"0.25.12"}}
+{"name":"apparent-hermes-build","private":true,"type":"module","devDependencies":{"esbuild":"0.25.12"},"exports":{"./controller":"./controller.ts"}}

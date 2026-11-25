@@ -2,7 +2,8 @@
   "modules": [
     "settings/about/mac-updates.bend",
     "settings/about/linux-updates.bend",
-    "settings/about/release-action.bend"
+    "settings/about/release-action.bend",
+    "hermes/main/record-confirmation.bend"
   ],
-  "inputs": ["settings/", "enablement/ci/bend/"]
+  "inputs": ["settings/", "hermes/main/", "enablement/ci/bend/"]
 }

@@ -12,7 +12,7 @@ const all = {
 };
 const engineeringFixtures = new Set([
   "capture/desktop/ui/frontend/package.json",
-  "capture/desktop/ui/frontend/src/hermes/runtime.smoke.ts",
+  "composition/hermes/enablement/runtime.smoke.ts",
   "capture/desktop/ui/frontend/tests/foreground/mac.ts",
   "capture/desktop/ui/frontend/tests/notes/smoke.cjs",
   "capture/desktop/ui/frontend/tests/pill/foreground/smoke.cts",

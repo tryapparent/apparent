@@ -5,21 +5,24 @@ import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { checkElectron } from '../native.ts';
 
+export const macFiles = ['../../../../composition/hermes/enablement/runtime.smoke.ts', 'tests/pill/foreground/smoke.cts'];
+
 export function targetedElectron(root: string, files: string[], platform = process.platform): number {
   const frontend = realpathSync(resolve(root, 'capture/desktop/ui/frontend'));
   if (!files.length) throw Error('Name one or more frontend-relative test files; no flags or globs');
+  const hermesSmoke = resolve(frontend, macFiles[0]);
+  if (files.length === 1 && files[0] === 'mac') files = macFiles;
   const selected = files.map(file => {
     if (file.startsWith('-') || isAbsolute(file) || !/\.(?:ts|cts|cjs)$/.test(file)) throw Error('Invalid test file: ' + file);
     const absolute = realpathSync(resolve(frontend, file));
     const local = relative(frontend, absolute);
-    if (local.startsWith('..') || isAbsolute(local) || !/^(?:tests|electron|src)\//.test(local) ||
+    if ((absolute !== hermesSmoke && (local.startsWith('..') || isAbsolute(local) || !/^(?:tests|electron|src)\//.test(local))) ||
         !statSync(absolute).isFile() || !statSync(absolute).size) throw Error('Invalid test file: ' + file);
     return absolute;
   });
   // Electron's require may perform lazy installation. Finish it in this parent,
   // before either the build or test workers can resolve the package.
   checkElectron(root);
-  const macFiles = ['src/hermes/runtime.smoke.ts', 'tests/pill/foreground/smoke.cts'];
   // Only this exact ordered invocation uses the shorter preparation. The three
   // global checks emit nothing; Linux's full build retains them, as does the cold
   // Mac Settings packager (including any same-platform module-resolution check).
