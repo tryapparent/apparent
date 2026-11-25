@@ -8,21 +8,18 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { benchmarkComparison } from "../../../../shared/enablement/performance/comparison.ts";
 import { schedulerPressureUs } from "../fixtures/host-pressure.ts";
+import { attempt, locate, type Setup } from "./attempt.ts";
 import {
-  attempt,
   bytesPerFrame,
-  locate,
-  type Setup,
-  shutDown,
+  screenHeight,
   watchDisplay,
   width,
-} from "./attempt.ts";
+} from "./xvfb-framebuffer.ts";
 
-const fixture = "record-pill-xvfb-v1";
+const fixture = "record-pill-xvfb-v2";
 const maxSchedulerPressurePercent = 5;
 
 async function sha256(path: string) {
@@ -36,22 +33,28 @@ function median(values: number[]) {
   return [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 }
 
-async function measure(setup: Setup, output: string) {
+async function measure(setup: Setup, output: string, framebuffer: string) {
   const time = performance.now();
   const pressure = schedulerPressureUs();
-  const display = watchDisplay();
+  const display = watchDisplay(framebuffer);
   const attempts: Awaited<ReturnType<typeof attempt>>[] = [];
   const usage = process.cpuUsage();
   try {
     for (const mode of ["cold", "warm"] as const) {
       for (let i = 0; i < 3; i++) {
         attempts.push(
-          await attempt(setup, mode, join(output, `${mode}-${i}`), display),
+          await attempt(
+            setup,
+            mode,
+            join(output, `${mode}-${i}`),
+            framebuffer,
+            display,
+          ),
         );
       }
     }
   } finally {
-    await shutDown(display.child);
+    display.close();
   }
   const wait = (mode: "cold" | "warm") =>
     median(
@@ -98,8 +101,9 @@ if (!childModes.includes(args[0])) {
     "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD] or startup.ts --diagnostic|--prepare BUILD NEW_RESULTS",
   );
   mkdirSync(output, { mode: 0o700 });
-  const privateDisplay = mkdtempSync(join(tmpdir(), "apparent-dev-xvfb-"));
+  const privateDisplay = mkdtempSync("/tmp/apparent-dev-xvfb-");
   const authority = join(privateDisplay, "display.xauth");
+  const framebuffer = join(privateDisplay, "Xvfb_screen0");
   try {
     const child = spawnSync(
       "xvfb-run",
@@ -108,11 +112,12 @@ if (!childModes.includes(args[0])) {
         "-f",
         authority,
         "-s",
-        `-screen 0 ${width}x320x24 -nolisten tcp`,
+        `-screen 0 ${width}x${screenHeight}x24 -nolisten tcp -fbdir ${privateDisplay}`,
         process.execPath,
         process.argv[1],
         unscored ? args[0] + "-xvfb-child" : "--xvfb-child",
         authority,
+        framebuffer,
         ...[control, output, ...(candidate ? [candidate] : [])].map((path) =>
           resolve(path),
         ),
@@ -133,16 +138,17 @@ if (!childModes.includes(args[0])) {
     rmSync(privateDisplay, { recursive: true, force: true });
   }
 } else if (args[0] !== "--xvfb-child") {
-  const [, authority, control, output] = args;
+  const [, authority, framebuffer, control, output] = args;
   requireIsolatedDisplay(authority);
   const setup = locate(control);
-  const display = watchDisplay();
+  const display = watchDisplay(framebuffer);
   const probe = args[0] === "--prepare-xvfb-child" ? "prepare" : "diagnostic";
   try {
     const { id, rawMs, inputToAckMs, visible, spans } = await attempt(
       setup,
       "cold",
       join(output, "cold"),
+      framebuffer,
       display,
       probe,
     );
@@ -167,10 +173,10 @@ if (!childModes.includes(args[0])) {
       { mode: 0o600 },
     );
   } finally {
-    await shutDown(display.child);
+    display.close();
   }
 } else {
-  const [, authority, control, output, candidate] = args;
+  const [, authority, framebuffer, control, output, candidate] = args;
   requireIsolatedDisplay(authority);
   const controlSetup = locate(control);
   const candidateSetup = candidate ? locate(candidate) : undefined;
@@ -188,7 +194,7 @@ if (!childModes.includes(args[0])) {
       arm === "candidate" && candidateSetup ? candidateSetup : controlSetup;
     const directory = join(output, "run-" + index);
     mkdirSync(directory, { mode: 0o700 });
-    const run = await measure(build, directory);
+    const run = await measure(build, directory, framebuffer);
     writeFileSync(
       join(directory, "receipt.json"),
       JSON.stringify(run, null, 2),
@@ -264,17 +270,18 @@ if (!childModes.includes(args[0])) {
     })[] = [];
     for (const mode of ["cold", "warm"] as const) {
       for (const [index, alwaysOn] of [true, false, false, true].entries()) {
-        const display = alwaysOn ? watchDisplay() : undefined;
+        const display = alwaysOn ? watchDisplay(framebuffer) : undefined;
         try {
           const row = await attempt(
             controlSetup,
             mode,
             join(output, `overhead-${mode}-${index}`),
+            framebuffer,
             display,
           );
           observations.push({ ...row, alwaysOn });
         } finally {
-          if (display) await shutDown(display.child);
+          display?.close();
         }
       }
     }

@@ -15,11 +15,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { interval } from "../../../../shared/enablement/performance/measurement.ts";
-
-export const width = 640;
-const height = 96;
-const top = 25;
-export const bytesPerFrame = width * height * 3;
+import { height, top, watchDisplay, width } from "./xvfb-framebuffer.ts";
 const controls = [
   {
     id: "finish",
@@ -43,12 +39,6 @@ const controls = [
     primary: false,
   },
 ];
-
-type Frame = {
-  at: number;
-  bytes: Buffer;
-  marker: { x: number; y: number } | null;
-};
 
 type Reply = {
   ready?: boolean;
@@ -97,72 +87,6 @@ async function until<T>(
   throw Error("Startup benchmark timed out at " + label);
 }
 
-export function watchDisplay() {
-  const child = spawn(
-    "ffmpeg",
-    [
-      "-v",
-      "error",
-      "-threads",
-      "1",
-      "-filter_threads",
-      "1",
-      "-probesize",
-      "32",
-      "-analyzeduration",
-      "0",
-      "-f",
-      "x11grab",
-      "-draw_mouse",
-      "0",
-      "-framerate",
-      "60",
-      "-video_size",
-      `${width}x${height}`,
-      "-i",
-      `${process.env.DISPLAY}+0,${top}`,
-      "-f",
-      "rawvideo",
-      "-pix_fmt",
-      "rgb24",
-      "-threads",
-      "1",
-      "pipe:1",
-    ],
-    { stdio: ["ignore", "pipe", "inherit"] },
-  );
-  const frames: Frame[] = [];
-  let pending = Buffer.alloc(0);
-  child.stdout.on("data", (chunk: Buffer) => {
-    pending = Buffer.concat([pending, chunk]);
-    while (pending.length >= bytesPerFrame) {
-      const bytes = pending.subarray(0, bytesPerFrame);
-      pending = pending.subarray(bytesPerFrame);
-      let red = 0,
-        x = 0,
-        y = 0;
-      for (let row = 17; row < height - 15; row++) {
-        for (let column = 120; column < width - 120; column++) {
-          const i = (row * width + column) * 3;
-          const [r, g, b] = [bytes[i], bytes[i + 1], bytes[i + 2]];
-          if (r > 115 && r > g + 30 && r > b + 20) {
-            red++;
-            x += column;
-            y += row;
-          }
-        }
-      }
-      const marker =
-        red >= 12
-          ? { x: Math.round(x / red), y: top + Math.round(y / red) }
-          : null;
-      frames.push({ at: performance.now(), bytes, marker });
-      if (frames.length > 24) frames.shift();
-    }
-  });
-  return { child, frames };
-}
-
 async function visibleFrame(
   display: ReturnType<typeof watchDisplay>,
   after: number,
@@ -171,6 +95,7 @@ async function visibleFrame(
 ) {
   return until(
     () => {
+      if (display.failure) throw display.failure;
       const frames = display.frames;
       const index = frames.findIndex(
         ({ at, marker }, i) =>
@@ -316,15 +241,16 @@ export async function attempt(
   setup: Setup,
   mode: "cold" | "warm",
   directory: string,
+  framebuffer: string,
   display?: ReturnType<typeof watchDisplay>,
   probe: "score" | "diagnostic" | "prepare" = "score",
 ) {
   mkdirSync(directory, { mode: 0o700 });
   if (display)
-    await until(
-      () => (display.frames.at(-1)?.marker === null ? true : undefined),
-      "hidden fixture",
-    );
+    await until(() => {
+      if (display.failure) throw display.failure;
+      return display.frames.at(-1)?.marker === null ? true : undefined;
+    }, "hidden fixture");
   const id = randomUUID();
   const profile = mkdtempSync(join(tmpdir(), "apparent-dev-pill-profile-"));
   let launched: ReturnType<typeof launch> | undefined;
@@ -362,19 +288,24 @@ export async function attempt(
           acknowledgement(),
         ]);
       const acknowledged = await acknowledgement();
-      const delayed = watchDisplay();
+      const delayed = watchDisplay(framebuffer);
       try {
         return [
           await visibleFrame(delayed, acknowledged.at, false),
           acknowledged,
         ] as const;
       } finally {
-        await shutDown(delayed.child);
+        delayed.close();
       }
     })();
     const admitted = runtime.replies.find(({ value }) => value.ready);
     const activated = runtime.replies.find(({ value }) => value.activated);
-    assert.ok(admitted?.value.windowId && activated && observed.frame.marker);
+    assert.ok(
+      admitted?.value.windowId &&
+        activated &&
+        observed.frame.marker &&
+        observed.frame.bytes,
+    );
     const { x, y } = observed.frame.marker;
     execFileSync("xdotool", ["mousemove", String(x), String(y), "click", "1"], {
       timeout: 1000,

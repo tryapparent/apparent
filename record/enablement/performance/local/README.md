@@ -24,9 +24,10 @@ activation. Neither variant flushes the OS page cache.
 The runner launches the production Electron host and React renderer. Its
 synthetic capture provider sends a recording revision over the real desktop
 parent protocol. A local admission fixture acknowledges the window ID emitted
-by Electron. Xvfb supplies a private display. FFmpeg observes the recording
-marker in two successive framebuffer samples, then xdotool clicks it and the
-runner checks the matching Finish reply. This covers the local renderer wait.
+by Electron. Xvfb supplies a private display and exposes its framebuffer as
+an XWD file. The runner reads the recording marker in two successive samples,
+then xdotool clicks it and the runner checks the matching Finish reply.
+The receipt keeps the witnessed pixels as RGB24. This covers the local renderer wait.
 Use the native Start producer for the physical shortcut, platform admission,
 capture permissions, Hyprland pin and first live media.
 

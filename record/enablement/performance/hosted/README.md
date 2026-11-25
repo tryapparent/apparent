@@ -12,7 +12,7 @@ gateway passes three absolute paths to each owner entry.
 | `record-native-probe` | `record/enablement/performance/hosted/native-probe.ts` | KVM feasibility only using an actual four-vCPU Linux guest |
 
 The runner needs Node 22.23.0, detached source checkouts and an existing
-private evidence directory. Start installs Xvfb, xauth, xdotool, FFmpeg and
+private evidence directory. Start installs Xvfb, xauth, xdotool and
 Electron's runtime dependencies. Stop uses the production AppImage dependency
 and packaging recipes, Rust 1.99.1, Weston, Xvfb, GNU time, eSpeak NG and FFmpeg.
 It downloads the fixed public Q4 English model and verifies its size and digest
