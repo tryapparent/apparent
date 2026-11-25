@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   renameSync,
   symlinkSync,
 } from "node:fs";
@@ -23,10 +24,32 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
+import { cpuNumbers, stopReplayCpus } from "./stop-affinity.ts";
 import { fixture, model } from "./stop-input.ts";
 import { waterfall } from "./waterfall.ts";
 
 const job = openJob("stop");
+const topology = hostCounters().topology;
+const allowed = /^Cpus_allowed_list:\s+([0-9,-]+)$/m.exec(
+  readFileSync("/proc/self/status", "utf8"),
+)?.[1];
+assert.ok(allowed, "Missing runner CPU affinity");
+assert.equal(topology.length, 4, "Expected four standard runner vCPUs");
+const affinity = stopReplayCpus(topology, allowed);
+const pinned = command(
+  "taskset",
+  ["--cpu-list", affinity, "cat", "/proc/self/status"],
+  { capture: true, env: job.env },
+);
+const observed = /^Cpus_allowed_list:\s+(\S+)$/m.exec(pinned)?.[1];
+assert.ok(observed, "Missing pinned process CPU affinity");
+assert.deepEqual(cpuNumbers(observed), cpuNumbers(affinity));
+receipt(join(job.evidence, "stop-affinity.json"), {
+  topology,
+  allowed,
+  replayCpuList: affinity,
+  verifiedCpuList: observed,
+});
 apt("xvfb", "xauth", "weston", "ffmpeg", "espeak-ng", "time");
 const target = join(job.scratch, "cargo-target");
 const packaging = join(job.scratch, "appimage-packaging");
@@ -193,7 +216,11 @@ async function run(label: string, other?: string) {
         ...(other ? [other] : []),
       ],
       {
-        env: { ...job.env, APPARENT_STOP_BENCH_SPANS: "1" },
+        env: {
+          ...job.env,
+          APPARENT_STOP_BENCH_SPANS: "1",
+          APPARENT_STOP_BENCH_CPUS: affinity,
+        },
       },
     );
   } finally {
@@ -227,4 +254,5 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
+  cpuAffinity: "stop-affinity.json",
 });

@@ -66,6 +66,11 @@ separate, cutoff-relative Engine spans from the instrumented attempts.
 Hosted Stop records a quiet CPU and I/O window after packaging, before arming
 the replay. Its existing workload CPU-pressure limit still applies to each
 arm. Completed traces and their waterfall are retained if a batch fails.
+The hosted Stop replay process is pinned to two vCPUs from distinct cores
+as reported by the runner. This leaves the other vCPUs available to the
+clipboard and display observers. The affinity and its kernel readback are
+recorded in `stop-affinity.json` and applied equally to all replay arms.
+The receipt's timing and noise apply to this two-vCPU allocation.
 
 ## Native feasibility
 
