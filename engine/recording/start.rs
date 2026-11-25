@@ -21,6 +21,12 @@ use super::chooser_storage::Promotion;
 #[cfg(target_os = "linux")]
 use crate::capture::engine::runtime::audio::audio::PreparedAudio;
 
+#[cfg(target_os = "linux")]
+#[path = "lifecycle/pending/cancellation.rs"]
+mod pending_start_cancellation;
+#[cfg(target_os = "linux")]
+pub(crate) use pending_start_cancellation::PendingStartCancellation;
+
 pub(crate) enum StartError {
     #[cfg(target_os = "linux")]
     Cancelled,
@@ -62,6 +68,8 @@ pub(crate) struct StartPreparation {
     storage: Option<ChooserStorage>,
     #[cfg(target_os = "linux")]
     promotion: Option<std::thread::JoinHandle<anyhow::Result<Promotion>>>,
+    #[cfg(target_os = "linux")]
+    pub(crate) pending_cancellation: Option<Arc<PendingStartCancellation>>,
 }
 
 impl StartPreparation {
@@ -92,12 +100,20 @@ impl StartPreparation {
             start_metric("raw_protection_critical_ms", waiting);
             start_metric("raw_protection_overlapped_ms", self.started);
             if let Err(error) = result {
-                if let Err(cleanup) = recover::abandon_start(bundle_dir, || {
+                let stop = || {
                     #[cfg(target_os = "linux")]
                     if let Some(worker) = self.audio.take() {
                         let _ = worker.wait();
                     }
-                }) {
+                };
+                #[cfg(target_os = "linux")]
+                let cleanup = match self.pending_cancellation.as_ref() {
+                    Some(pending) => pending.abandon(bundle_dir, stop),
+                    None => recover::abandon_start(bundle_dir, stop),
+                };
+                #[cfg(not(target_os = "linux"))]
+                let cleanup = recover::abandon_start(bundle_dir, stop);
+                if let Err(cleanup) = cleanup {
                     apparent_log(format!("Failed protection cleanup: {cleanup:#}"));
                 }
                 return Err(error);
@@ -113,11 +129,15 @@ impl StartPreparation {
             drop(self.audio);
             return result;
         }
-        recover::abandon_start(bundle_dir, || {
+        let stop = || {
             if let Some(worker) = self.audio {
                 let _ = worker.wait();
             }
-        })
+        };
+        match self.pending_cancellation.as_ref() {
+            Some(pending) => pending.abandon(bundle_dir, stop),
+            None => recover::abandon_start(bundle_dir, stop),
+        }
     }
 }
 
@@ -146,9 +166,10 @@ impl ScreenCaptureSession {
         storage: Option<ChooserStorage>,
         bundle_dir: &Path,
         microphone: bool,
+        pending: bool,
     ) -> anyhow::Result<StartPreparation> {
         let Some(storage) = storage.filter(|stage| stage.matches(bundle_dir, microphone)) else {
-            return Self::prepare_start(bundle_dir, microphone);
+            return Self::prepare_start(bundle_dir, microphone, pending);
         };
         let started = Instant::now();
         let bundle_dir = bundle_dir.to_owned();
@@ -161,15 +182,23 @@ impl ScreenCaptureSession {
             audio: None,
             storage: None,
             promotion: Some(promotion),
+            pending_cancellation: None,
         })
     }
 
     pub(crate) fn prepare_start(
         bundle_dir: &Path,
         _microphone: bool,
+        #[cfg(target_os = "linux")] pending: bool,
     ) -> anyhow::Result<StartPreparation> {
         let started = Instant::now();
         let protection = prepare_screen_capture(bundle_dir)?;
+        #[cfg(target_os = "linux")]
+        let pending_cancellation = if pending {
+            Some(Arc::new(PendingStartCancellation::new(protection.directory.try_clone()?)))
+        } else {
+            None
+        };
         let protection = if cfg!(target_os = "linux") {
             Some(std::thread::Builder::new()
                 .name("apparent-raw-protection".into())
@@ -188,6 +217,8 @@ impl ScreenCaptureSession {
             storage: None,
             #[cfg(target_os = "linux")]
             promotion: None,
+            #[cfg(target_os = "linux")]
+            pending_cancellation,
         })
     }
 
@@ -212,14 +243,13 @@ impl ScreenCaptureSession {
         microphone: bool,
         stream_admission: Option<LocalStreamAdmission>,
         #[cfg(target_os = "linux")] preparation: StartPreparation,
-        #[cfg(target_os = "linux")] pending_cancellation: Option<&std::sync::atomic::AtomicBool>,
         #[cfg(any(target_os = "macos", target_os = "linux"))] prepared_source: Option<
             PreparedSource,
         >,
         startup: Option<&crate::capture::desktop::workflow::performance::Startup>,
     ) -> Result<ScreenTracks, StartError> {
         #[cfg(target_os = "linux")]
-        let StartPreparation { storage, audio: prepared_audio, .. } = preparation;
+        let StartPreparation { storage, audio: prepared_audio, pending_cancellation, .. } = preparation;
         #[cfg(target_os = "linux")]
         let pinned = storage.as_ref().map(|storage| {
             storage.verify_bundle(bundle_dir)?;
@@ -258,8 +288,8 @@ impl ScreenCaptureSession {
             trace.record(crate::capture::desktop::workflow::performance::StartupPoint::AudioReady);
         }
         #[cfg(target_os = "linux")]
-        if pending_cancellation.is_some_and(|cancelled| cancelled.load(std::sync::atomic::Ordering::Acquire)) {
-            if let Err(error) = recover::abandon_start(bundle_dir, || drop(audio)) {
+        if let Some(pending) = &pending_cancellation && pending.requested() {
+            if let Err(error) = pending.abandon(bundle_dir, || drop(audio)) {
                 apparent_log(format!("Failed cancelled startup cleanup: {error:#}"));
             }
             return Err(StartError::Cancelled);
@@ -291,7 +321,15 @@ impl ScreenCaptureSession {
                     drop(audio);
                     return Err(StartError::Screen(error));
                 }
-                if let Err(cleanup) = recover::abandon_start(bundle_dir, || drop(audio)) {
+                let stop = || drop(audio);
+                #[cfg(target_os = "linux")]
+                let cleanup = match pending_cancellation {
+                    Some(pending) => pending.abandon(bundle_dir, stop),
+                    None => recover::abandon_start(bundle_dir, stop),
+                };
+                #[cfg(not(target_os = "linux"))]
+                let cleanup = recover::abandon_start(bundle_dir, stop);
+                if let Err(cleanup) = cleanup {
                     apparent_log(format!(
                         "Failed capture startup cleanup at {}: {cleanup:#}",
                         bundle_dir.display()

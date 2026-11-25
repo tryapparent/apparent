@@ -142,7 +142,7 @@ impl ApparentCoordinator {
             }
             HoldAction::Start => {
                 hold.target = linux::hyprland::focused_window().ok();
-                self.start_recording_with_target(|_| discover_start_target(), cx);
+                self.start_recording_from(|_| discover_start_target(), None, None, false, cx);
                 if self.active_recording.is_some() {
                     hold.generation = Some(self.capture_generation);
                     self.shortcut.hold = Some(hold);

@@ -7,6 +7,8 @@ impl ApparentCoordinator {
             None,
             #[cfg(target_os = "linux")]
             None,
+            #[cfg(target_os = "linux")]
+            true,
             cx,
         );
     }
@@ -31,6 +33,8 @@ impl ApparentCoordinator {
                     Some(selected.source),
                     #[cfg(target_os = "linux")]
                     selected.storage,
+                    #[cfg(target_os = "linux")]
+                    false,
                     cx,
                 ),
                 None => coord.cancel_recording(cx),
@@ -123,6 +127,7 @@ impl ApparentCoordinator {
         prepared_source: Option<PreparedSource>,
         #[cfg(target_os = "linux")]
         picker_storage: Option<crate::capture::engine::runtime::recording::recorder::ChooserStorage>,
+        #[cfg(target_os = "linux")] allow_early_pill: bool,
         cx: &mut Context<Self>,
     ) {
         let recording_entered = Instant::now();
@@ -205,26 +210,22 @@ impl ApparentCoordinator {
         let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
         self.display_rect = display_rect;
         #[cfg(target_os = "linux")]
-        let pending = if user_started && quick && target.mode == CaptureMode::Display
-            && prepared_source.is_none() && self.onboarding.is_none() && !self.report_capture
-        {
-            let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
-            self.stopping_source = SourceTransition::Starting(cancelled.clone());
-            StartupPoint::PillRequested.record_in(startup.as_ref());
-            self.show_recording_island(cx);
-            Some(cancelled)
-        } else {
-            None
-        };
+        let early_pill = allow_early_pill && user_started && quick && target.mode == CaptureMode::Display
+            && prepared_source.is_none() && picker_storage.is_none()
+            && self.onboarding.is_none() && !self.report_capture;
         #[cfg(target_os = "linux")]
-        let preparation = ScreenCaptureSession::prepare_picker_start(picker_storage, &bundle_dir, microphone_enabled);
+        let preparation = ScreenCaptureSession::prepare_picker_start(picker_storage, &bundle_dir, microphone_enabled, early_pill);
         #[cfg(not(target_os = "linux"))]
         let preparation = ScreenCaptureSession::prepare_start(&bundle_dir, microphone_enabled);
-        let Ok(preparation) = preparation.inspect_err(|error| {
-            #[cfg(target_os = "linux")]
-            { self.stopping_source = SourceTransition::Idle; }
-            self.refuse_raw_protection(error, cx);
-        }) else { return; };
+        let Ok(preparation) = preparation.inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
+        #[cfg(target_os = "linux")]
+        let cancellation = preparation.pending_cancellation.clone();
+        #[cfg(target_os = "linux")]
+        if let Some(cancellation) = &cancellation {
+            self.stopping_source = SourceTransition::Starting(cancellation.clone());
+            StartupPoint::PillRequested.record_in(startup.as_ref());
+            self.show_recording_island(cx);
+        }
         self.telemetry.set_capture_mode(target.mode);
         self.telemetry.reset_for_session(target.frame);
         #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -287,8 +288,8 @@ impl ApparentCoordinator {
             started, performance, startup,
         };
         #[cfg(target_os = "linux")]
-        if let Some(cancelled) = pending {
-            self.start_screen_in_background(draft, preparation, cancelled, cx);
+        if let Some(cancellation) = cancellation {
+            self.start_screen_in_background(draft, preparation, cancellation, cx);
             return;
         }
         let Ok(preparation) = preparation.protect(&draft.bundle_dir).inspect_err(|error| self.refuse_raw_protection(error, cx)) else { return; };
@@ -308,8 +309,6 @@ impl ApparentCoordinator {
             &draft.target, &draft.bundle_dir, &self.telemetry, draft.microphone, stream_admission,
             #[cfg(target_os = "linux")]
             preparation,
-            #[cfg(target_os = "linux")]
-            None,
             prepared_source,
             draft.startup.as_ref(),
         );

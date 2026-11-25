@@ -356,15 +356,7 @@ impl ApparentCoordinator {
         }
         let response = match outcome {
             Some(Outcome::DeadlinePassed) => serde_json::json!({"error": "admission_expired", "state": before}),
-            Some(outcome) => {
-                let mut response = self.agent_captures.inspect(&request.action.as_ref().unwrap().1);
-                response["outcome"] = serde_json::json!(outcome);
-                response["state"] = serde_json::json!(self.agent_state());
-                if outcome == Outcome::AlreadyEnded && response["status"] == "unknown" {
-                    response["error"] = serde_json::Value::Null;
-                }
-                response
-            },
+            Some(outcome) => self.agent_capture_control_response(&request.action.as_ref().unwrap().1, outcome),
             None => crate::capture::desktop::workflow::agent_capture::state_response(&before),
         };
         let _ = request.reply.send(response.to_string());

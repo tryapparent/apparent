@@ -916,11 +916,6 @@ impl ApparentCoordinator {
         }
     }
 
-    pub fn cancel_recording(&mut self, cx: &mut Context<Self>) {
-        self.cancel_capture_attempt();
-        self.present_capture_cancellation(cx);
-    }
-
     fn present_capture_cancellation(&mut self, cx: &mut Context<Self>) {
         if self.is_recording() { return; }
         self.whiteboard.borrow_mut().close();
@@ -929,10 +924,7 @@ impl ApparentCoordinator {
 
     fn cancel_capture_attempt(&mut self) {
         #[cfg(target_os = "linux")]
-        {
-            self.shortcut.hold = None;
-            self.cancel_pending_screen_start();
-        }
+        { self.shortcut.hold = None; }
         display_selection::cancel();
         // dismiss_island is a no-op while Hidden: startup failure must revoke the
         // shortcut attempt here, not wait for a visible phase transition.

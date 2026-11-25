@@ -1,6 +1,6 @@
 use crate::capture::engine::runtime::recording::recorder::{StartError, start::ScreenTracks};
 #[cfg(target_os = "linux")]
-use crate::capture::engine::runtime::recording::recorder::start::StartPreparation;
+use crate::capture::engine::runtime::recording::recorder::start::{PendingStartCancellation, StartPreparation};
 
 struct DesktopScreenStart {
     target: TargetInfo,
@@ -25,7 +25,7 @@ enum PendingScreenTracks {
 enum SourceTransition {
     Idle,
     #[cfg(target_os = "linux")]
-    Starting(Arc<std::sync::atomic::AtomicBool>),
+    Starting(Arc<PendingStartCancellation>),
     Releasing(u64),
 }
 
@@ -36,21 +36,52 @@ impl ApparentCoordinator {
 
     fn screen_start_is_pending(&self) -> bool {
         #[cfg(target_os = "linux")]
-        if let SourceTransition::Starting(cancelled) = &self.stopping_source {
-            return !cancelled.load(std::sync::atomic::Ordering::Acquire);
+        if let SourceTransition::Starting(cancellation) = &self.stopping_source {
+            return !cancellation.requested();
         }
         false
     }
 
     #[cfg(target_os = "linux")]
-    fn cancel_pending_screen_start(&mut self) {
-        if let SourceTransition::Starting(cancelled) = &self.stopping_source {
-            cancelled.store(true, std::sync::atomic::Ordering::Release);
-            if let Some(id) = self.agent_capture_id.take() {
-                self.agent_captures.set(&id, "cancelled", None, None);
-            }
-            self.report_capture = false;
+    fn cancel_pending_screen_start(&self) -> anyhow::Result<()> {
+        if let SourceTransition::Starting(cancellation) = &self.stopping_source {
+            cancellation.request()?;
         }
+        Ok(())
+    }
+
+    pub fn cancel_recording(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        if let Err(error) = self.cancel_pending_screen_start() {
+            apparent_log(format!("Could not persist cancellation; startup is still active: {error:#}"));
+            if let Ok(mut status) = CAPTURE_STATUS.lock() {
+                *status = Some("Could not cancel the recording. Try again.".into());
+            }
+            return;
+        }
+        self.cancel_capture_attempt();
+        self.present_capture_cancellation(cx);
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn agent_capture_control_response(
+        &self,
+        id: &str,
+        outcome: workflow::agent_capture::Outcome,
+    ) -> serde_json::Value {
+        use workflow::agent_capture::Outcome;
+        let outcome = if outcome == Outcome::Cancelled && self.screen_start_is_pending() {
+            Outcome::NotReady
+        } else {
+            outcome
+        };
+        let mut response = self.agent_captures.inspect(id);
+        response["outcome"] = serde_json::json!(outcome);
+        response["state"] = serde_json::json!(self.agent_state());
+        if outcome == Outcome::AlreadyEnded && response["status"] == "unknown" {
+            response["error"] = serde_json::Value::Null;
+        }
+        response
     }
 
     pub(crate) fn capture_busy(&self) -> bool {
@@ -95,24 +126,23 @@ impl ApparentCoordinator {
         &mut self,
         draft: DesktopScreenStart,
         preparation: StartPreparation,
-        cancelled: Arc<std::sync::atomic::AtomicBool>,
+        cancellation: Arc<PendingStartCancellation>,
         cx: &mut Context<Self>,
     ) {
-        use std::sync::atomic::Ordering;
         let target = draft.target.clone();
         let bundle_dir = draft.bundle_dir.clone();
         let orphaned_bundle_dir = draft.bundle_dir.clone();
         let telemetry = self.telemetry.clone();
         let startup = draft.startup.clone();
         let microphone = draft.microphone;
-        let worker_cancelled = cancelled.clone();
+        let worker_cancellation = cancellation.clone();
         cx.spawn(async move |entity, cx| {
             let tracks = cx.background_executor().spawn(async move {
                 let preparation = match preparation.protect(&bundle_dir) {
                     Ok(preparation) => preparation,
                     Err(error) => return PendingScreenTracks::ProtectionFailed(error),
                 };
-                if worker_cancelled.load(Ordering::Acquire) || workflow::shutdown::requested() {
+                if worker_cancellation.requested() {
                     if let Err(error) = preparation.abandon(&bundle_dir) {
                         apparent_log(format!("Failed cancelled startup cleanup: {error:#}"));
                     }
@@ -123,14 +153,20 @@ impl ApparentCoordinator {
                 workflow::performance::StartupPoint::TracksEnter.record_in(startup.as_ref());
                 PendingScreenTracks::Started(ScreenCaptureSession::start_tracks(
                     &target, &bundle_dir, &telemetry, microphone, stream_admission,
-                    preparation, Some(&worker_cancelled), None, startup.as_ref(),
+                    preparation, None, startup.as_ref(),
                 ))
             }).await;
             let mut tracks = Some(tracks);
             let _ = entity.update(cx, |coord, cx| {
                 let result = tracks.take().expect("one pending screen start");
-                let cancelled = cancelled.load(Ordering::Acquire) || workflow::shutdown::requested();
+                let cancelled = cancellation.requested();
                 coord.stopping_source = SourceTransition::Idle;
+                if !cancelled
+                    && matches!(result, PendingScreenTracks::Started(Err(_)) | PendingScreenTracks::ProtectionFailed(_))
+                    && let Some(id) = coord.agent_capture_id.take()
+                {
+                    coord.agent_captures.set(&id, "failed", None, Some("start_failed"));
+                }
                 match result {
                     PendingScreenTracks::Started(tracks) if !cancelled => {
                         coord.complete_screen_start(draft, tracks, true, cx);
@@ -139,14 +175,14 @@ impl ApparentCoordinator {
                         coord.refuse_raw_protection(&error, cx);
                     }
                     other => {
-                        abandon_pending_screen(&draft.bundle_dir, other);
+                        abandon_pending_screen(&cancellation, &draft.bundle_dir, other);
                         coord.cancel_recording(cx);
                     }
                 }
                 coord.publish_capture_busy();
             });
             if let Some(tracks) = tracks {
-                abandon_pending_screen(&orphaned_bundle_dir, tracks);
+                abandon_pending_screen(&cancellation, &orphaned_bundle_dir, tracks);
             }
         }).detach();
     }
@@ -154,19 +190,12 @@ impl ApparentCoordinator {
 }
 
 #[cfg(target_os = "linux")]
-fn abandon_pending_screen(bundle_dir: &std::path::Path, result: PendingScreenTracks) {
-    use crate::capture::engine::bundle::recover;
-    use crate::capture::engine::runtime::recording::recorder::{fd_path, verify_directory};
-    if let PendingScreenTracks::Started(Ok((mut screen, audio, windows))) = result {
-        let storage = screen.storage_dir.take();
-        let pinned = storage.as_ref().map(fd_path);
-        let cancelled = recover::cancel(pinned.as_deref().unwrap_or(bundle_dir));
-        let _ = screen.stop();
-        if let Some(audio) = audio { let _ = audio.stop(); }
-        drop(windows);
-        let cleanup = cancelled.and_then(|()| {
-            if let Some(storage) = storage { verify_directory(&storage, bundle_dir)?; }
-            recover::delete_cancelled(bundle_dir)
+fn abandon_pending_screen(cancellation: &PendingStartCancellation, bundle_dir: &std::path::Path, result: PendingScreenTracks) {
+    if let PendingScreenTracks::Started(Ok((screen, audio, windows))) = result {
+        let cleanup = cancellation.abandon(bundle_dir, || {
+            let _ = screen.stop();
+            if let Some(audio) = audio { let _ = audio.stop(); }
+            drop(windows);
         });
         if let Err(error) = cleanup { apparent_log(format!("Failed cancelled startup cleanup: {error:#}")); }
     }

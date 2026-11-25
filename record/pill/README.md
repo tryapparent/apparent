@@ -35,9 +35,11 @@ picker. Microphone warnings still come from the capture.
 
 An admitted Linux full-display shortcut with the picker skipped can present
 the same row with a lilac spinner while Engine protects the output and starts
-media. The pending start owns its capture ID until the tracks are adopted or
-cleaned up. Cancel belongs to that attempt before the media arrives. Finish
+media. The pending start owns its capture ID and output directory until the
+tracks are adopted or cleaned up. Cancel writes a durable marker to that
+directory before the pill closes or the capture receipt says cancelled. Finish
 and Whiteboard become available through the existing screen-readiness fact.
+Push to Talk waits for track setup so the active hold still owns key release.
 On first show, the Linux window uses the current measured recording geometry
 and native admission. The paint wait for resizing an already mapped window
 still applies.
