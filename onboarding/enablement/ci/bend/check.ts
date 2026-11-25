@@ -11,6 +11,11 @@ import { type Table, traversalTable } from "./table.ts";
 
 import { frogTable, frogTablePath } from "./frog-nudge.ts";
 import { desktopFrogTable, desktopFrogTablePath } from "./desktop-frog.ts";
+import {
+  verifyWardrobe,
+  wardrobeTable,
+  wardrobeTablePath,
+} from "./frog-wardrobe.ts";
 import { tipTable, tipTablePath } from "./note-tip.ts";
 
 const args = process.argv.slice(2);
@@ -56,6 +61,8 @@ await bendScratch(async (scratch) => {
   });
   const frog = frogTable(production);
   const desktopFrog = desktopFrogTable(production);
+  const wardrobe = wardrobeTable(production);
+  verifyWardrobe(wardrobe);
   assert.deepEqual(JSON.parse(desktopFrog), {
     naming: [0, 0, 0, 0, 1, 2, 0, 0],
     name: [false, false, true, false, true, false, true, false, false, false],
@@ -83,6 +90,10 @@ await bendScratch(async (scratch) => {
   });
   if (update) {
     writeFileSync(desktopFrogTablePath, desktopFrog);
+    writeFileSync(
+      wardrobeTablePath,
+      JSON.stringify(JSON.parse(wardrobe), null, 2) + "\n",
+    );
     writeFileSync(dictationPath, dictation);
     writeFileSync(frogTablePath, frog);
     writeFileSync(tipTablePath, tips);
@@ -94,6 +105,11 @@ await bendScratch(async (scratch) => {
     assert.equal(tipTable(proof), tips);
     assert.equal(frogTable(proof), frog);
     assert.equal(desktopFrogTable(proof), desktopFrog);
+    assert.equal(wardrobeTable(proof), wardrobe);
+    assert.deepEqual(
+      JSON.parse(readFileSync(wardrobeTablePath, "utf8")),
+      JSON.parse(wardrobe),
+    );
     assert.deepEqual(
       JSON.parse(readFileSync(desktopFrogTablePath, "utf8")),
       JSON.parse(desktopFrog),

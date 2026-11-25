@@ -90,6 +90,22 @@ fn edit_leaf(config: &mut Value, id: &str, value: Option<Value>) -> Result<()> {
 // One sidecar inode for every CLI/GUI writer, never the replaced config inode.
 // Hosted operations take queue.lock first; this transaction never acquires a
 // queue lock or performs network work. Keep nested edits inside this closure.
+pub(crate) fn update_onboarding_progress_in(
+    path: &Path,
+    key: &str,
+    enabled: impl FnOnce(&serde_json::Value) -> bool,
+    edit: impl FnOnce(&mut serde_json::Value) -> Result<()>,
+) -> Result<()> {
+    update_config_in(path, |config| {
+        ensure!(enabled(config), "Onboarding progress is disabled");
+        let progress = config.as_object_mut().unwrap()
+            .entry("onboarding").or_insert_with(|| serde_json::json!({}));
+        let entry = progress.as_object_mut().context("Invalid onboarding progress")?
+            .entry(key).or_insert_with(|| serde_json::json!({}));
+        edit(entry)
+    })
+}
+
 pub(crate) fn update_config_in(
     path: &Path,
     edit: impl FnOnce(&mut serde_json::Value) -> Result<()>,

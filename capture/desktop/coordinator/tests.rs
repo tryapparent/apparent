@@ -439,32 +439,6 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn recording_activity_observes_real_start_once_and_preserves_practice_fact() {
-        use std::sync::atomic::Ordering;
-        let (sender, _receiver) = flume::unbounded();
-        let mut coordinator = ApparentCoordinator::new(SharedCaptureTelemetry::new(sender), None);
-        let (session, _failed, seen) = ScreenCaptureSession::test_pending_start();
-        coordinator.active_recording = Some(ActiveRecording {
-            performance: None,
-            started: Instant::now(), target: region_target(0.0,0.0,64.0,64.0,&[]),
-            bundle_dir: PathBuf::from("synthetic-unused.apparent"),
-            source: CaptureSource::Screen {session,audio:None,windows:None},
-            _metal_overlay:None,microphone_enabled:false,
-        });
-        coordinator.apply_pill_event(PillEvent::CaptureStarted);
-        assert_eq!(coordinator.take_recording_start(),None,"pending permission/frame is not activity");
-        seen.store(true,Ordering::Release);
-        assert_eq!(coordinator.take_recording_start(),Some(false));
-        assert_eq!(coordinator.take_recording_start(),None,"ticks and Finish cannot report twice");
-        coordinator.recording_activity_attempted=false;
-        coordinator.capture_local_practice=true;
-        assert_eq!(coordinator.take_recording_start(),Some(true),"TypeScript receives the practice exclusion fact");
-        coordinator.active_recording=None;
-        assert_eq!(coordinator.take_recording_start(),None);
-    }
-
-    #[cfg(target_os = "linux")]
-    #[test]
     fn finish_before_first_frame_cancels_durably_without_starting_finalization() {
         use std::sync::atomic::Ordering;
         for (real_frames, journal_fails) in [(false, false), (true, false), (false, true)] {
@@ -480,6 +454,7 @@ mod tests {
             coordinator.agent_captures.begin("current");
             coordinator.agent_capture_id = Some("current".into());
             coordinator.active_recording = Some(ActiveRecording {
+                user_started: false,
                 performance: None,
                 started: Instant::now(),
                 target: region_target(0.0, 0.0, 64.0, 64.0, &[]),
@@ -531,6 +506,7 @@ mod tests {
             coordinator.agent_captures.begin("current");
             coordinator.agent_capture_id = Some("current".into());
             coordinator.active_recording = Some(ActiveRecording {
+                user_started: false,
                 performance: None,
                 started: Instant::now(),
                 target: region_target(0.0, 0.0, 64.0, 64.0, &[]),

@@ -1,7 +1,7 @@
 pub(crate) mod connect;
 mod agents;
 pub(crate) use agents::persist_t3_connection;
-mod labs;
+pub(in crate::capture::desktop) mod labs;
 pub(crate) use labs::desktop_access;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;

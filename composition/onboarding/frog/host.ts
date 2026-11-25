@@ -44,6 +44,7 @@ export function startDesktopFrog(assets: string) {
   const page = pathToFileURL(join(directory, "desktop.html")).href;
   let name = "";
   let shortcut = "";
+  let equipped: string[] = [];
   let takeoff: [number, number, number] | undefined;
   let visible = false;
   let displayId: number | undefined;
@@ -100,6 +101,15 @@ export function startDesktopFrog(assets: string) {
         window?.webContents.send("desktop-frog:shortcut", shortcut);
       }
     }
+    if (Array.isArray(data.equipped)) {
+      equipped = data.equipped.filter(
+        (item) =>
+          item === "sunglasses" ||
+          item === "lily-pad" ||
+          item === "unicorn-horn",
+      );
+      window?.webContents.send("desktop-frog:wardrobe", equipped);
+    }
     if (app.isReady()) present();
   });
 
@@ -116,7 +126,7 @@ export function startDesktopFrog(assets: string) {
   }
   ipcMain.handle("desktop-frog:read", (event) => {
     if (owns(event, flight)) return { name, shortcut, flight: flightPath };
-    if (owns(event, window)) return { name, shortcut };
+    if (owns(event, window)) return { name, shortcut, equipped };
     throw Error("Forbidden desktop frog request");
   });
   ipcMain.on("desktop-frog:start", (event) => {

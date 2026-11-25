@@ -98,7 +98,7 @@ const hasSettingsParent = process.argv.includes('--settings-parent');
 const settingsHosts = new frame.SettingsHosts(action => process.stdout.write(JSON.stringify(action) + '\n'));
 let generalState;
 const settingsHash = settings && pane !== 'storage' ? '#' + pane : '';
-const {LabsPreferences, facts: labsFacts} = require('./settings/labs.cjs');
+const {LabsPreferences, facts: labsFacts, admitLabsRequest} = require('./settings/labs.cjs');
 const labsPreferences = new LabsPreferences(message => {
   if (pane !== 'labs' || !hasSettingsParent) throw new Error('Labs parent unavailable');
   process.stdout.write(JSON.stringify(message) + '\n');
@@ -290,7 +290,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
-    if (pane !== 'labs' || args.length > 2 || args.length > 0 && typeof args[0] !== 'boolean' || args[1] === 'wisprFlow' && process.platform !== 'darwin') throw new Error('Forbidden Labs preference');
+    if (!admitLabsRequest(pane, args, process.platform)) throw new Error('Forbidden Labs preference');
     return labsPreferences.request(...args);
   });
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {

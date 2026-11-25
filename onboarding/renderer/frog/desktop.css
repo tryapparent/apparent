@@ -59,6 +59,15 @@ button:focus-visible {
   top: 63px;
   image-rendering: pixelated;
 }
+.desktop-frog-alternate-pad {
+  top: 34px;
+  left: 41px;
+  width: 66px;
+}
+.desktop-frog-alternate-pad svg {
+  width: 66px;
+  height: 66px;
+}
 .desktop-frog[data-dragging] .desktop-frog-lily {
   animation: pad-fold 130ms ease-in forwards;
 }

@@ -150,6 +150,7 @@ impl ApparentCoordinator {
             return;
         }
         self.whiteboard.borrow_mut().reset();
+        let user_started = self.agent_capture_id.is_none();
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             let Ok(id) = self.agent_capture_id.clone().map_or_else(crate::capture::desktop::workflow::agent_capture::new_id, Ok) else {
@@ -317,6 +318,7 @@ impl ApparentCoordinator {
         }
         start_metric("notes_start_ms", stage);
         self.active_recording = Some(ActiveRecording {
+            user_started,
             performance,
             started: stage,
             target,

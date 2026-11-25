@@ -98,3 +98,17 @@ pub(crate) fn public_value(id: &str, value: Value) -> Value {
         .and_then(Value::as_str)
         .map_or(Value::Null, |id| json!({"id": id}))
 }
+
+pub(crate) fn apply_streaming(setting: Option<&str>, enabled: Option<bool>, reply: &serde_json::Value) {
+    if setting.is_none_or(|name| name == "streaming")
+        && let Some(on) = enabled
+        && reply["facts"]["saved"].as_bool() == Some(on)
+    {
+        use crate::capture::engine::runtime::audio::transcription::speech_preview;
+        if on {
+            speech_preview::prepare();
+        } else {
+            speech_preview::release_cache();
+        }
+    }
+}

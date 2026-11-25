@@ -17,7 +17,7 @@ import {
   FrogNudgePreference,
   type FrogNudgePreferenceProps,
 } from "../../../onboarding/renderer/frog-nudge/preview";
-import { DesktopFrogPreference } from "../../../onboarding/renderer/frog/preference";
+import { DesktopFrogWithWardrobe } from "./labs/frog-wardrobe";
 import { SpeakingStyle } from "../../../agent/settings/speaking-style";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
@@ -90,7 +90,7 @@ declare module "react" {
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
         autoPasteExperiment?: ComponentType<AutoPasteProps>;
         speakingStyleExperiment?: typeof SpeakingStyle;
-        desktopFrogExperiment?: typeof DesktopFrogPreference;
+        desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
         agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
       };
@@ -257,7 +257,7 @@ function Settings() {
             autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
             desktopFrogExperiment={
-              current === "Labs" ? DesktopFrogPreference : undefined
+              current === "Labs" ? DesktopFrogWithWardrobe : undefined
             }
             frogExperiment={
               current === "Labs" ? FrogNudgePreference : undefined

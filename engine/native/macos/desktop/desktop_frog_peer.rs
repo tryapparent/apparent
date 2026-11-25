@@ -3,7 +3,7 @@ pub(crate) struct DesktopFrogHost {
     child: Option<crate::capture::ui_process::UiChild>,
     input: pipe::Input,
     requests: std::sync::mpsc::Receiver<()>,
-    last: Option<(bool, String)>,
+    last: Option<(bool, String, Vec<&'static str>)>,
 }
 
 #[cfg(target_os = "macos")]
@@ -67,21 +67,21 @@ impl DesktopFrogHost {
         self.input.send(format!("{state}\n").into_bytes())
     }
 
-    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str) -> Option<bool> {
+    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str]) -> Option<bool> {
         if !matches!(self.child.as_mut()?.try_wait(), Ok(None)) {
             return None;
         }
         if !self
             .last
             .as_ref()
-            .is_some_and(|(was_visible, was_shortcut)| {
-                *was_visible == visible && was_shortcut == shortcut
+            .is_some_and(|(was_visible, was_shortcut, was_equipped)| {
+                *was_visible == visible && was_shortcut == shortcut && was_equipped == equipped
             })
         {
-            if !self.send(serde_json::json!({"visible": visible, "shortcut": shortcut})) {
+            if !self.send(serde_json::json!({"visible": visible, "shortcut": shortcut, "equipped": equipped})) {
                 return None;
             }
-            self.last = Some((visible, shortcut.to_owned()));
+            self.last = Some((visible, shortcut.to_owned(), equipped.to_vec()));
         }
         let start = self.requests.try_recv().is_ok();
         Some(visible && start)

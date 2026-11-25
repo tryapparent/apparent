@@ -26,6 +26,7 @@ fn main() {
     emit_native_policy("record", "note-gesture", "notes/double-shift.json");
     emit_native_policy("onboarding", "note-tip", "host/tips/note-tip.json");
     emit_native_policy("onboarding", "desktop-frog", "host/traversal/desktop-frog.json");
+    emit_native_policy("onboarding", "frog-wardrobe", "host/traversal/frog-wardrobe.json");
     #[cfg(target_os = "macos")]
     emit_native_policy("onboarding", "frog-nudge", "host/tips/frog-nudge.json");
     compile_embedded_policy("record/enablement/ci/bend/pill.ts", &[
