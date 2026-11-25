@@ -8,6 +8,13 @@
     <link rel="stylesheet" href="view.css">
   </head>
   <body>
+    <main id="opening" class="whiteboard" tabindex="-1" autofocus aria-describedby="opening-status">
+      <header>
+        <h1>Whiteboard</h1>
+        <button id="close-opening" type="button" aria-label="Close whiteboard"><span aria-hidden="true">×</span></button>
+      </header>
+      <p id="opening-status" role="status">Opening Whiteboard…</p>
+    </main>
     <div id="root"></div>
     <script src="view.js" defer></script>
   </body>

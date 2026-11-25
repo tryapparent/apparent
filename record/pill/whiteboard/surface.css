@@ -89,6 +89,17 @@ body {
   background: #d3bfee;
 }
 
+.whiteboard #opening-status {
+  max-width: 32ch;
+  margin: auto;
+  padding: 16px;
+  text-align: center;
+}
+
+.whiteboard #close-opening {
+  font-size: 22px;
+}
+
 .whiteboard-paper {
   position: relative;
   flex: 1;
