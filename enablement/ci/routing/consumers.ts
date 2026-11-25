@@ -72,7 +72,6 @@ function directConsumers(path: string): readonly Owner[] {
 
   if (path.startsWith(apparentSkill)) return ['capture', 'engine', 'public'];
   if (publicMarkdown.has(path)) return ['public'];
-  if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return platformOwners;
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   if (/^record\/(?:storage|completion|capture-request|transcription)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
@@ -87,7 +86,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
   if (/^(hermes\/|\.github\/workflows\/hermes\.yml$)/.test(path)) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
-  if (path.startsWith(frontend + 'src/hermes/')) return ['desktop', 'capture', 'hermes'];
+  if (path.startsWith(frontend + 'src/hermes/') || path.startsWith('composition/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith(frontend) || /^composition\/(quit|pill)\//.test(path) ||
       /^agent\/(zoom\/|enablement\/ci\/bend\/(build\.ts|modules\.json)$)/.test(path)) return ['desktop', 'capture'];
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];

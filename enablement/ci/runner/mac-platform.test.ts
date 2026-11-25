@@ -93,12 +93,12 @@ test('automatic and release Mac paths retain platform checks without repeating t
 
   const frontend='capture/desktop/ui/frontend/';
   const scripts=JSON.parse(readFileSync(new URL(frontend+'package.json',root),'utf8')).scripts;
-  const files=['src/hermes/runtime.smoke.ts','tests/pill/foreground/smoke.cts'];
-  assert.equal(scripts['test:electron:mac'],'npm run test:electron:targeted -- '+files.join(' '));
+  const files=['../../../../composition/hermes/enablement/runtime.smoke.ts','tests/pill/foreground/smoke.cts'];
+  assert.equal(scripts['test:electron:mac'],'node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts mac');
   assert.equal(scripts['test:electron:targeted'],'node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts');
   for(const file of files) {
     assert.ok(scripts['test:electron'].includes(file),'full Linux suite keeps '+file);
-    assert.match(readFileSync(new URL(frontend+file,root),'utf8'),/process.platform\s*===\s*'darwin'/,'Mac subset retains actual OS assertions');
+    assert.match(readFileSync(new URL(frontend+file,root),'utf8'),/process.platform\s*===\s*(['"])darwin\1/,'Mac subset retains actual OS assertions');
   }
 });
 

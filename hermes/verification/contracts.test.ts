@@ -19,7 +19,7 @@ test('Linux retains all source, package and bridge qualification', () => {
   expect(source.run).toBe('node --experimental-strip-types --test hermes/desktop/*.test.ts');
   const integration = step('Routing, bridge and package installation contracts');
   expect(integration.if).toBeUndefined();
-  expect(integration.run).toBe('node --experimental-strip-types --test hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts');
+  expect(integration.run).toBe('node --experimental-strip-types --test hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts composition/hermes/enablement/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts');
   expect(step('Package exact candidate without Rust or unrelated builds').if).toBeUndefined();
   const consumer = step('Verify Agent setup consumes the exact compiled archive');
   expect(consumer.if).toBeUndefined();

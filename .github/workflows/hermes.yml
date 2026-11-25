@@ -177,7 +177,7 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: node --experimental-strip-types --test hermes/desktop/*.test.ts
       - name: Routing, bridge and package installation contracts
-        run: node --experimental-strip-types --test hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts capture/desktop/ui/frontend/src/hermes/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts
+        run: node --experimental-strip-types --test hermes/distribution/package.test.ts hermes/distribution/consumer.test.ts hermes/distribution/cache/*.test.ts composition/hermes/enablement/*.test.ts capture/agent/setup/hermes.test.ts capture/agent/setup/hermes-receiver.test.ts
       - name: Package exact candidate without Rust or unrelated builds
         id: package
         run: |

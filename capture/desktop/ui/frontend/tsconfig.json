@@ -11,6 +11,11 @@
     "allowImportingTsExtensions": true,
     "types": ["vite/client"],
     "paths": {
+      "@apparent/record-capture-request": [
+        "./node_modules/@apparent/record-capture-request/dist/lifecycle.d.ts"
+      ],
+      "@playwright/test": ["./node_modules/@playwright/test"],
+      "esbuild": ["./node_modules/esbuild"],
       "@apparent/record-storage": [
         "./node_modules/@apparent/record-storage/dist/index.d.ts"
       ],
@@ -53,6 +58,7 @@
     "../../../../composition/settings/renderer",
     "../../../../composition/pill/renderer",
     "../../../../composition/quit/view.tsx",
+    "../../../../composition/hermes",
     "../../../../composition/pill/whiteboard/view.tsx",
     "../../../../composition/pill/whiteboard/main.ts",
     "../../../../composition/pill/whiteboard/preload.ts",

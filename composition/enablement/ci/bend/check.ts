@@ -24,6 +24,14 @@ await bendScratch(async (destination) => {
     import policy from "./mac-updates.mjs";
     import actions from "./release-action.mjs";
     import updates from "./linux-updates.mjs";
+    import confirmation from "./record-confirmation.mjs";
+    for (const phase of ["idle", "completed", "starting", "recording", "processing", "selecting", ""]) {
+      assert.equal(confirmation.capture_occupied(false, phase), false);
+      assert.equal(confirmation.capture_occupied(true, phase), phase !== "idle" && phase !== "completed");
+    }
+    assert.equal(confirmation.may_confirm("confirm", "checked"), true);
+    for (const [phase, availability] of [["confirm", "pending"], ["confirm", ""], ["starting", "checked"], ["error", "checked"]])
+      assert.equal(confirmation.may_confirm(phase, availability), false);
     const list = items => items.reduceRight((tail, head) => ({ $: "Con", head, tail }), { $: "Nil" });
     const release = (index, tag, version, arch, prerelease = false, date = "2026-11-01") => {
       const name = "Apparent-" + version + "-linux-" + arch + ".AppImage";
