@@ -4,7 +4,8 @@ use super::{
     element_attribute, pid_of, string_attribute,
 };
 use crate::shared::model::{ActionContext, ActionKind, ActionWindow, PinWindow, PinWindowElement};
-use crate::shared::windows::{RawWindow, raw_windows};
+use crate::capture::engine::runtime::raw_windows_now;
+use crate::shared::windows::{RawWindow, constrain_dock};
 use core_foundation::base::{CFEqual, CFGetTypeID, CFType, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::number::CFNumber;
@@ -40,6 +41,7 @@ struct Request {
     x: f64,
     y: f64,
     note_pid: u32,
+    dock: Option<[f64; 4]>,
     at: Instant,
 }
 
@@ -82,7 +84,7 @@ pub fn begin(enabled: bool) {
     }
 }
 
-pub fn pin(pin: u32, t: u64, release: u64, x: f64, y: f64, note_pid: u32) {
+pub fn pin(pin: u32, t: u64, release: u64, x: f64, y: f64, note_pid: u32, dock: Option<[f64; 4]>) {
     if let Ok(session) = SESSION.try_lock()
         && let Some(session) = session.as_ref()
     {
@@ -93,6 +95,7 @@ pub fn pin(pin: u32, t: u64, release: u64, x: f64, y: f64, note_pid: u32) {
             x,
             y,
             note_pid,
+            dock,
             at: Instant::now(),
         });
     }
@@ -125,12 +128,18 @@ fn window_at<'a>(raw: &'a [RawWindow], request: &Request, own: i32) -> Option<&'
     (windows.layer == 0 && !crate::capture::ui_process::owns(windows.pid)).then_some(windows)
 }
 
+fn window_stack(dock: Option<[f64; 4]>) -> Vec<RawWindow> {
+    let mut windows = raw_windows_now();
+    constrain_dock(&mut windows, dock);
+    windows
+}
+
 fn observe(request: Request) -> Option<ActionContext> {
     if request.at.elapsed() > FRESH {
         return None;
     }
     let own = std::process::id() as i32;
-    let raw = raw_windows();
+    let raw = window_stack(request.dock);
     let window = window_at(&raw, &request, own)?;
     let app = Owned(unsafe { AXUIElementCreateApplication(window.pid) });
     if app.0.is_null() {
@@ -192,7 +201,7 @@ fn observe(request: Request) -> Option<ActionContext> {
     tree.visit(root.0, None, 0);
     if tree.elements.is_empty()
         || Instant::now() >= deadline + Duration::from_millis(100)
-        || window_at(&raw_windows(), &request, own) != Some(window)
+        || window_at(&window_stack(request.dock), &request, own) != Some(window)
         || rect(root.0) != Some(geometry)
     {
         return None;
@@ -438,6 +447,7 @@ mod tests {
             x: 10.0,
             y: 20.0,
             note_pid: 2,
+            dock: None,
             at: Instant::now(),
         };
         let raw = [window(1, 2), window(2, 2), window(3, 0)];
