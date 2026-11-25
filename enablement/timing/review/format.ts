@@ -28,6 +28,14 @@ export function markdown(data: any): string {
     actionLines.push('');
     if (ranking.coverage) actionLines.push(`Unclassified command purposes: ${ranking.coverage.unclassifiedRows}/${ranking.coverage.completeRows} rows, ${number(ranking.coverage.unclassifiedSeconds)}s. This is separate from known mixed-operation envelopes and waits without a recovered origin.`, '');
   }
+  if (data.pushTiming) {
+    const {coverage, verification, toolWaits} = data.pushTiming;
+    actionLines.push('## Linked push timing', '',
+      `Receipt coverage: ${coverage.candidates} candidate IDs, ${coverage.unlinked} unlinked, ${coverage.launchOnly} launch-only, ${coverage.openVerification} verification without observed exit, ${coverage.observedResults} tool-observed results.`, '');
+    for (const [label, row] of [['Pre-push selector and verification', verification], ['Linked tool waits (tool clock)', toolWaits]] as const)
+      actionLines.push(row.count ? `- ${label}: ${number(row.count)} × ${number(row.meanSeconds)}s = ${number(row.totalSeconds)}s.` : `- ${label}: no measured intervals.`);
+    actionLines.push('', 'Tool waits overlap verification and the existing tool-envelope table. The installed runner does not expose admission, transport or process-group exit timestamps.', '');
+  }
   actionLines.push('## CI queue, execution and current holds', '');
   if (!ci) actionLines.push('**CI coverage missing:** supply exact run/attempt/SHA job snapshots with `--jobs`. An overall development bottleneck conclusion is incomplete without checking CI.', '');
   else {

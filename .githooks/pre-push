@@ -58,7 +58,11 @@ if ! node --experimental-strip-types enablement/local-tests/rust/check.ts "$base
     echo "pre-push: Rust diagnostics failed; push rejected" >&2
     exit 1
 fi
-if ! node --experimental-strip-types enablement/local-tests/run.ts --base "$base" --head "$head" $conservative_workflows --run; then
+set --
+if [ -n "${APPARENT_PUSH_TIMING:-}" ]; then
+    set -- --import ./enablement/timing/push/verification.ts
+fi
+if ! node --experimental-strip-types "$@" enablement/local-tests/run.ts --base "$base" --head "$head" $conservative_workflows --run; then
     echo "pre-push: verification failed; push rejected" >&2
     exit 1
 fi
