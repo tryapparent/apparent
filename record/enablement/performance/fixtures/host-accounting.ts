@@ -170,10 +170,22 @@ export function qualifyAccounting(
   const outsideCpuUs = Math.max(0, measuredBusyUs - workloadCpuUs);
   assert.ok(guestBusyUs >= 0 && measuredBusyUs >= 0 && workloadCpuUs >= 0);
   const lagAllowanceUs = (cpus * 2_000_000) / (subset?.clockTicks ?? 100);
-  assert.ok(
-    measuredBusyUs + lagAllowanceUs >= workloadCpuUs,
-    "Guest and workload CPU counters are inconsistent",
-  );
+  if (measuredBusyUs + lagAllowanceUs < workloadCpuUs) {
+    const counters = subset && {
+      subset,
+      elapsedUs,
+      guestBusyUs,
+      measuredBusyUs,
+      workloadCpuUs,
+      lagAllowanceUs,
+      before,
+      after,
+    };
+    assert.fail(
+      "Guest and workload CPU counters are inconsistent" +
+        (counters ? " " + JSON.stringify(counters) : ""),
+    );
+  }
   const unrelatedCpuPercent = (100 * outsideCpuUs) / cpuCapacityUs;
   const totalGuestCpuPsiPercent =
     (100 * (after.cpuPsiUs - before.cpuPsiUs)) / elapsedUs;
