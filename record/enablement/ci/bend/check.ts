@@ -10,6 +10,7 @@ import {
 } from "../../../../shared/enablement/bend/build.ts";
 import { run } from "../../../../shared/enablement/bend/toolchain.ts";
 import { checkActionTables } from "./action-context-table.ts";
+import { movieRouteTable } from "./native/movie-route-table.ts";
 import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
@@ -44,6 +45,7 @@ await bendScratch(async (scratch) => {
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
   checkActionTables(root, proofOutput);
+  assert.deepEqual(movieRouteTable(proofOutput), [0, 1, 1, 1]);
   copyFileSync(
     new URL(
       "../../../media/src/assembly/crop-publication-request.ts",

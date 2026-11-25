@@ -220,6 +220,17 @@ pub(crate) fn audio_notice(
     bundle_dir: &std::path::Path,
     compact: bool,
 ) -> String {
+    if bundle.source.as_deref() == Some(crate::shared::model::IMPORTED_MOVIE_SOURCE) {
+        let mut notice = String::from("Source: imported video. Structured clicks, ink, and window metadata are unavailable.\n");
+        if let Some(missing) = &bundle.transcript.missing {
+            notice.push_str(&format!("No transcript: {}\n", missing.reason));
+        } else if bundle.audio.is_none() {
+            notice.push_str("The imported movie has no audio track.\n");
+        } else if bundle.transcript.text.trim().is_empty() {
+            notice.push_str("No words transcribed from the imported movie.\n");
+        }
+        return notice;
+    }
     if bundle.source.as_deref() == Some("iphone")
         || bundle
             .context

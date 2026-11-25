@@ -20,3 +20,14 @@ law high_word_one_saturates:
 
 def high_word_one_saturates(low):
   {==}
+
+def use_movie_assembly(imported: Bool, device: Bool) -> U32:
+  match imported:
+    case True{}:
+      1
+    case False{}:
+      match device:
+        case True{}:
+          1
+        case False{}:
+          0

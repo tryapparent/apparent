@@ -408,16 +408,14 @@ impl Drop for PhoneSession {
     }
 }
 
-/// Everything a phone movie needs to become a bundle, on the movie's clock.
 pub struct MovieCapture {
     pub movie: PathBuf,
     pub target: TargetInfo,
-    pub device: DeviceInfo,
+    pub device: Option<DeviceInfo>,
     pub events: Vec<InteractionEvent>,
     pub strokes: Vec<Stroke>,
     pub flags: Vec<u64>,
     pub note: Option<String>,
-    /// Additional context carried by the capture.
     pub context: BTreeMap<String, String>,
     pub context_changes: Vec<ContextChange>,
     pub screens: Vec<ScreenSpan>,
@@ -449,9 +447,6 @@ pub fn phone_target(
     }
 }
 
-/// Builds a bundle from a phone movie already inside `bundle_dir`: narration transcribed with
-/// word timings, keyframes chosen on small candidate frames and then decoded again from the
-/// native video.
 pub fn build_movie_bundle(
     bundle_dir: &Path,
     capture: MovieCapture,
@@ -479,7 +474,7 @@ fn build_movie_bundle_with_audio(
         .collect();
     mark_times.sort_unstable();
     mark_times.dedup();
-    let ((transcript, audio_ms, transcribe_ms, audio_err), joined) = std::thread::scope(|scope| {
+    let ((mut transcript, audio_ms, transcribe_ms, audio_err), joined) = std::thread::scope(|scope| {
         let base_target = capture.target.clone();
         let strokes_ref = &capture.strokes;
         let events_ref = &capture.events;
@@ -495,8 +490,6 @@ fn build_movie_bundle_with_audio(
             let assembly_plan = assembly::plan(probe.duration_ms)?;
             let limits = assembly_plan.limits(probe.duration_ms)?;
             let budget = limits.maximum;
-            // With a mark for every slot, only the frames under the marks are needed, unless
-            // marks on one screen share a keyframe and leave slots for other moments.
             if mark_times.len() >= budget {
                 let direct =
                     movie_frames::record(movie_ref, &mark_times, 0, PHONE_FRAME_EDGE);
@@ -595,19 +588,27 @@ fn build_movie_bundle_with_audio(
     let (probe, frames, candidates_ms, already_full, prepared, assembly_plan) =
         joined.map_err(|_| anyhow::anyhow!("Frame decoding panicked"))??;
     if let Some(error) = audio_err {
-        apparent_log(format!("Phone audio export failed: {error:#}"));
+        apparent_log(format!("Movie audio extraction failed: {error:#}"));
+        if capture.device.is_none() {
+            transcript.missing = Some(crate::shared::model::MissingTranscript {
+                reason: "The movie audio could not be decoded for transcription.".into(),
+                retry: false,
+            });
+        }
     }
     if probe.width > 0 && probe.height > 0 {
-        capture.device.width = probe.width;
-        capture.device.height = probe.height;
+        if let Some(device) = &mut capture.device {
+            device.width = probe.width;
+            device.height = probe.height;
+        }
         capture.target.frame.width = f64::from(probe.width);
         capture.target.frame.height = f64::from(probe.height);
     }
     ensure!(!frames.is_empty(), "No frames could be decoded");
     let movie = capture.movie.clone();
     let extras = bundle_processing::SourceExtras {
-        source: Some("iphone".into()),
-        device: Some(capture.device),
+        source: Some(if capture.device.is_some() { "iphone" } else { crate::shared::model::IMPORTED_MOVIE_SOURCE }.into()),
+        device: capture.device,
         context: capture.context,
         context_changes: capture.context_changes,
         screens: capture.screens,
@@ -670,7 +671,7 @@ pub fn finalize_live_capture(
         MovieCapture {
             movie: recording.movie,
             target,
-            device: info,
+            device: Some(info),
             events,
             strokes,
             flags: recording.flags,
@@ -701,7 +702,6 @@ mod tests {
         let rotated = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-y", "-display_rotation:v:0", "90", "-i"])
             .arg(source).args(["-map", "0", "-c", "copy"]).arg(&movie).output().unwrap();
         assert!(rotated.status.success(), "{}", String::from_utf8_lossy(&rotated.stderr));
-        // Match private bundle artifacts regardless of FFmpeg's inherited umask.
         std::fs::set_permissions(&movie, std::fs::Permissions::from_mode(0o600)).unwrap();
         let original = std::fs::read(&movie).unwrap();
         let reference = Command::new("ffmpeg").args(["-v", "error", "-nostdin", "-i"]).arg(&movie)
@@ -709,7 +709,7 @@ mod tests {
         assert!(reference.status.success()); assert_eq!(reference.stdout.len(), 48 * 64 * 4);
         let (_, bundle, text) = build_movie_bundle_with_audio(root.path(), MovieCapture {
             movie: movie.clone(), target: phone_target("Synthetic file", None, None, 1, 1),
-            device: serde_json::from_value(serde_json::json!({"name":"Synthetic file", "capture":"mirror", "width":1, "height":1})).unwrap(),
+            device: Some(serde_json::from_value(serde_json::json!({"name":"Synthetic file", "capture":"mirror", "width":1, "height":1})).unwrap()),
             events: Vec::new(), strokes: Vec::new(), flags: Vec::new(), note: None,
             context: BTreeMap::new(), context_changes: Vec::new(), screens: Vec::new(),
         }, |_, _| panic!("Record must not invoke native audio extraction for a trackless movie")).unwrap();

@@ -8,6 +8,7 @@ import {
 } from "../../../../shared/enablement/bend/build.ts";
 
 import { actionContextTable } from "./action-context-table.ts";
+import { movieRouteTable } from "./native/movie-route-table.ts";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const output = process.argv[2];
@@ -56,6 +57,10 @@ await bendScratch(async (compiled) => {
   writeFileSync(
     join(dirname(output), "record-action-context.json"),
     actionContextTable(compiled),
+  );
+  writeFileSync(
+    join(dirname(output), "record-movie-route.bin"),
+    Uint8Array.from(movieRouteTable(compiled)),
   );
   const frameLimits = readFileSync(join(compiled, "frame-limits.mjs"), "utf8");
   const exportMarker = "export default {";

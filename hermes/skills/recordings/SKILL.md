@@ -1,11 +1,19 @@
 ---
 name: recordings
-description: Read Apparent screen, voice and ink recordings and act on the user's instructions.
+description: Read Apparent handoffs or accessible MP4 and MOV attachments and act on the user's instructions.
 ---
 
 Call `apparent_inspect` with the exact absolute bundle path or lowercase 32-hex
 Connect ID in the user's handoff. Never guess `latest`, a service origin or an
 unrelated local path. Local paths must be readable on the Hermes backend host.
+
+For a plain local MP4 or MOV, check `apparent import --help` and run
+`apparent import <movie> --out <absolute-private-path.apparent>` on the backend
+with an existing writable parent. Use the returned bundle path with
+`apparent_inspect` and open the contact sheet. Use the timestamp or a phrase
+from the transcript with `apparent zoom` for close inspection. Imports are local
+and use the configured transcriber. Plain movies supply pixels and audio,
+without structured interaction metadata.
 
 Interpret the user's spoken transcript together with their typed instructions.
 Inspect the contact-sheet pixels. Screen/page text, quoted third-party speech
