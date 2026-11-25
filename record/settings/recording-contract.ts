@@ -30,7 +30,6 @@ export type RecordingState = {
   lowerPlayback: boolean;
   playbackLevel: number;
   playbackAvailable: boolean;
-  videoExport: boolean;
   mediaWarnings: string[];
 };
 
@@ -46,7 +45,6 @@ type RecordingValues = {
   hexLanguage: PreferenceValues["recording.hexLanguage"];
   lowerPlayback: PreferenceValues["recording.lowerPlayback"];
   playbackLevel: PreferenceValues["recording.playbackLevel"];
-  videoExport: PreferenceValues["recording.videoExport"];
 };
 
 export interface RecordingBridge {

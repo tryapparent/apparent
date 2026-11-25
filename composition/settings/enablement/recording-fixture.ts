@@ -65,7 +65,9 @@ export async function launchRecording() {
     });
     browser = await chromium.connectOverCDP(endpoint);
     const context = browser.contexts()[0];
-    const page = context.pages()[0];
+    const page =
+      context.pages()[0] ??
+      (await context.waitForEvent("page", { timeout: 10_000 }));
     const session = await context.newCDPSession(page);
     async function setVariant(width: number, colorScheme: "light" | "dark") {
       await session.send("Emulation.setDeviceMetricsOverride", {
@@ -122,7 +124,6 @@ export function recordingFixture(send: (message: object) => void) {
     lowerPlayback: false,
     playbackLevel: 20,
     playbackAvailable: false,
-    videoExport: false,
     mediaWarnings: [],
   };
   const state = structuredClone(linuxState);
@@ -136,9 +137,7 @@ export function recordingFixture(send: (message: object) => void) {
       send({ type: "recording-state", state });
     },
     linux() {
-      Object.assign(state, structuredClone(linuxState), {
-        videoExport: state.videoExport,
-      });
+      Object.assign(state, structuredClone(linuxState));
       fixture.show();
     },
     mac() {
@@ -227,8 +226,8 @@ export function recordingFixture(send: (message: object) => void) {
         });
       }
       if (action.action === "recording-preference") {
-        if (!fixture.refuse && action.key === "videoExport") {
-          state.videoExport = Boolean(action.value);
+        if (!fixture.refuse && action.key === "lowerPlayback") {
+          state.lowerPlayback = Boolean(action.value);
           fixture.show();
         }
         send({

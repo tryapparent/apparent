@@ -655,19 +655,17 @@ impl ksni::Tray for ApparentTray {
         items.push(ksni::menu::CheckmarkItem { label: "Microphone for next screen capture".into(), checked: crate::capture::engine::runtime::audio::mic::enabled(), activate: Box::new(|tray: &mut Self| { let _ = tray.actions.try_send(MenuAction::ToggleMicrophone); }), ..Default::default() }.into());
         items.push(ksni::MenuItem::Separator);
         items.push(self.item("Open Latest Capture", MenuAction::OpenLatest));
-        if crate::shared::handoff::video_export() {
-            items.push(
-                ksni::menu::StandardItem {
-                    label: "Export Last Capture as Video…".into(),
-                    enabled: !super::super::EXPORTING.load(Ordering::Acquire),
-                    activate: Box::new(|tray: &mut Self| {
-                        let _ = tray.actions.try_send(MenuAction::ExportVideo);
-                    }),
-                    ..Default::default()
-                }
-                .into(),
-            );
-        }
+        items.push(
+            ksni::menu::StandardItem {
+                label: "Export Last Capture as Video…".into(),
+                enabled: !super::super::EXPORTING.load(Ordering::Acquire),
+                activate: Box::new(|tray: &mut Self| {
+                    let _ = tray.actions.try_send(MenuAction::ExportVideo);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
         items.push(ksni::MenuItem::Separator);
         items.push(self.item("Settings…", MenuAction::Settings));
         items.push(self.item("Check for Updates…", MenuAction::CheckForUpdates));
@@ -747,8 +745,6 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
     Some(receiver)
 }
 
-/// Called from the UI loop: refreshes the menu now and then (the record shortcut's label and the
-/// export item can change while Apparent runs).
 pub(in crate::capture::desktop) fn poll_status_bar() {
     static LAST: Mutex<Option<(Instant, u64)>> = Mutex::new(None);
     let mut last = LAST.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -905,6 +901,9 @@ mod export_menu_tests {
                 )),
                 "status must be visible without hovering: {status}"
             );
+            assert!(tray.menu().iter().any(|item| matches!(item,
+                ksni::MenuItem::Standard(item) if item.label == "Export Last Capture as Video…"
+            )));
         }
     }
 

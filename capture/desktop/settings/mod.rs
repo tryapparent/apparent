@@ -135,7 +135,7 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {
     match key {
-        "videoExport" | "lowerPlayback" => value.is_boolean(),
+        "lowerPlayback" => value.is_boolean(),
         "playbackLevel" => value.as_u64().is_some_and(|level| level <= 100),
         "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
             value.as_str().is_some_and(|value| value.len() <= 16_384),
@@ -223,14 +223,13 @@ fn recording_state(view: View) -> serde_json::Value {
     ].into_iter().flatten().collect();
     #[cfg(not(target_os = "linux"))]
     let warnings: Vec<String> = Vec::new();
-    let message = serde_json::json!({"type":"recording-state","state":{
+    serde_json::json!({"type":"recording-state","state":{
         "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
         "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
         "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking"),
-        "videoExport":view.video_export,"mediaWarnings":warnings
-    }});
-    message
+        "mediaWarnings":warnings
+    }})
 }
 
 fn microphone_view(
@@ -288,22 +287,23 @@ fn microphone_view(
 fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_values() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.json");
-    std::fs::write(&path, r#"{"transcriber":"apple","future":{"field":42},"microphone":{"id":"gone","name":"Previous input"}}"#).unwrap();
+    std::fs::write(&path, r#"{"transcriber":"apple","videoExport":false,"recording":{"videoExport":false},"future":{"field":42},"microphone":{"id":"gone","name":"Previous input"}}"#).unwrap();
     let read_json = |path: &std::path::Path| serde_json::from_slice::<serde_json::Value>(&std::fs::read(path).unwrap()).unwrap();
     assert!(save_recording(&path, "microphone", &"disconnected".into(), None).is_err());
     assert_eq!(read_json(&path)["microphone"]["id"], "gone");
     assert_eq!(save_recording(&path, "microphone", &"default".into(), None).unwrap(), Effect::None);
     assert_eq!(save_recording(&path, "hexModel", &"selected".into(), None).unwrap(), Effect::None);
-    assert_eq!(save_recording(&path, "videoExport", &true.into(), None).unwrap(), Effect::None);
+    assert!(save_recording(&path, "videoExport", &true.into(), None).is_err());
     let saved = read_json(&path);
     assert_eq!(saved["future"]["field"], 42);
     assert_eq!(saved["recording"]["hexModel"], "selected");
     assert_eq!(saved["recording"]["transcriber"], "hex");
-    assert_eq!(saved["recording"]["videoExport"], true);
+    assert_eq!(saved["videoExport"], false);
+    assert_eq!(saved["recording"]["videoExport"], false);
     assert!(saved.get("microphone").is_none());
 
     std::fs::write(&path, "invalid config").unwrap();
-    assert!(save_recording(&path, "videoExport", &false.into(), None).is_err());
+    assert!(save_recording(&path, "lowerPlayback", &false.into(), None).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid config");
 }
 

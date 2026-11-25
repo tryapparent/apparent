@@ -44,7 +44,6 @@ access.
 | Language | macOS Apple Speech reads `recording.appleLocale`, or uses the system language when Automatic clears the value. Saving through the pane also restarts the speech-model check. Permission and model readiness come from the native provider. |
 | Hex model and language | The model selector is available on both systems when Hex reports models. Selecting a model saves `recording.hexModel` and selects Hex in one transaction. The macOS language field saves `recording.hexLanguage` and accepts blank for English. Model support determines whether Hex applies it. |
 | Other-app volume | `recording.lowerPlayback` and `recording.playbackLevel` apply at the next recording's volume-lowering start. macOS uses a 0–100% slider. Linux uses presets and requires audio support plus `experiments.linux-playback-ducking`. A saved On preference can be turned off when the experiment is unavailable. |
-| Video export | `recording.videoExport` controls the Export Last Capture as Video menu item. |
 
 The former top-level Recording keys remain accepted for existing files.
 The CLI accepts a device ID as `{"id":"device-id"}` for

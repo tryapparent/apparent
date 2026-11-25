@@ -11,7 +11,6 @@ export type PreferenceValues = {
   "recording.appleLocale": string;
   "recording.lowerPlayback": boolean;
   "recording.playbackLevel": number;
-  "recording.videoExport": boolean;
   "storage.mediaDays": number | null;
   "storage.capturesDir": string;
   "storage.bundleDays": number | null;

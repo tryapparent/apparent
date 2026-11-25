@@ -112,14 +112,6 @@
     "legacy": { "path": "playbackLevel" }
   },
   {
-    "id": "recording.videoExport",
-    "label": "Video export",
-    "kind": "boolean",
-    "default": true,
-    "apply": "menu-refresh",
-    "legacy": { "path": "videoExport" }
-  },
-  {
     "id": "storage.mediaDays",
     "label": "Keep recording media",
     "kind": "integer",

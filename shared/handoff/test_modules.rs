@@ -744,23 +744,6 @@ mod tests {
     }
 
     #[test]
-    fn video_export_defaults_on_and_preserves_explicit_opt_out() {
-        let fixture = Fixture::new();
-        let path = fixture.0.join("config.json");
-        assert!(load_config_from(&path).video_export_enabled());
-        fs::write(&path, br#"{"autoSend":false}"#).unwrap();
-        assert!(load_config_from(&path).video_export_enabled());
-        update_config_in(&path, |config| {
-            config["videoExport"] = false.into();
-            Ok(())
-        }).unwrap();
-        assert!(!load_config_from(&path).video_export_enabled());
-        assert_eq!(load_config_from(&path).auto_send, Some(false));
-        fs::write(&path, br#"{"videoExport":true}"#).unwrap();
-        assert!(load_config_from(&path).video_export_enabled());
-    }
-
-    #[test]
     fn promoted_features_default_on_without_activating_other_experiments() {
         let fixture = Fixture::new();
         let path = fixture.0.join("config.json");
@@ -838,12 +821,11 @@ mod tests {
         let path = fixture.0.join("config.json");
         fs::write(
             &path,
-            r#"{"agentHost": "studio", "autoSend": "maybe", "usbApps": "not-a-list", "videoExport": true, "nativePill": 3, "pillStyle": "glass", "unknown": {"x": 1}}"#,
+            r#"{"agentHost": "studio", "autoSend": "maybe", "usbApps": "not-a-list", "nativePill": 3, "pillStyle": "glass", "unknown": {"x": 1}}"#,
         )
         .unwrap();
         let cfg = load_config_from(&path);
         assert_eq!(cfg.agent_host.as_deref(), Some("studio"));
-        assert_eq!(cfg.video_export, Some(true));
         assert_eq!(cfg.auto_send, None);
     }
 
