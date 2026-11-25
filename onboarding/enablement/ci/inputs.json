@@ -34,6 +34,7 @@
     "composition/onboarding/src/host.ts",
     "composition/onboarding/src/place.ts",
     "onboarding/renderer/package.json",
+    "onboarding/renderer/base.css",
     "onboarding/host/wispr.ts",
     "onboarding/host/wispr-native.ts",
     "onboarding/host/dictation.ts",

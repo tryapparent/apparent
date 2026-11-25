@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "@apparent/ui/theme.css";
+
+@layer base {
+  body {
+    margin: 0;
+    background: var(--apparent-background);
+    color: var(--apparent-foreground);
+    font-family: system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+}
+
+@font-face {
+  font-family: "Host Grotesk";
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url("../../shared/assets/fonts/HostGrotesk-Variable.ttf")
+    format("truetype");
+}

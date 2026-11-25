@@ -30,13 +30,13 @@ export default defineConfig({
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../composition/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
     execFileSync(process.execPath, [fileURLToPath(new URL('../../../../handoff/enablement/ci/bend/build.ts', import.meta.url))], { stdio: 'inherit' });
   } }, react(), {
-    name: 'composition-utility-sources',
+    name: 'desktop-utility-sources',
     enforce: 'pre',
     transform(css, id) {
-      const styles = ['settings/renderer/base.css', 'pill/renderer/style.css'];
-      if (!styles.some(file => id === fileURLToPath(new URL(`../../../../composition/${file}`, import.meta.url)))) return;
+      const styles = ['composition/settings/renderer/base.css', 'composition/pill/renderer/style.css', 'onboarding/renderer/base.css'];
+      if (!styles.some(file => id === fileURLToPath(new URL(`../../../../${file}`, import.meta.url)))) return;
       return css.concat(
-        "\n@source '../../../capture/desktop/ui/frontend/node_modules/@apparent/ui/src';",
+        `\n@source '${path.posix.relative(path.dirname(id), path.resolve('node_modules/@apparent/ui/src'))}';`,
         "\n@source '.';",
       );
     },
