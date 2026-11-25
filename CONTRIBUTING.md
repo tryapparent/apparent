@@ -13,7 +13,9 @@ If you cannot safely share a recording, a text-only issue is just as welcome. Do
 
 ## Contribute code
 
-Before a larger change, open an issue to discuss the approach. For a pull request, explain the behavior you changed and how you tested it. See [development reference](enablement/docs/development.md#testing) for the project test commands and [AGENTS.md](AGENTS.md) for repository-specific build and safety rules.
+Before your first worktree commit, follow the [staged checker setup](shared/enablement/dependency-policy/fast/README.md).
+
+Discuss larger changes in an issue. Describe changes and tests in your PR. See [test commands](enablement/docs/development.md#testing) and [repository rules](AGENTS.md).
 
 ## Guard local pushes
 
