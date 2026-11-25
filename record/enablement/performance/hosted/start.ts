@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
@@ -56,12 +56,15 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   await waitForQuietStart(AbortSignal.timeout(46_000));
   const host = hostCounters();
   const before = cpuSample();
+  let failure: unknown;
   try {
     command(
       process.execPath,
       [runner, control, output, ...(other ? [other] : [])],
       { env: job.env },
     );
+  } catch (error) {
+    failure = error;
   } finally {
     receipt(join(job.evidence, phase + "-runner-steal.json"), {
       before,
@@ -69,6 +72,25 @@ async function run(phase: "baseline" | "comparison", other?: string) {
       host,
       hostAfter: hostCounters(),
     });
+  }
+  if (failure) {
+    if (phase === "baseline" && !existsSync(join(output, "comparison.json"))) {
+      try {
+        command(
+          process.execPath,
+          [
+            runner,
+            "--diagnostic",
+            control,
+            join(job.evidence, phase + "-diagnostic"),
+          ],
+          { env: job.env },
+        );
+      } catch (diagnosticError) {
+        console.error(diagnosticError);
+      }
+    }
+    throw failure;
   }
   const snapshot = json(join(job.evidence, phase + "-runner-steal.json"));
   const stealPercent = stealSince(snapshot.before, snapshot.after);

@@ -78,11 +78,19 @@ async function measure(setup: Setup, output: string) {
 }
 
 const args = process.argv.slice(2);
-if (args[0] !== "--xvfb-child") {
-  const [control, output, candidate] = args;
+function requireIsolatedDisplay(authority: string) {
+  assert.match(process.env.DISPLAY ?? "", /^:\d+$/);
+  assert.ok(authority);
+  assert.equal(process.env.XAUTHORITY, authority);
+}
+
+if (args[0] !== "--xvfb-child" && args[0] !== "--diagnostic-xvfb-child") {
+  const diagnostic = args[0] === "--diagnostic";
+  const inputs = diagnostic ? args.slice(1) : args;
+  const [control, output, candidate] = inputs;
   assert.ok(
-    control && output && args.length <= 3,
-    "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD]",
+    control && output && inputs.length <= (diagnostic ? 2 : 3),
+    "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD] or startup.ts --diagnostic BUILD NEW_RESULTS",
   );
   mkdirSync(output, { mode: 0o700 });
   const privateDisplay = mkdtempSync(join(tmpdir(), "apparent-dev-xvfb-"));
@@ -98,7 +106,7 @@ if (args[0] !== "--xvfb-child") {
         `-screen 0 ${width}x320x24 -nolisten tcp`,
         process.execPath,
         process.argv[1],
-        "--xvfb-child",
+        diagnostic ? "--diagnostic-xvfb-child" : "--xvfb-child",
         authority,
         ...[control, output, ...(candidate ? [candidate] : [])].map((path) =>
           resolve(path),
@@ -118,11 +126,30 @@ if (args[0] !== "--xvfb-child") {
   } finally {
     rmSync(privateDisplay, { recursive: true, force: true });
   }
+} else if (args[0] === "--diagnostic-xvfb-child") {
+  const [, authority, control, output] = args;
+  requireIsolatedDisplay(authority);
+  const setup = locate(control);
+  const display = watchDisplay();
+  try {
+    const { id, visible } = await attempt(
+      setup,
+      "cold",
+      join(output, "cold"),
+      display,
+      true,
+    );
+    writeFileSync(
+      join(output, "diagnostic.json"),
+      JSON.stringify({ diagnosticOnly: true, id, visible }, null, 2),
+      { mode: 0o600 },
+    );
+  } finally {
+    await shutDown(display.child);
+  }
 } else {
   const [, authority, control, output, candidate] = args;
-  assert.match(process.env.DISPLAY ?? "", /^:\d+$/);
-  assert.ok(authority);
-  assert.equal(process.env.XAUTHORITY, authority);
+  requireIsolatedDisplay(authority);
   const controlSetup = locate(control);
   const candidateSetup = candidate ? locate(candidate) : undefined;
   assert.ok(
