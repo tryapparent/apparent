@@ -531,23 +531,13 @@ pub fn release_pill_focus(xid: u32, pid: u32) -> Result<()> {
     }
 }
 
-pub fn pin_pill(xid: u32) -> Result<()> {
-    pin_pill_for_process(xid, std::process::id(), || true)
-}
-
 pub fn pin_pill_for_process(xid: u32, pid: u32, still_current: impl FnOnce() -> bool) -> Result<()> {
-    if let Some(command) = pill_pin_command(
-        &request("j/clients")?,
-        pid,
-        xid,
-        syntax()?,
-    )? {
+    if let Some(command) = pill_pin_command(&request("j/clients")?, pid, xid, syntax()?)? {
         // Discovery/syntax RPCs may have waited while the child was retired.
         // Recheck its caller-owned lifetime immediately before any mutation.
-        if !still_current() {
-            return Ok(());
+        if still_current() {
+            run(&command)?;
         }
-        run(&command)?;
     }
     Ok(())
 }
@@ -562,7 +552,7 @@ pub fn prepare_pill_motion(xid: u32, pid: u32) -> Result<bool> {
     let title = pill_title(xid);
     let reply = request_with_timeout(&format!(
         "eval assert(not _G['{key}'], 'Pill motion rule already owned'); \
-         local r = hl.window_rule({{ name = '{key}', match = {{ title = '^{title}$' }}, no_anim = true, no_blur = true, no_shadow = true, border_size = 0 }}); \
+         local r = hl.window_rule({{ name = '{key}', match = {{ title = '^{title}$' }}, no_initial_focus = true, no_anim = true, no_blur = true, no_shadow = true, border_size = 0 }}); \
          _G['{key}'] = r; assert(r:is_enabled(), 'Pill motion rule unavailable')"
     ), Duration::from_millis(200))?;
     anyhow::ensure!(reply.trim() == "ok", "Hyprland pill motion: {}", reply.trim());

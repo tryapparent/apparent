@@ -21,7 +21,7 @@ type Reveal =
       }
     >;
 type Phase =
-  | Tag<"Hidden" | "Dismissing">
+  | Tag<"Hidden">
   | Readonly<Tag<"Processing"> & { released: boolean }>
   | Readonly<Tag<"Selecting"> & { mode: Mode }>
   | Readonly<Tag<"Recording"> & { reveal: Reveal }>
@@ -46,7 +46,6 @@ export type PillEvent =
       | "SourceReleased"
       | "CaptureFailed"
       | "Dismiss"
-      | "SurfaceHidden"
       | "Hide"
       | "RevealClosed"
       | "ShareStarted"

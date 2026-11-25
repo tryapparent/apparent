@@ -844,9 +844,7 @@ mod tests {
         let cfg = load_config_from(&path);
         assert_eq!(cfg.agent_host.as_deref(), Some("studio"));
         assert_eq!(cfg.video_export, Some(true));
-        assert_eq!(cfg.pill_style.as_deref(), Some("glass"));
         assert_eq!(cfg.auto_send, None);
-        assert_eq!(cfg.native_pill, None);
     }
 
     #[test]

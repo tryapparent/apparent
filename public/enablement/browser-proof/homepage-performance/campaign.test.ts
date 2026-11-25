@@ -6,6 +6,7 @@ import { join, relative } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { bendScratch } from "../../../../shared/enablement/bend/build.ts";
+import { hostedInterference } from "./hosted-guard/interference.ts";
 
 test("chains colocated hosted brackets and applies the canonical four-window stop", async () => {
   await bendScratch(async (directory) => {
@@ -70,6 +71,7 @@ test("chains colocated hosted brackets and applies the canonical four-window sto
           packageBytes: 1024,
           compatible: {
             scenario: "synthetic-public",
+            hostedInterference,
             probeSha256: "f".repeat(64),
             detailed: mode === "trace",
             runner: {
@@ -91,9 +93,13 @@ test("chains colocated hosted brackets and applies the canonical four-window sto
             eligible: true,
             verified: true,
             verifiedMs: navigation === "cold" ? ms : 90,
-            cpuPressurePercent: 0,
+            cpuPressurePercent: 20,
+            interference: { passed: true },
             chromiumCpuMs: 38,
-            sampledChromiumPssKiB: 1024,
+            sampledChromiumPssKiB:
+              name === "resource-regression" && label.startsWith("b-")
+                ? 2048
+                : 1024,
             pageTiming: { document: { transferBytes: 1024 }, resources: [] },
           })),
           probeOverheadMs: mode === "calibrate" ? 3 : null,
@@ -172,12 +178,12 @@ test("chains colocated hosted brackets and applies the canonical four-window sto
         .slice(2)
         .map((candidate, index) =>
           job(
-            "tie-" + index,
+            index === 0 ? "resource-regression" : "tie-" + index,
             String(104 + index),
             winner,
             candidate,
             [240, 240],
-            [240, 240, 240, 240],
+            index === 0 ? [240, 180, 180, 240] : [240, 240, 240, 240],
           ),
         ),
     ];
@@ -214,6 +220,12 @@ test("chains colocated hosted brackets and applies the canonical four-window sto
       [true, false, false, false, false, false],
     );
     assert.equal(report.completeWindows, 4);
+    assert(
+      report.experiments[3].guardResult.some(
+        (guard: { name: string; passed: boolean }) =>
+          guard.name === "browserPssKiB" && !guard.passed,
+      ),
+    );
     assert.equal(report.distinctHypothesesSinceGain, 5);
     assert.deepEqual(report.latestCompleteRates, [0, 0]);
     assert.equal(report.stop, true);

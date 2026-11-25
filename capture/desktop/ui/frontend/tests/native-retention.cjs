@@ -1,4 +1,3 @@
-// Shared assertions for owned disposable native desktops only. No backend/socket mocks.
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');

@@ -8,6 +8,18 @@ import { chromium, devices, type Page } from "playwright-core";
 import { verifyDemo } from "./demo.ts";
 import { externalEffects, scenario, servePackage } from "./fixture.ts";
 import {
+  evaluateInterference,
+  hostedInterference,
+  hostedSampler,
+} from "./hosted-guard/interference.ts";
+import {
+  idlePreflight,
+  maxCpuPressurePercent,
+  pressure,
+  pressureSample,
+  processes,
+} from "./resources.ts";
+import {
   account,
   rendererSpans,
   startTrace,
@@ -26,6 +38,8 @@ const { values } = parseArgs({
     control: { type: "string", multiple: true },
     size: { type: "string", default: "desktop" },
     theme: { type: "string", default: "light" },
+    "idle-preflight": { type: "boolean" },
+    "pressure-diagnostic": { type: "boolean" },
   },
 });
 if (
@@ -40,8 +54,13 @@ const runs = Number(values.runs);
 const maxBlocks = Number(values["max-blocks"] ?? runs);
 assert(Number.isSafeInteger(runs) && runs > 0);
 assert(Number.isSafeInteger(maxBlocks) && maxBlocks >= runs);
-const maxCpuPressurePercent = 2;
 assert(["quiet", "trace", "calibrate"].includes(values.mode));
+const diagnostic = values["pressure-diagnostic"];
+assert(
+  !diagnostic || (values.mode === "calibrate" && runs === 1 && maxBlocks === 1),
+);
+const scope = process.env.APPARENT_PUBLIC_BENCHMARK_CGROUP;
+const sampleHosted = scope && hostedSampler(scope);
 
 assert(["desktop", "phone", "small-phone"].includes(values.size));
 assert(values.theme === "dark" || values.theme === "light");
@@ -150,7 +169,11 @@ try {
     const block = receipts.slice(blockStart);
     if (
       !failed.length &&
-      block.every((row) => row.cpuPressurePercent <= maxCpuPressurePercent)
+      block.every(
+        (row) =>
+          row.interference?.passed ??
+          row.cpuPressurePercent <= maxCpuPressurePercent,
+      )
     ) {
       block.forEach((row) => {
         row.eligible = true;
@@ -197,6 +220,8 @@ for (const source of [
   "fixture.ts",
   "trace.ts",
   "demo.ts",
+  "resources.ts",
+  "hosted-guard/interference.ts",
   "../motion/frame-pacing.ts",
 ])
   probe.update(await readFile(new URL(source, import.meta.url)));
@@ -205,6 +230,8 @@ const compatible = {
   probeSha256: probe.digest("hex"),
   runner,
   detailed: values.mode === "trace",
+  ...(values["idle-preflight"] && { idlePreflight: true }),
+  ...(scope && { hostedInterference }),
 };
 const references = await Promise.all(
   (values.control ?? []).map(async (path) =>
@@ -233,12 +260,13 @@ assert(
 const controlMs = references.length
   ? references.reduce((sum, row) => sum + row.measuredMs, 0) / references.length
   : measuredMs;
-const qualified = !failed.length && completeBlocks === runs;
+const qualified = !diagnostic && !failed.length && completeBlocks === runs;
 const report = {
   runId,
   compatible,
   revision: values.revision,
   mode: values.mode,
+  ...(diagnostic && { diagnostic: true }),
   qualified,
   failed,
   packageSha256: site.packageSha256,
@@ -286,30 +314,8 @@ console.log(
     receipt: path,
   }),
 );
-if (!qualified) process.exitCode = 1;
-
-async function pressure() {
-  const cpu = await readFile("/proc/pressure/cpu", "utf8");
-  return Number(cpu.match(/^some .*total=(\d+)/m)?.[1]);
-}
-
-async function processes() {
-  const { processInfo } = await browserCDP.send("SystemInfo.getProcessInfo");
-  let pssKiB = 0;
-  for (const { id } of processInfo) {
-    const rollup = await readFile(`/proc/${id}/smaps_rollup`, "utf8").catch(
-      (error) => {
-        if (error.code === "ENOENT" || error.code === "ESRCH") return "";
-        throw error;
-      },
-    );
-    pssKiB += Number(rollup.match(/^Pss:\s+(\d+) kB/m)?.[1] ?? 0);
-  }
-  return {
-    pssKiB,
-    cpuSeconds: processInfo.reduce((sum, process) => sum + process.cpuTime, 0),
-  };
-}
+if (diagnostic ? failed.length || receipts.length !== 4 : !qualified)
+  process.exitCode = 1;
 
 async function attempt(
   page: Page,
@@ -351,9 +357,12 @@ async function attempt(
       );
     }, id);
   }
+  const idle = values["idle-preflight"] ? await idlePreflight() : undefined;
+  const observerStart = diagnostic ? await pressureSample() : undefined;
   const tracePath = join(output, id + ".chrome.json");
   const stopTrace = detailed ? await startTrace(browserCDP) : null;
-  const resourceStart = await processes();
+  const resourceStart = await processes(browserCDP);
+  const hostedStart = sampleHosted && sampleHosted();
   const pressureStart = await pressure();
   const start = performance.now();
   try {
@@ -390,13 +399,17 @@ async function attempt(
     );
     const end = performance.now();
     const pressureEnd = await pressure();
+    const interference =
+      hostedStart &&
+      sampleHosted &&
+      evaluateInterference(hostedStart, sampleHosted());
     const cpuPressurePercent =
       (100 * (pressureEnd - pressureStart)) / ((end - start) * 1000);
     assert(
       Number.isFinite(cpuPressurePercent),
       "Linux CPU pressure is required",
     );
-    const resourceEnd = await processes();
+    const resourceEnd = await processes(browserCDP);
     const pageTiming = await page.evaluate(() => {
       const navigation = performance.getEntriesByType(
         "navigation",
@@ -426,6 +439,13 @@ async function attempt(
       };
     });
     const events = stopTrace ? await stopTrace(tracePath) : [];
+    const pressureEvidence = diagnostic && {
+      idle,
+      observerStart,
+      timedStart: { atMs: start, pressureUs: pressureStart },
+      timedEnd: { atMs: end, pressureUs: pressureEnd },
+      observerEnd: await pressureSample(),
+    };
     const spans: Span[] = [
       {
         stage: "navigation to headers",
@@ -487,6 +507,7 @@ async function attempt(
       ...endpoint,
       pageTiming,
       cpuPressurePercent,
+      ...(interference && { interference }),
       chromiumCpuMs: (resourceEnd.cpuSeconds - resourceStart.cpuSeconds) * 1000,
       sampledChromiumPssKiB: resourceEnd.pssKiB,
       hostCommandMs: end - start,
@@ -494,6 +515,7 @@ async function attempt(
       effects: structuredClone(effects),
       spans,
       coverage: account(spans, endpoint.readbackMs),
+      ...(pressureEvidence && { pressureEvidence }),
     };
   } catch (error) {
     if (stopTrace) await browserCDP.send("Tracing.end").catch(() => {});

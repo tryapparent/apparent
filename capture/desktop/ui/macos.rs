@@ -1,7 +1,3 @@
-//! The macOS shell around the shared UI: the menu bar item and its menu, AppKit window levels
-//! and styles for the pill and picker, the pill's CALayer shell (sharp border, shadow, GPU
-//! scale and blur), Sparkle updates, and window screenshots for `apparent preview`.
-
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,8 +16,7 @@ use objc2_foundation::{MainThreadMarker, NSArray, NSData, NSObject, NSSize, NSSt
 use screencapturekit::prelude::*;
 use screencapturekit::screenshot_manager::{CGImageExt, SCScreenshotManager};
 
-use super::super::{ISLAND_H, LaserOverlay, MenuAction, PILL_WINDOW_H, PILL_WINDOW_W};
-use super::motion;
+use super::super::{LaserOverlay, MenuAction};
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
 
 /// Where the file browser is called in buttons ("Show in Finder").
@@ -30,7 +25,6 @@ pub(in crate::capture::desktop) const FILE_MANAGER: &str = "Finder";
 pub(in crate::capture::desktop) const HEADER_LEAD: f32 = 78.0;
 pub(in crate::capture::desktop) const HEADER_TRAIL: f32 = 16.0;
 /// The pill's top edge, just below the 37 pt menu bar.
-pub(in crate::capture::desktop) const PILL_TOP: f32 = 34.0;
 
 /// Global coordinates are points, as GPUI lays out.
 pub(in crate::capture::desktop) fn points_per_pixel(_window: &Window) -> f32 {
@@ -89,94 +83,6 @@ pub(in crate::capture::desktop) fn window_origin(_display: Option<&dyn gpui::Pla
     gpui::Point::default()
 }
 
-/// Where the GPUI pill window opens on `display`: centred, `PILL_TOP` below its top.
-pub(in crate::capture::desktop) fn hud_pill_origin(display: gpui::Bounds<gpui::Pixels>) -> gpui::Point<gpui::Pixels> {
-    gpui::point(
-        (display.size.width - gpui::px(PILL_WINDOW_W)) * 0.5,
-        gpui::px(PILL_TOP),
-    )
-}
-
-struct RecordingPillDrag {
-    window_number: isize,
-    panel: crate::capture::engine::runtime::screens::Rect,
-    pointer_down: [f64; 2],
-    display: crate::capture::engine::runtime::screens::Screen,
-}
-
-// The GPUI fallback shares the native renderer's recording-only grab policy.
-// Keep window objects out of the static; AppKit windows are main-thread-only.
-static RECORDING_PILL_DRAG: std::sync::Mutex<Option<RecordingPillDrag>> =
-    std::sync::Mutex::new(None);
-
-fn top_left_pointer(primary_height: f64) -> Option<[f64; 2]> {
-    let cls = objc2::runtime::AnyClass::get(c"NSEvent")?;
-    let pt: objc2_foundation::NSPoint = unsafe { msg_send![cls, mouseLocation] };
-    Some([pt.x, primary_height - pt.y])
-}
-
-fn primary_height() -> Option<f64> {
-    let mtm = MainThreadMarker::new()?;
-    Some(objc2_app_kit::NSScreen::screens(mtm).firstObject()?.frame().size.height)
-}
-
-pub(in crate::capture::desktop) fn place_hud_pill(point: [f64; 2]) {
-    let Some(win) = find_hud_pill_ns_window() else { return };
-    let screens = crate::capture::engine::runtime::screens::current();
-    let Some(screen) = crate::capture::engine::runtime::screens::index_at(&screens, point).map(|i| &screens[i]) else {
-        return;
-    };
-    let [x, y] = crate::capture::engine::runtime::screens::pill_origin(screen, f64::from(PILL_WINDOW_W), f64::from(PILL_TOP));
-    move_window_to_screen(&win, [x, y, f64::from(PILL_WINDOW_W), f64::from(PILL_WINDOW_H)]);
-}
-
-pub(in crate::capture::desktop) fn begin_pill_drag() {
-    if !crate::shared::handoff::experiment("movableRecordingControls") { return; }
-    let (Some(win), Some(height)) = (find_hud_pill_ns_window(), primary_height()) else {
-        return;
-    };
-    let frame = win.frame();
-    let panel = [frame.origin.x, height - frame.origin.y - frame.size.height,
-        frame.size.width, frame.size.height];
-    let screens = crate::capture::engine::runtime::screens::current();
-    let centre = [panel[0] + panel[2] / 2.0, panel[1] + panel[3] / 2.0];
-    let Some(display) = crate::capture::engine::runtime::screens::index_at(&screens, centre).map(|i| screens[i]) else {
-        return;
-    };
-    let Some(pointer_down) = top_left_pointer(height) else { return };
-    *RECORDING_PILL_DRAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner) =
-        Some(RecordingPillDrag {
-            window_number: win.windowNumber(), panel, pointer_down, display,
-        });
-}
-
-pub(in crate::capture::desktop) fn tick_pill_drag() {
-    let mut drag = RECORDING_PILL_DRAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Some(state) = drag.as_ref() else { return };
-    let Some(cls) = objc2::runtime::AnyClass::get(c"NSEvent") else { return };
-    let pressed: usize = unsafe { msg_send![cls, pressedMouseButtons] };
-    if pressed & 1 == 0 {
-        *drag = None;
-        return;
-    }
-    let (Some(height), Some(win)) = (primary_height(), find_hud_pill_ns_window()) else {
-        *drag = None;
-        return;
-    };
-    if win.windowNumber() != state.window_number {
-        *drag = None;
-        return;
-    }
-    let Some(pointer) = top_left_pointer(height) else { return };
-    let [x, y] = crate::capture::engine::runtime::screens::drag_pill_origin(&state.display, state.panel, state.pointer_down, pointer);
-    move_window_to_screen(&win, [x, y, state.panel[2], state.panel[3]]);
-}
-
-pub(in crate::capture::desktop) fn cancel_pill_drag() {
-    *RECORDING_PILL_DRAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-}
-
-/// Dragging a region moves its window.
 pub(in crate::capture::desktop) fn window_drag_region(region: Div) -> Div {
     use gpui::{InteractiveElement, MouseButton};
     region.on_mouse_down(MouseButton::Left, |_, window, _| {
@@ -198,7 +104,6 @@ pub(in crate::capture::desktop) fn caption_buttons() -> Option<AnyElement> {
 }
 
 /// Window levels keep the pill above the picker above the overlay.
-pub(in crate::capture::desktop) fn raise_window(_window: &mut Window) {}
 
 /// `apparent lab`'s backdrop (`w` × `h` points): borderless, under the capsule, letting clicks through.
 pub(in crate::capture::desktop) fn configure_lab_backdrop(w: f32, h: f32) {
@@ -376,122 +281,6 @@ pub(in crate::capture::desktop) fn picker_window_number() -> Option<u32> {
     (num > 0).then_some(num)
 }
 
-/// The pill's native window: a non-activating panel at status level + 3 with a CALayer shell.
-pub(in crate::capture::desktop) struct PillChrome {
-    ns_window: Option<Retained<NSWindow>>,
-    shell_layer: Option<Retained<objc2_quartz_core::CALayer>>,
-}
-
-impl PillChrome {
-    pub(in crate::capture::desktop) fn open(_window: &mut Window, _cx: &mut App) -> Self {
-        let ns_window = find_hud_pill_ns_window();
-        let mut shell_layer = None;
-        if let Some(ref ns_win) = ns_window {
-            ns_win.setStyleMask(
-                NSWindowStyleMask::Borderless | NSWindowStyleMask::NonactivatingPanel,
-            );
-            unsafe {
-                let sel = sel!(_setPreventsActivation:);
-                let responds: bool = msg_send![&**ns_win, respondsToSelector: sel];
-                if responds {
-                    let _: () = msg_send![&**ns_win, _setPreventsActivation: true];
-                }
-            }
-            configure_floating_window(ns_win, false, 3);
-            ns_win.orderFrontRegardless();
-            apply_pill_layer_effect(
-                ns_win,
-                &mut shell_layer,
-                205.0,
-                ISLAND_H,
-                0.92,
-                -6.0,
-                0.0,
-                false,
-                3.5,
-                0.015,
-            );
-        }
-        Self {
-            ns_window,
-            shell_layer,
-        }
-    }
-
-    pub(in crate::capture::desktop) fn window_number(&self) -> Option<u32> {
-        let num = self.ns_window.as_ref()?.windowNumber().max(0) as u32;
-        (num > 0).then_some(num)
-    }
-
-    pub(in crate::capture::desktop) fn has_shell(&self) -> bool {
-        self.shell_layer.is_some()
-    }
-
-    pub(in crate::capture::desktop) fn raise(&self) {
-        if let Some(ref ns_win) = self.ns_window {
-            ns_win.setLevel(NSStatusWindowLevel + 3);
-            ns_win.orderFrontRegardless();
-        }
-    }
-
-    /// One motion-trace frame for the capsule (`APPARENT_MOTION_TRACE`), mapping its children.
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::capture::desktop) fn trace(
-        &self,
-        width: f32,
-        scale: f32,
-        y_offset: f32,
-        opacity: f32,
-        content_alpha: f32,
-        blur_radius: f32,
-        content_shrink: f32,
-    ) -> Option<super::motion::Xf> {
-        let ns_win = self.ns_window.as_ref()?;
-        Some(trace_capsule(
-            ns_win,
-            width,
-            scale,
-            y_offset,
-            opacity,
-            content_alpha,
-            blur_radius,
-            content_shrink,
-        ))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::capture::desktop) fn apply(
-        &mut self,
-        pill_width: f32,
-        pill_height: f32,
-        scale: f32,
-        y_offset: f32,
-        opacity: f32,
-        is_completed: bool,
-        blur_radius: f32,
-        content_shrink: f32,
-    ) {
-        if self.ns_window.is_none() {
-            self.ns_window = find_hud_pill_ns_window();
-        }
-        if let Some(ref ns_win) = self.ns_window {
-            apply_pill_layer_effect(
-                ns_win,
-                &mut self.shell_layer,
-                pill_width,
-                pill_height,
-                scale,
-                y_offset,
-                opacity,
-                is_completed,
-                blur_radius,
-                content_shrink,
-            );
-        }
-    }
-}
-
-/// The largest of Apparent's windows, brought to the front (for `apparent preview --capture-screenshot`).
 pub(in crate::capture::desktop) fn front_own_window() -> Option<isize> {
     let mtm = MainThreadMarker::new()?;
     let app = NSApplication::sharedApplication(mtm);
@@ -865,37 +654,6 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
     Some(receiver)
 }
 
-fn find_hud_pill_ns_window() -> Option<Retained<NSWindow>> {
-    let mtm = MainThreadMarker::new()?;
-    let app = NSApplication::sharedApplication(mtm);
-    for win in app.windows() {
-        let size = win.frame().size;
-        if ((size.width - f64::from(PILL_WINDOW_W)).abs() < 8.0
-            || (size.width - f64::from(crate::capture::desktop::native::pill::model::PANEL_W)).abs() < 8.0)
-            && (size.height - f64::from(PILL_WINDOW_H)).abs() < 8.0
-        {
-            return Some(win);
-        }
-    }
-    None
-}
-
-/// Whether the pointer is over the HUD pill's window: the capsule plus a small margin, so the
-/// switch chips stay while the user reaches for them.
-pub(in crate::capture::desktop) fn pointer_on_hud_pill() -> bool {
-    use objc2::runtime::AnyClass;
-    use objc2_foundation::NSPoint;
-    let (Some(win), Some(cls)) = (find_hud_pill_ns_window(), AnyClass::get(c"NSEvent")) else {
-        return false;
-    };
-    let p: NSPoint = unsafe { msg_send![cls, mouseLocation] };
-    let f = win.frame();
-    p.x >= f.origin.x
-        && p.x <= f.origin.x + f.size.width
-        && p.y >= f.origin.y
-        && p.y <= f.origin.y + f.size.height
-}
-
 fn find_picker_ns_window() -> Option<Retained<NSWindow>> {
     let mtm = MainThreadMarker::new()?;
     let app = NSApplication::sharedApplication(mtm);
@@ -907,7 +665,6 @@ fn find_picker_ns_window() -> Option<Retained<NSWindow>> {
         if size.width >= 600.0
             && size.height >= 200.0
             && (size.width - 1120.0).abs() > 8.0
-            && (size.width - f64::from(PILL_WINDOW_W)).abs() > 8.0
         {
             return Some(win);
         }
@@ -959,256 +716,6 @@ fn configure_floating_window(ns_window: &NSWindow, ignores_mouse: bool, level_of
     );
     sync_full_size_content_view(ns_window);
 }
-
-#[repr(C)]
-struct OpaqueCGColor {
-    _priv: [u8; 0],
-}
-
-unsafe impl objc2::RefEncode for OpaqueCGColor {
-    const ENCODING_REF: objc2::Encoding =
-        objc2::Encoding::Pointer(&objc2::Encoding::Struct("CGColor", &[]));
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct CATransform3D {
-    m11: f64,
-    m12: f64,
-    m13: f64,
-    m14: f64,
-    m21: f64,
-    m22: f64,
-    m23: f64,
-    m24: f64,
-    m31: f64,
-    m32: f64,
-    m33: f64,
-    m34: f64,
-    m41: f64,
-    m42: f64,
-    m43: f64,
-    m44: f64,
-}
-
-unsafe impl objc2::Encode for CATransform3D {
-    const ENCODING: objc2::Encoding = objc2::Encoding::Struct(
-        "CATransform3D",
-        &[
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-            f64::ENCODING,
-        ],
-    );
-}
-
-/// Two-layer Dynamic Island effect on `HudPillWindow`:
-/// 1. `shell_layer` (inserted behind GPUI's `contentView.layer()`) renders the outer black pill
-///    capsule, `1px` specular border, and drop shadow with **zero blur** so the pill's border and
-///    silhouette are always 100% razor-sharp.
-/// 2. `contentView.layer()` (which renders only the inner chips/text on a transparent background)
-///    receives `CAFilter("gaussianBlur")` + `CATransform3D` scale so only the inner contents blur.
-fn apply_pill_layer_effect(
-    ns_window: &NSWindow,
-    shell_slot: &mut Option<Retained<objc2_quartz_core::CALayer>>,
-    pill_width: f32,
-    pill_height: f32,
-    scale: f32,
-    y_offset: f32,
-    opacity: f32,
-    is_completed: bool,
-    blur_radius: f32,
-    // Content scale lost per px of blur (0.015 for whole-state morphs, 0 to keep it still).
-    content_shrink: f32,
-) {
-    use objc2::runtime::AnyClass;
-    use objc2_foundation::{NSArray, NSNumber, NSPoint, NSRect, NSSize};
-    use objc2_quartz_core::{CALayer, CATransaction};
-
-    let Some(cv) = ns_window.contentView() else {
-        return;
-    };
-    cv.setWantsLayer(true);
-    let Some(cv_layer) = cv.layer() else {
-        return;
-    };
-    // GPUI attaches its `CAMetalLayer` to its child `GPUIView` (`cv.subviews().firstObject()`).
-    let gpui_view = cv.subviews().firstObject();
-    let content_layer = gpui_view
-        .as_ref()
-        .and_then(|v| {
-            v.setWantsLayer(true);
-            v.layer()
-        })
-        .unwrap_or_else(|| cv_layer.clone());
-
-    let bounds = cv.bounds();
-    let cx = bounds.size.width * 0.5;
-    let cy = bounds.size.height * 0.5;
-    let s = f64::from(scale.clamp(0.50, 1.15));
-    let ty_unflipped = -f64::from(y_offset);
-    let is_flipped = gpui_view
-        .as_ref()
-        .map_or_else(|| cv.isFlipped(), |v| v.isFlipped());
-    let ty_cv = if is_flipped {
-        f64::from(y_offset)
-    } else {
-        -f64::from(y_offset)
-    };
-
-    if shell_slot.is_none() {
-        let shell = CALayer::new();
-        cv_layer.insertSublayer_below(&shell, Some(&content_layer));
-        *shell_slot = Some(shell);
-    }
-
-    let w_scaled = f64::from(pill_width) * s;
-    let h_scaled = f64::from(pill_height) * s;
-    let shell_rect = NSRect::new(
-        NSPoint::new(cx - w_scaled * 0.5, cy - h_scaled * 0.5 + ty_unflipped),
-        NSSize::new(w_scaled, h_scaled),
-    );
-
-    // Content scales subtly (`0.93 .. 1.0`) inside the crisp outer shell during morphs.
-    let content_s = content_scale(scale, blur_radius, content_shrink);
-    let transform = CATransform3D {
-        m11: content_s,
-        m12: 0.0,
-        m13: 0.0,
-        m14: 0.0,
-        m21: 0.0,
-        m22: content_s,
-        m23: 0.0,
-        m24: 0.0,
-        m31: 0.0,
-        m32: 0.0,
-        m33: 1.0,
-        m34: 0.0,
-        m41: cx * (1.0 - content_s),
-        m42: cy * (1.0 - content_s) + ty_cv,
-        m43: 0.0,
-        m44: 1.0,
-    };
-
-    CATransaction::begin();
-    CATransaction::setDisableActions(true);
-    if let Some(ref shell) = *shell_slot {
-        shell.setFrame(shell_rect);
-        shell.setCornerRadius(h_scaled * 0.5);
-        shell.setBorderWidth(1.0);
-        shell.setOpacity(opacity);
-        shell.setShadowOpacity(0.40 * opacity);
-        shell.setShadowRadius(14.0);
-        shell.setShadowOffset(NSSize::new(0.0, -5.0));
-        unsafe {
-            let theme = crate::capture::desktop::native::pill::system_theme();
-            let ns_color = |rgb: u32, alpha: f64| {
-                NSColor::colorWithSRGBRed_green_blue_alpha(
-                    f64::from((rgb >> 16) & 255) / 255.0,
-                    f64::from((rgb >> 8) & 255) / 255.0,
-                    f64::from(rgb & 255) / 255.0,
-                    alpha,
-                )
-            };
-            let bg_ns = ns_color(theme.surface(), 1.0);
-            let bg_cg: *const OpaqueCGColor = msg_send![&*bg_ns, CGColor];
-            let _: () = msg_send![&**shell, setBackgroundColor: bg_cg];
-
-            let border_ns = ns_color(theme.line(), if is_completed { 0.30 } else { 0.24 });
-            let border_cg: *const OpaqueCGColor = msg_send![&*border_ns, CGColor];
-            let _: () = msg_send![&**shell, setBorderColor: border_cg];
-        }
-    }
-
-    unsafe {
-        let _: () = msg_send![&*content_layer, setTransform: transform];
-        if blur_radius > 0.18
-            && let Some(ca_filter_cls) = AnyClass::get(c"CAFilter")
-        {
-            let filter_type = NSString::from_str("gaussianBlur");
-            let filter: *mut AnyObject = msg_send![ca_filter_cls, filterWithType: &*filter_type];
-            if !filter.is_null() {
-                let radius_num = NSNumber::new_f64(f64::from(blur_radius));
-                let radius_key = NSString::from_str("inputRadius");
-                let _: () = msg_send![filter, setValue: &*radius_num, forKey: &*radius_key];
-                let filter_ref = &*filter;
-                let filters = NSArray::from_slice(&[filter_ref]);
-                content_layer.setFilters(Some(&filters));
-            }
-        } else {
-            content_layer.setFilters(None);
-        }
-    }
-    CATransaction::commit();
-}
-/// The content layer's scale: the capsule's, less a little per px of blur.
-fn content_scale(scale: f32, blur_radius: f32, content_shrink: f32) -> f64 {
-    let s = f64::from(scale.clamp(0.50, 1.15));
-    (s * (1.0 - f64::from(blur_radius).min(5.0) * f64::from(content_shrink))).clamp(0.85, 1.06)
-}
-
-/// The pill window's frame in screen points with a top-left origin (the primary display's).
-fn top_left_frame(ns_window: &NSWindow) -> [f32; 4] {
-    let f = ns_window.frame();
-    let primary_h = MainThreadMarker::new()
-        .and_then(|mtm| objc2_app_kit::NSScreen::screens(mtm).firstObject())
-        .map_or(0.0, |screen| screen.frame().size.height);
-    [
-        f.origin.x as f32,
-        (primary_h - f.origin.y - f.size.height) as f32,
-        f.size.width as f32,
-        f.size.height as f32,
-    ]
-}
-
-/// One trace frame for the capsule (`APPARENT_MOTION_TRACE`): its window, the shell as drawn, the
-/// content's blur and opacity. Returns the mapping for the content's children.
-#[allow(clippy::too_many_arguments)]
-fn trace_capsule(
-    ns_window: &NSWindow,
-    width: f32,
-    scale: f32,
-    y_off: f32,
-    opacity: f32,
-    content_alpha: f32,
-    blur_radius: f32,
-    content_shrink: f32,
-) -> motion::Xf {
-    let win = top_left_frame(ns_window);
-    let (cx, cy) = (win[2] * 0.5, win[3] * 0.5);
-    let s = scale.clamp(0.50, 1.15);
-    let (w, h) = (width * s, ISLAND_H * s);
-    let shell = [win[0] + cx - w * 0.5, win[1] + cy - h * 0.5 + y_off, w, h];
-    motion::trace_element("window", win, 0.0, 0.0, None, None);
-    motion::trace_element("shell", shell, opacity, h * 0.5, None, None);
-    motion::trace_channel("content.blur", "level", blur_radius);
-    motion::trace_channel("content.alpha", "level", content_alpha);
-    motion::trace_channel("shell.width", "position", width);
-    motion::Xf {
-        s: content_scale(scale, blur_radius, content_shrink) as f32,
-        cx,
-        cy,
-        ty: y_off,
-        ox: win[0],
-        oy: win[1],
-        alpha: opacity * content_alpha,
-        clip: shell,
-    }
-}
-
 
 pub(in crate::capture::desktop) fn capture_own_window_screenshot(
     window_num: Option<isize>,
@@ -1384,56 +891,7 @@ mod tests {
         let _: objc2_foundation::NSPoint = unsafe { msg_send![cls, mouseLocation] };
     }
 
-    #[test]
-    fn ca_layer_and_filter_encodings_pass_objc2_verification() {
-        use objc2::runtime::AnyClass;
-        use objc2_foundation::{NSArray, NSNumber};
-        use objc2_quartz_core::{CALayer, CATransaction};
 
-        let shell = CALayer::new();
-        let content_layer = CALayer::new();
-        let transform = CATransform3D {
-            m11: 0.9,
-            m12: 0.0,
-            m13: 0.0,
-            m14: 0.0,
-            m21: 0.0,
-            m22: 0.9,
-            m23: 0.0,
-            m24: 0.0,
-            m31: 0.0,
-            m32: 0.0,
-            m33: 1.0,
-            m34: 0.0,
-            m41: 10.0,
-            m42: 4.0,
-            m43: 0.0,
-            m44: 1.0,
-        };
-        CATransaction::begin();
-        CATransaction::setDisableActions(true);
-        unsafe {
-            let bg_ns = NSColor::colorWithSRGBRed_green_blue_alpha(0.1, 0.1, 0.1, 0.95);
-            let bg_cg: *const OpaqueCGColor = msg_send![&*bg_ns, CGColor];
-            let _: () = msg_send![&*shell, setBackgroundColor: bg_cg];
-            let _: () = msg_send![&*shell, setBorderColor: bg_cg];
-            let _: () = msg_send![&*content_layer, setTransform: transform];
-            if let Some(ca_filter_cls) = AnyClass::get(c"CAFilter") {
-                let filter_type = NSString::from_str("gaussianBlur");
-                let filter: *mut AnyObject =
-                    msg_send![ca_filter_cls, filterWithType: &*filter_type];
-                assert!(!filter.is_null());
-                let radius_num = NSNumber::new_f64(6.0);
-                let radius_key = NSString::from_str("inputRadius");
-                let _: () = msg_send![filter, setValue: &*radius_num, forKey: &*radius_key];
-                let filter_ref = &*filter;
-                let filters = NSArray::from_slice(&[filter_ref]);
-                content_layer.setFilters(Some(&filters));
-            }
-            content_layer.setFilters(None);
-        }
-        CATransaction::commit();
-    }
 }
 
 /// The app behind a note, retained before Electron takes keyboard focus.

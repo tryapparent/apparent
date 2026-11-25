@@ -739,7 +739,5 @@ never changes during an operation. `tests/pill/foreground/smoke.cts` exercises t
 built Electron renderer with synthetic parent states, light/dark themes, narrow
 workarea, keyboard retry and private action payloads; set
 `APPARENT_FOREGROUND_EVIDENCE` to a private job directory for screenshots. This is
-renderer proof, not installed native capture/upload acceptance. Native fallback
-controls retain their existing presentation and are not the accepted foreground
-control surface. Trial/rollback and native ownership debt are documented in
+renderer proof. Trial/rollback and native ownership debt are documented in
 `connect/docs/hosted-client.md`.

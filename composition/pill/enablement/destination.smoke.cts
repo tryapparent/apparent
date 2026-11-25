@@ -66,8 +66,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
           readyIds.push(message.windowId);
           if (!holdActivation) void activate(message.windowId).catch(() => {});
         }
-        if (message.releasePickerFocus)
-          releasedIds.push(message.releasePickerFocus);
+        if (message.releaseFocus) releasedIds.push(message.releaseFocus);
       } catch {}
     }
   });

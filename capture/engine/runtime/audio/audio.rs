@@ -17,14 +17,6 @@ pub enum InputWarning {
 }
 
 impl InputWarning {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Unavailable => "Mic unavailable",
-            Self::Stopped => "Mic stopped",
-            Self::VeryQuiet => "Mic very quiet",
-        }
-    }
-
     pub fn announcement(self) -> &'static str {
         match self {
             Self::Unavailable => "Microphone unavailable; screen recording continues",
@@ -175,12 +167,6 @@ enum InputStream {
 }
 
 impl AudioRecorder {
-    pub fn input_activity(&self) -> Option<(usize, f32)> {
-        let samples = self.samples.try_lock().ok()?;
-        let fresh = self.health.try_lock().ok()?.last_sample
-            .is_some_and(|last| last.elapsed() < Duration::from_millis(250));
-        Some((samples.len(), if fresh { input_level(&samples) } else { 0.0 }))
-    }
     pub fn input_waveform(&self) -> Option<[f32; 24]> {
         let samples = self.samples.try_lock().ok()?;
         let fresh = self.health.try_lock().ok()?.last_sample

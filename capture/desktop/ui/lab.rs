@@ -1,7 +1,3 @@
-//! `apparent lab pill <scene>`: drives the capsule through exact states on a fixed timeline, with a
-//! pretend recording (no capture, microphone, files, overlay, hotkeys or ingest server), so a
-//! motion can be replayed, traced (`APPARENT_MOTION_TRACE`), filmed and tuned (`apparent tune`).
-
 use std::time::Duration;
 
 use gpui::{
@@ -55,18 +51,6 @@ enum Step {
 }
 
 impl Scene {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::TapThenArea => "tap-then-area",
-            Self::TapThenWindow => "tap-then-window",
-            Self::TapThenScreen => "tap-then-screen",
-            Self::Picker => "picker",
-            Self::Finish => "finish",
-            Self::Cancel => "cancel",
-            Self::Dismiss => "dismiss",
-        }
-    }
-
     /// Steps at animation seconds from the scene's start.
     fn steps(self) -> Vec<(f32, Step)> {
         use SelectionMode::{Area, Screen, Window};
@@ -115,6 +99,7 @@ pub struct Options {
     pub repeat: u32,
     /// A plain backdrop behind the capsule, for clean recordings.
     pub backdrop: bool,
+    pub time_scale: Option<f32>,
 }
 
 /// The display a pretend recording "records".
@@ -137,7 +122,6 @@ pub(in crate::capture::desktop) fn target() -> TargetInfo {
 }
 
 fn apply(step: Step, coord: &mut ApparentCoordinator, cx: &mut gpui::Context<ApparentCoordinator>) {
-    motion::trace_event(format!("lab:{step:?}"));
     match step {
         Step::Tap => coord.record_screen_now(cx),
         Step::Chip(mode) => coord.switch_recording(mode, cx),
@@ -157,7 +141,7 @@ fn real(s: f32) -> Duration {
 pub fn run(options: Options) {
     let app = Application::new().with_assets(crate::capture::desktop::icons::Assets);
     app.run(move |cx: &mut App| {
-        motion::poll_tune();
+        motion::set_time_scale(f64::from(options.time_scale.unwrap_or(1.0)));
         let (sender, _receiver) = flume::unbounded();
         let telemetry = SharedCaptureTelemetry::new(sender);
         let coordinator = cx.new(|_| {
@@ -169,11 +153,10 @@ pub fn run(options: Options) {
             let b = d.bounds();
             [f32::from(b.size.width), f32::from(b.size.height)]
         });
-        motion::trace_open(&format!("pill.{}", options.scene.name()), display);
         if options.backdrop {
             open_backdrop(display, cx);
         }
-        coordinator.update(cx, |coord, _| coord.ensure_native_pill());
+        coordinator.update(cx, |coord, _| coord.ensure_electron_pill());
         // For screen recordings (`capture/desktop/scripts/perf/pill/record.sh`): the backdrop's rect in screen points.
         println!(
             "region {},{},{},{}",
@@ -191,7 +174,6 @@ pub fn run(options: Options) {
                     .timer(Duration::from_millis(8))
                     .await;
                 let alive = cx.update(|cx| {
-                    motion::poll_tune();
                     loop_coord.update(cx, |coord, cx| coord.island_tick(cx));
                 });
                 if alive.is_err() {
@@ -221,9 +203,8 @@ pub fn run(options: Options) {
             }
             let _ = cx.update(|cx| {
                 let _ = coordinator.update(cx, |coord, _| {
-                    coord.native_pill = None;
+                    coord.electron_pill.take();
                 });
-                motion::trace_close();
                 cx.quit();
                 std::process::exit(0);
             });

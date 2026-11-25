@@ -1,5 +1,5 @@
 use super::{Session, View};
-use crate::capture::desktop::{ApparentCoordinator, HudPillWindow, IslandPhase, apparent_log};
+use crate::capture::desktop::{ApparentCoordinator, IslandPhase, apparent_log};
 use crate::capture::desktop::{ActiveRecording, CompletedAudioIssue, InputWarning, PillEvent, motion, reveal_clock_ms};
 use std::time::{Duration, Instant};
 use super as pill_state;
@@ -51,7 +51,6 @@ impl ApparentCoordinator {
                 }
                 _ => self.island_phase,
             },
-            pill_state::Phase::Dismissing => IslandPhase::Dismissing,
         };
         Some((phase, snapshot.reveal))
     }
@@ -64,16 +63,34 @@ impl ApparentCoordinator {
     }
 
     pub(in crate::capture::desktop) fn refresh_pill_presentation(&mut self) {
+        use crate::shared::handoff::{default_config_path, experiment_enabled_in, experiment_overridden,
+            experiment_preference_in, experiment_preference_overridden, load_config_from};
+        let now = Instant::now();
+        let (_, movable, sharing_enabled) = match self.reveal.preferences {
+            Some(preferences) if now.duration_since(preferences.0) < Duration::from_millis(500) => preferences,
+            _ => {
+                let config = load_config_from(&default_config_path());
+                let preferences = (
+                    now,
+                    experiment_overridden("movableRecordingControls")
+                        || (!cfg!(test) && experiment_enabled_in(&config, "movableRecordingControls")),
+                    experiment_preference_overridden(crate::connect::hosted::HOSTED_SHARING)
+                        || (!cfg!(test) && experiment_preference_in(&config, crate::connect::hosted::HOSTED_SHARING)),
+                );
+                self.reveal.preferences = Some(preferences);
+                preferences
+            }
+        };
         let microphone = self.active_recording.as_ref().and_then(ActiveRecording::mic_warning);
         let audio = self.completed_audio_issue();
         let facts = pill_state::Facts {
             phone: self.iphone.is_some(),
             no_words: self.recording_has_no_words(),
             note_count: self.note_ui.as_ref().map_or(0, |notes| notes.saved_count()),
-            movable: crate::shared::handoff::experiment("movableRecordingControls"),
+            movable,
             paste: self.completed_dir.is_some(),
             inspect: self.review_bundle.is_some(),
-            sharing_enabled: crate::shared::handoff::experiment_preference(crate::connect::hosted::HOSTED_SHARING),
+            sharing_enabled,
             sharing_online: self.share_online,
             mic_warning: microphone.map(InputWarning::announcement),
             audio_issue: audio.map(CompletedAudioIssue::label),
@@ -95,11 +112,6 @@ impl ApparentCoordinator {
             }
             Err(error) => apparent_log(format!("Record pill presentation failed: {error:#}")),
         }
-    }
-
-    pub(in crate::capture::desktop) fn fallback_share(&self) -> Option<bool> {
-        self.reveal.completed_presentation.actions.iter().find(|action| action.id == "copy-link")
-            .map(|action| action.enabled && self.reveal.completed_presentation.share_indicator != pill_state::ShareIndicator::Uploading)
     }
 
     pub(in crate::capture::desktop) fn show_completion_text(&mut self, copy: pill_state::CompletionCopy, text: impl Into<String>) {
@@ -153,13 +165,12 @@ impl ApparentCoordinator {
     }
 
     fn electron_pill_view(&self, revision: u64) -> View {
-        let snapshot = self.pill_snapshot();
         let mut view = View {
             presentation: self.reveal.presentation.clone(),
             revision,
-            clock: snapshot.clock,
-            reduced_motion: snapshot.reduced_motion,
-            input_waveform: snapshot.input_waveform,
+            clock: crate::shared::model::format_clock(self.active_recording.as_ref().map(ActiveRecording::elapsed_ms).unwrap_or(self.last_elapsed_ms)),
+            reduced_motion: self.reduced_motion,
+            input_waveform: None,
             doodle_ink: None,
             soft_bloom: None,
             transcript: None,
@@ -169,6 +180,7 @@ impl ApparentCoordinator {
         if view.phase == "recording" {
             if let Some(crate::capture::desktop::CaptureSource::Screen {audio: Some(audio), ..}) = self.active_recording.as_ref().map(|recording| &recording.source) {
                 view.transcript = audio.streaming_preview();
+                view.input_waveform = Some(audio.input_waveform().unwrap_or([0.0; 24]));
             }
             view.note_tip = self.recording_note_tip();
         }
@@ -180,53 +192,32 @@ impl ApparentCoordinator {
             self.review_bundle.as_ref().map(|(path, _)| path.clone()),
         )
     }
-    pub(crate) fn reconcile_electron_pill(&mut self) {
-        #[cfg(target_os = "macos")]
-        if !self.is_recording() && !self.is_processing() && !Self::electron_pill_compatible() {
-            if let Some(session) = self.electron_pill.take() {
-                if let Some(id) = session.window_number() {
-                    self.electron_pill_exclusions.push(id);
-                }
-                // Closing is asynchronous. Preserve this exact window's exclusion in
-                // the next stream's initial filter, before it can supply any frame.
-                drop(session);
-                self.electron_pill_failed = true;
-            }
-            self.electron_pill_routed = false;
-        }
-    }
-    fn electron_pill_compatible() -> bool {
-        #[cfg(target_os = "macos")]
-        return crate::capture::desktop::native::pill::PillStyle::current()
-                != crate::capture::desktop::native::pill::PillStyle::Glass;
-        #[cfg(target_os = "linux")]
-        true
-    }
     pub(crate) fn ensure_electron_pill(&mut self) {
-        self.reconcile_electron_pill();
         if self.electron_pill.is_some()
-            || self.electron_pill_failed
-            || !Self::electron_pill_compatible()
+            || self.electron_pill_retry_at.is_some_and(|retry| Instant::now() < retry)
         {
             return;
         }
-        let view = self.electron_pill_view(1);
+        let view = View { revision: 1, ..Default::default() };
         match Session::open(
             view,
             self.capture_generation,
             self.electron_pill_selection(),
         ) {
-            Ok(session) => self.electron_pill = Some(session),
+            Ok(session) => {
+                self.electron_pill_retry_at = None;
+                self.electron_pill = Some(session);
+            }
             Err(error) => {
                 apparent_log(format!(
-                    "Recording controls retain native presentation: {error:#}"
+                    "Could not start recording controls: {error:#}"
                 ));
-                self.electron_pill_failed = true;
+                self.electron_pill_retry_at = Some(Instant::now() + Duration::from_secs(5));
             }
         }
     }
     pub(crate) fn sync_electron_pill(&mut self) {
-        if self.electron_pill.is_none() {
+        if !self.electron_pill.as_ref().is_some_and(Session::ready) {
             return;
         }
         self.refresh_pill_presentation();
@@ -260,24 +251,31 @@ impl ApparentCoordinator {
             .filter(|(dir, _)| self.completed_dir.as_ref() == Some(dir))
     }
     pub(crate) fn tick_electron_pill(&mut self, cx: &mut Context<Self>) {
+        if self.electron_pill.is_none() {
+            self.ensure_electron_pill();
+            if self.electron_pill.is_some() { self.place_capsule(); }
+        }
         self.sync_electron_pill();
-        if self
-            .electron_pill
-            .as_ref()
-            .is_some_and(|session| !session.healthy())
-        {
+        let unhealthy = self.electron_pill.as_ref().is_some_and(|session| !session.healthy());
+        #[cfg(target_os = "macos")]
+        let unhealthy = unhealthy || self.electron_pill_exclusion_wait
+            .is_some_and(|since| since.elapsed() >= Duration::from_secs(5));
+        if unhealthy {
             // Preserve the real transport/readiness/process state before Drop
             // closes the pipe and starts owned-child cleanup.
             let failure = self.electron_pill.as_mut().map(Session::failure_context);
-            apparent_log(format!("Electron recording controls unhealthy; restoring native controls: {}",
+            apparent_log(format!("Electron recording controls unhealthy; scheduling restart: {}",
                 serde_json::json!({"failure":failure})));
-            self.electron_pill.take();
-            self.electron_pill_failed = true;
-            self.electron_pill_routed = false;
-            let coordinator = cx.entity().clone();
-            if !matches!(self.island_phase, IslandPhase::Hidden | IslandPhase::Dismissing) {
-                cx.defer(move |cx| super::super::super::ensure_hud_pill_open(&coordinator, cx));
+            let retired = self.electron_pill.take();
+            #[cfg(target_os = "macos")]
+            if let Some(id) = retired.as_ref().and_then(Session::window_number) {
+                self.electron_pill_exclusions.push(id);
             }
+            drop(retired);
+            #[cfg(target_os = "macos")]
+            { self.electron_pill_exclusion_wait = None; }
+            self.electron_pill_retry_at = Some(Instant::now() + Duration::from_secs(5));
+            self.electron_pill_routed = false;
             return;
         }
         if !self.electron_pill.as_ref().is_some_and(Session::ready) {
@@ -308,27 +306,15 @@ impl ApparentCoordinator {
                         .unwrap_or_else(std::sync::PoisonError::into_inner),
                     !self.lab && self.telemetry.capture_mode.load(std::sync::atomic::Ordering::Acquire) != 3)
             {
-                // Keep the already excluded native surface until SCK confirms
-                // this child's ID is in the actual filter, not merely requested.
+                self.electron_pill_exclusion_wait.get_or_insert_with(Instant::now);
                 return;
             }
+            #[cfg(target_os = "macos")]
+            { self.electron_pill_exclusion_wait = None; }
             self.electron_pill_routed = true;
-            self.island_await_frame = false;
-            self.native_pill.take();
-            // Only the previous pill closes; picker/ink and recordings retain their owner.
-            let coordinator = cx.entity().clone();
-            cx.defer(move |cx| {
-                for handle in cx.windows() {
-                    if handle.downcast::<HudPillWindow>().is_some() {
-                        let _ = handle.update(cx, |_, window, _| window.remove_window());
-                    }
-                }
-                coordinator.update(cx, |coord, _| {
-                    if let Some(session) = &mut coord.electron_pill {
-                        session.activate();
-                    }
-                });
-            });
+            if let Some(session) = &mut self.electron_pill {
+                session.activate();
+            }
         }
         let actions = self
             .electron_pill
@@ -336,11 +322,7 @@ impl ApparentCoordinator {
             .map(Session::actions)
             .unwrap_or_default();
         for action in actions {
-            // Each action was admitted against the freshly projected state, never renderer policy.
             self.apply_pill_action(action, cx);
-            self.sync_electron_pill();
-        }
-        if matches!(self.island_phase, IslandPhase::Hidden) {
             self.sync_electron_pill();
         }
     }
@@ -350,7 +332,7 @@ impl ApparentCoordinator {
 mod tests {
     use super::*;
     use crate::capture::desktop::{ApparentBundle, SharedCaptureTelemetry};
-    use std::{path::PathBuf, time::Instant};
+    use std::path::PathBuf;
 
     #[test]
     fn t3_recovery_requires_the_current_recordings_completed_bundle() {

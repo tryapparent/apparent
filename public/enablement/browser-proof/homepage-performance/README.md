@@ -25,9 +25,10 @@ Chromium with Ubuntu dependencies. Builds use Git archives in runner scratch wit
 The adapter times two independent same-build controls and alternating probe
 orders, then runs A/B/B/A serially on the same runner. Desktop and small-phone
 dark replays verify candidate output. The evidence contains exact commands,
-timing receipts, browser traces and waterfalls. CPU PSI comes from the Linux VM,
-and is subject to the same 2% block limit. Guest steal, I/O and memory PSI, and
-vCPU topology are recorded for diagnosis. Hypervisor host PSI is unavailable.
+timing receipts, browser traces and waterfalls. Hosted qualification uses
+guest CPU attribution, observed steal, throttling and unrelated I/O.
+Total guest CPU PSI and vCPU topology remain diagnostic. Hypervisor host
+PSI is unavailable.
 
 To recompute the single-job comparison from an extracted artifact:
 

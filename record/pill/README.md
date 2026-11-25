@@ -5,8 +5,10 @@ instantiates it once per coordinator, projects the renderer view, and carries
 display text alongside typed outcomes. The application embeds the generated
 module and evaluates it in a process-local QuickJS context without Node APIs,
 filesystem access, or a renderer dependency. The native app build runs the
-pinned Record compiler before linking. An installed app can present the Glass
-and GPUI fallbacks when Electron is unavailable or exits during capture.
+pinned Record compiler before linking. The installed app uses the same Electron pill
+on Linux and macOS. If the child fails, Desktop retires it and retries the
+current presentation after a short backoff while the capture stays active.
+The recording shortcut remains available during recovery.
 
 | Input | Record policy |
 |---|---|
@@ -14,7 +16,7 @@ and GPUI fallbacks when Electron is unavailable or exits during capture.
 | Capture started, sealed, saved, failed | Recording, processing, completion or dismissal |
 | Activity, pointer and reveal events | Switch controls, minimum reveal and linger |
 | Publication, upload and consent observations | Completion copy, retry state and dismissal holds |
-| Deadline or surface hidden | Begin dismissal or retire the dismissed surface |
+| Deadline, dismissal or capture failure | Hide the presentation |
 
 A native monotonic deadline drives completion expiry. The existing animation
 clock drives the switch-controls reveal, including lab time scaling. Both
@@ -29,8 +31,7 @@ leaves the policy instance and its capture untouched.
 
 The shared Electron recording row offers the red Finish square, Whiteboard
 pen and trailing Cancel cross. Capture modes are available in the pre-record
-picker. Microphone warnings still come from the capture. The native fallback
-retains its own timer and waveform for compatibility.
+picker. Microphone warnings still come from the capture.
 
 Live local transcription, Soft Bloom and Recording pill doodles are off by
 default. The optional Soft Bloom ring reacts to microphone activity. The
@@ -44,11 +45,7 @@ with sound ticks and still doodles.
   lifetime. They protect exact capture and bundle effects independently of UI
   visibility and protect against asynchronous stale producers.
 - `island_phase` and the native adapter’s presentation and wake fields cache
-  Record outputs. The last observed facts are cached for deduplication. The previous
-  phase, last completed presentation, interpolation values, springs, outgoing
-  groups, animation timestamps and last clock are draw resources for the
-  native fallback. They let a renderer finish a transition after Record has
-  moved on.
+  Record outputs. The last observed facts are cached for deduplication.
 - Native and Electron window IDs, readiness, input geometry, attachment,
   compositor admission and exclusion receipts belong to their platform adapters.
   Electron's revision and local dialog state belong to the window protocol.
@@ -65,25 +62,36 @@ with sound ticks and still doodles.
 ## Verification and rollback
 
 On Linux, the native parent selects XWayland when launching Electron, before
-Ozone initializes, and supplies the same X11 scale as the native pill. The
+Ozone initializes, and supplies its X11 scale. The
 Electron constructor selects the window's keyboard role at creation. Native
 compositor admission uses the window ID reported by Electron main after layout
 and before activation. Hyprland pins the exact child by process and XID-specific
 title, and prepares its scoped motion rule before mapping. The parent ignores
-hidden geometry for admission and falls back to the native pill if compositor
-admission fails, even when Electron reports a visible window.
+hidden geometry for admission and retires and restarts Electron if compositor
+admission fails, even when the child reports a visible window.
 
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
 Add `--proof` for the pinned kernel verdict. The root native suite exercises
 the same module embedded in the app. The frontend's `test:pill` checks the real
 Electron host and renderer with a synthetic parent. Use the isolated native
-test routes for capture, Electron loss, native fallback, and packaged
+test routes for capture, Electron loss and recovery, and packaged
 macOS/Linux acceptance.
+
+To qualify renderer recovery, use the installed candidate in an isolated native
+test environment and start a synthetic display capture. Record the pill child's
+PID and the capture ID. Terminate the owned pill child mid-recording and confirm
+that the same capture keeps encoding. Check that a new child owns the currently
+mapped window, leaves foreground focus intact and accepts Finish. Verify
+the saved bundle, playable video and exact clipboard receipt. Repeat with
+macOS capture exclusion enabled and check that the replacement appears only
+after the capture filter acknowledges its ID.
 
 Rollback is a revert of the cutover, including the embedded host, Rust event
 wiring and renderer protocol. Each app build embeds the matching policy; no
 preferences, bundle format, or on-disk state requires migration.
+Existing `pillStyle` and `nativePill` keys are ignored and preserved by config
+transactions. The app presents the standard Electron pill for those profiles.
 
 ## Overlapping captures
 
@@ -116,7 +124,7 @@ visible before Undo or Clear removes ink, plus a separate final image if ink
 remains at Finish. The capture retains the latest 12 pre-edit snapshots. The
 practice example stays in the renderer and never enters those images.
 
-Both pill implementations request the same surface. The desktop package stages
+The desktop package stages
 `dist/whiteboard` beside its other popup assets and uses the installed shared
 Electron runtime. Removing that asset requires reverting the routing and policy
 together to restore a working recording and practice surface.

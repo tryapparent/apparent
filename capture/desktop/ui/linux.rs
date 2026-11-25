@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use gpui::{AnyElement, App, Div, IntoElement, Pixels, Point, Window, div, px};
 use ksni::blocking::TrayMethods as _;
 
-use super::super::{LaserOverlay, MenuAction, PILL_WINDOW_H, PILL_WINDOW_W};
+use super::super::{LaserOverlay, MenuAction};
 use crate::capture::engine::runtime::SharedCaptureTelemetry;
 use crate::capture::desktop::linux::{self, x11};
 
@@ -26,7 +26,6 @@ pub(in crate::capture::desktop) const FILE_MANAGER: &str = "Files";
 pub(in crate::capture::desktop) const HEADER_LEAD: f32 = 16.0;
 pub(in crate::capture::desktop) const HEADER_TRAIL: f32 = 0.0;
 /// The pill's top edge on the screen, below the work area's top (GNOME's top bar).
-pub(in crate::capture::desktop) const PILL_TOP: f32 = 14.0;
 
 /// GPUI lays out in DIPs; Apparent's global coordinates are pixels.
 pub(in crate::capture::desktop) fn points_per_pixel(window: &Window) -> f32 {
@@ -61,10 +60,8 @@ pub(in crate::capture::desktop) fn layout_size(
 /// The open picker's and pill's windows, to move them when they follow the pointer or the
 /// recording to another display.
 static PICKER_WINDOW: AtomicU32 = AtomicU32::new(0);
-static PILL_WINDOW: AtomicU32 = AtomicU32::new(0);
 // Moving an override-redirect window remaps it in Hyprland, losing its pin.
 // Coalesce placements; compositor IPC stays off the UI/drag thread.
-static PILL_NEEDS_PIN: AtomicBool = AtomicBool::new(false);
 
 fn own_window(slot: &AtomicU32) -> Option<u32> {
     let id = slot.load(Ordering::Acquire);
@@ -238,14 +235,6 @@ pub(crate) fn set_app_icon(window: &Window) {
 }
 
 /// Brings one of Apparent's floating windows to the top.
-pub(in crate::capture::desktop) fn raise_window(window: &mut Window) {
-    if let Some(id) = x11::window_id(window) {
-        x11::raise(id);
-        raise_note_surfaces();
-    }
-}
-
-/// `apparent lab`'s backdrop stays an ordinary popup on Linux.
 pub(in crate::capture::desktop) fn configure_lab_backdrop(_w: f32, _h: f32) {}
 
 struct KeepAlive;
@@ -310,25 +299,6 @@ pub(in crate::capture::desktop) fn configure_picker_window(
     Some(id)
 }
 
-/// The pill window's rect (global pixels) on the monitor holding `point`.
-fn pill_rect_at(point: [f64; 2]) -> Option<[f64; 4]> {
-    let screens = crate::capture::engine::runtime::screens::displays();
-    let screen = screens.get(crate::capture::engine::runtime::screens::index_at(&screens, point)?)?;
-    Some(crate::capture::engine::runtime::screens::pill_window_rect(
-        screen,
-        f64::from(PILL_WINDOW_W),
-        f64::from(PILL_WINDOW_H),
-        f64::from(PILL_TOP),
-    ))
-}
-
-fn pill_point() -> Option<[f64; 2]> {
-    LAST_FRAME_CENTRE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .or_else(crate::capture::engine::runtime::screens::pointer)
-}
-
 struct PillDrag {
     id: u32,
     panel: [f64; 4],
@@ -337,39 +307,25 @@ struct PillDrag {
     owner: PillDragOwner,
 }
 
-enum PillDragOwner {
-    Native,
-    Electron { pid: u32, alive: Arc<AtomicBool>, position: Arc<Mutex<Option<[f64; 4]>>> },
+struct PillDragOwner {
+    pid: u32,
+    alive: Arc<AtomicBool>,
+    position: Arc<Mutex<Option<[f64; 4]>>>,
 }
 
 impl PillDragOwner {
     fn current(&self, id: u32) -> bool {
-        match self {
-            Self::Native => own_window(&PILL_WINDOW) == Some(id),
-            Self::Electron { pid, alive, .. } => alive.load(Ordering::Acquire)
-                && crate::capture::ui_process::owns(*pid as i32)
-                && x11::window_info(id as isize).is_some_and(|window| window.pid == *pid),
-        }
+        self.alive.load(Ordering::Acquire)
+            && crate::capture::ui_process::owns(self.pid as i32)
+            && x11::window_info(id as isize).is_some_and(|window| window.pid == self.pid)
     }
-    fn move_to(&self, id: u32, rect: [f64; 4]) {
-        match self {
-            Self::Native => {
-                x11::move_origin(id, [rect[0], rect[1]]);
-                PILL_NEEDS_PIN.store(true, Ordering::Release);
-            }
-            Self::Electron { position, .. } => {
-                // The child alone maps/moves its Chromium surface. Two native
-                // window owners can leave X11 mapped but absent from Hyprland.
-                *position.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(rect);
-            }
-        }
+
+    fn move_to(&self, rect: [f64; 4]) {
+        *self.position.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(rect);
     }
 }
 
 static PILL_DRAG: std::sync::Mutex<Option<PillDrag>> = std::sync::Mutex::new(None);
-// Once moved, the capsule stays on its original output for this recording even
-// after the mouse button is released. The ink overlay may still follow the pointer.
-static PILL_USER_MOVED: AtomicBool = AtomicBool::new(false);
 
 fn drag_left_down(x11_left: bool, kernel: Option<&linux::input::Held>) -> bool {
     // An XWayland unmap cancels its implicit grab and clears its button mask.
@@ -388,27 +344,17 @@ fn pill_drag_uses_kernel_button_across_xwayland_remaps() {
     assert!(!drag_left_down(false, None));
 }
 
-/// Only the recording status/clock starts a drag, not the actionable chips.
-pub(in crate::capture::desktop) fn begin_pill_drag() {
-    let Some(id) = own_window(&PILL_WINDOW) else { return };
-    begin_owned_pill_drag(id, PillDragOwner::Native, None);
-}
-
 pub(in crate::capture::desktop) fn begin_electron_pill_drag(
     id: u32, pid: u32, alive: Arc<AtomicBool>,
     position: Arc<Mutex<Option<[f64; 4]>>>, point: [f64; 2],
 ) {
-    begin_owned_pill_drag(id, PillDragOwner::Electron { pid, alive, position }, Some(point));
+    begin_owned_pill_drag(id, PillDragOwner { pid, alive, position }, point);
 }
 
-fn begin_owned_pill_drag(id: u32, owner: PillDragOwner, point: Option<[f64; 2]>) {
+fn begin_owned_pill_drag(id: u32, owner: PillDragOwner, [x, y]: [f64; 2]) {
     if !crate::shared::handoff::experiment("movableRecordingControls") || !owner.current(id) { return; }
     let Some(pointer) = x11::pointer_state() else { return };
     if !drag_left_down(pointer.left, linux::input::held().as_ref()) { return; }
-    let [x, y] = point.unwrap_or_else(|| {
-        let (x, y) = linux::cursor_position().unwrap_or((pointer.x, pointer.y));
-        [x, y]
-    });
     let Some(panel) = x11::geometry(id) else { return };
     if ![x, y].iter().all(|v| v.is_finite()) || x < panel[0] || y < panel[1]
         || x >= panel[0] + panel[2] || y >= panel[1] + panel[3] { return; }
@@ -455,188 +401,13 @@ pub(in crate::capture::desktop) fn tick_pill_drag() {
             *slot = None;
             return;
         }
-        PILL_USER_MOVED.store(true, Ordering::Release);
         let rect = [x, y, live[2], live[3]];
-        drag.owner.move_to(drag.id, rect);
+        drag.owner.move_to(rect);
     }
 }
 
 pub(in crate::capture::desktop) fn cancel_pill_drag() {
     *PILL_DRAG.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = None;
-    PILL_USER_MOVED.store(false, Ordering::Release);
-}
-
-pub(in crate::capture::desktop) fn pill_user_moved() -> bool {
-    PILL_USER_MOVED.load(Ordering::Acquire)
-}
-
-/// Where the pill window opens (DIPs of GPUI's one display): below the work area's top on the
-/// monitor in use.
-pub(in crate::capture::desktop) fn hud_pill_origin(display: gpui::Bounds<Pixels>) -> Point<Pixels> {
-    let scale = x11::ui_scale();
-    match pill_point().and_then(pill_rect_at) {
-        Some([x, y, _, _]) => gpui::point(px((x / scale) as f32), px((y / scale) as f32)),
-        None => gpui::point(
-            display.origin.x + (display.size.width - px(PILL_WINDOW_W)) * 0.5,
-            display.origin.y + px(PILL_TOP),
-        ),
-    }
-}
-
-/// Moves the pill window to the monitor holding `point` (global pixels).
-pub(in crate::capture::desktop) fn place_hud_pill(point: [f64; 2]) {
-    let (Some(id), Some(rect)) = (own_window(&PILL_WINDOW), pill_rect_at(point)) else {
-        return;
-    };
-    // Moving through detached threads lets an older placement run after a newer one when
-    // the pointer crosses displays quickly. Keep the capsule's move in event order.
-    x11::place(id, rect);
-    PILL_NEEDS_PIN.store(true, Ordering::Release);
-}
-
-/// The pill's window. Linux has no native shell for it: GPUI draws the capsule, its shadow and
-/// its springs, and the window never takes focus from the app being recorded.
-pub(in crate::capture::desktop) struct PillChrome {
-    id: Option<u32>,
-}
-
-/// The mapped recording controls, in the same X11 root pixels as the board.
-pub(in crate::capture::desktop) fn coach_anchor() -> Option<[f32; 4]> {
-    let xid = own_window(&PILL_WINDOW)?;
-    let info = x11::window_info(xid as isize)?;
-    info.on_screen().then(|| info.rect.map(|v| v as f32))
-}
-
-impl Drop for PillChrome {
-    fn drop(&mut self) {
-        if let Some(id) = self.id {
-            let _ = PILL_WINDOW.compare_exchange(id, 0, Ordering::AcqRel, Ordering::Acquire);
-        }
-    }
-}
-
-impl PillChrome {
-    pub(in crate::capture::desktop) fn open(window: &mut Window, cx: &mut App) -> Self {
-        let id = x11::window_id(window);
-        if let Some(id) = id {
-            PILL_WINDOW.store(id, Ordering::Release);
-            let rect = pill_point().and_then(pill_rect_at).unwrap_or_else(|| {
-                let b = window.bounds();
-                let s = f64::from(window.scale_factor());
-                [
-                    f64::from(f32::from(b.origin.x)) * s,
-                    f64::from(f32::from(b.origin.y)) * s,
-                    f64::from(f32::from(b.size.width)) * s,
-                    f64::from(f32::from(b.size.height)) * s,
-                ]
-            });
-            x11::accept_pointer(id);
-            x11::float(id, rect);
-            if linux::hyprland::running() {
-                x11::set_title(id, &linux::hyprland::pill_title(id));
-                PILL_NEEDS_PIN.store(true, Ordering::Release);
-                cx.spawn(async move |cx| {
-                    let motion_rule = cx.background_executor().spawn(async move {
-                        linux::hyprland::prepare_pill_motion(id, std::process::id())
-                    }).await;
-                    if let Err(error) = &motion_rule {
-                        crate::capture::engine::runtime::apparent_log(format!("Native pill appearance rule failed: {error:#}"));
-                    }
-                    'pin: loop {
-                        cx.background_executor().timer(Duration::from_millis(120)).await;
-                        if own_window(&PILL_WINDOW) != Some(id) {
-                            break;
-                        }
-                        if !PILL_NEEDS_PIN.swap(false, Ordering::AcqRel) {
-                            continue;
-                        }
-                        let mut last_error = None;
-                        for _ in 0..8 {
-                            if own_window(&PILL_WINDOW) != Some(id) {
-                                break 'pin;
-                            }
-                            let result = cx.background_executor().spawn(async move {
-                                linux::hyprland::pin_pill(id)
-                            }).await;
-                            match result {
-                                Ok(()) => { raise_note_surfaces(); last_error = None; break; }
-                                Err(error) => last_error = Some(error),
-                            }
-                            cx.background_executor().timer(Duration::from_millis(120)).await;
-                        }
-                        if let Some(error) = last_error {
-                            crate::capture::engine::runtime::apparent_log(format!(
-                                "Recording pill: could not pin Hyprland window: {error}"
-                            ));
-                        }
-                    }
-                    if matches!(motion_rule, Ok(true)) {
-                        let result = cx.background_executor().spawn(async move {
-                            linux::hyprland::release_pill_motion(id, std::process::id())
-                        }).await;
-                        if let Err(error) = result {
-                            crate::capture::engine::runtime::apparent_log(format!("Native pill appearance cleanup failed: {error:#}"));
-                        }
-                    }
-                }).detach();
-            }
-        }
-        Self { id }
-    }
-
-    pub(in crate::capture::desktop) fn window_number(&self) -> Option<u32> {
-        self.id
-    }
-
-    pub(in crate::capture::desktop) fn has_shell(&self) -> bool {
-        false
-    }
-
-    pub(in crate::capture::desktop) fn raise(&self) {
-        if let Some(id) = self.id {
-            x11::raise(id);
-            raise_note_surfaces();
-        }
-    }
-
-    /// Motion traces need the native shell's geometry, which Linux doesn't have.
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::capture::desktop) fn trace(
-        &self,
-        _width: f32,
-        _scale: f32,
-        _y_offset: f32,
-        _opacity: f32,
-        _content_alpha: f32,
-        _blur_radius: f32,
-        _content_shrink: f32,
-    ) -> Option<super::super::ui::motion::Xf> {
-        None
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::capture::desktop) fn apply(
-        &mut self,
-        _pill_width: f32,
-        _pill_height: f32,
-        _scale: f32,
-        _y_offset: f32,
-        _opacity: f32,
-        _is_completed: bool,
-        _blur_radius: f32,
-        _content_shrink: f32,
-    ) {
-    }
-}
-
-/// Whether the pointer is over the pill's window.
-pub(in crate::capture::desktop) fn pointer_on_hud_pill() -> bool {
-    let (Some(id), Some((x, y))) = (own_window(&PILL_WINDOW), linux::cursor_position()) else {
-        return false;
-    };
-    x11::geometry(id).is_some_and(|[wx, wy, ww, wh]| {
-        x >= wx && x <= wx + ww && y >= wy && y <= wy + wh
-    })
 }
 
 /// The largest of Apparent's windows (for `apparent preview --capture-screenshot`).
@@ -1179,13 +950,6 @@ pub(in crate::capture::desktop) fn restore_note_focus(token: u64, owner: u32) {
         crate::capture::desktop::linux::x11::activate(token as isize);
     }
     raise_note_surfaces();
-}
-
-/// The Electron counter follows the same native recording panel, including user drags.
-pub(in crate::capture::desktop) fn note_badge_anchor(width: f32, y: f32) -> Option<[f64; 4]> {
-    let rect = x11::geometry(own_window(&PILL_WINDOW)?)?;
-    Some([rect[0] + rect[2] / 2.0 - f64::from(width) / 2.0,
-        rect[1] + f64::from(y), f64::from(width), f64::from(super::super::ISLAND_H)])
 }
 
 #[derive(Clone, Copy, Default)]

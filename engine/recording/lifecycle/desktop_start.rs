@@ -125,8 +125,6 @@ impl ApparentCoordinator {
     ) {
         let recording_entered = Instant::now();
         if display_selection::pending() { return; }
-        #[cfg(any(target_os="macos",target_os="linux"))]
-        self.reconcile_electron_pill();
         if crate::capture::desktop::workflow::shutdown::requested() { return; }
         if self.is_recording() || self.source_is_stopping() {
             return;
@@ -228,15 +226,10 @@ impl ApparentCoordinator {
         let stage = Instant::now();
         let (target_rect, display_rect, centre) = ScreenCaptureSession::placement(target.frame);
         self.display_rect = display_rect;
-        if let Some(pill) = &self.native_pill {
-            pill.place_on(centre);
-        }
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
-        {
-            platform::cancel_pill_drag();
-            if cfg!(target_os = "linux") || self.native_pill.is_none() {
-                platform::place_hud_pill(centre);
-            }
+        #[cfg(target_os = "linux")]
+        platform::cancel_pill_drag();
+        if let Some(session) = &self.electron_pill {
+            session.place(centre);
         }
         let metal_overlay = self.picker_metal_overlay.take().map(|mut overlay| {
             overlay.move_to(target_rect);

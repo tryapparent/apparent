@@ -1,3 +1,4 @@
+const { execFileSync } = require('node:child_process');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { chromium, expect } = require('@playwright/test');
@@ -38,17 +39,15 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   });
   browser = await chromium.connectOverCDP(await endpoint);
   const context = browser.contexts()[0];
-  await expect.poll(() => context.pages().length).toBe(2);
+  await expect.poll(() => context.pages().length).toBe(1);
   const pages = context.pages();
   const popup = pages.find(p => p.url().endsWith('#notes-popup')) || pages[0];
-  const badge = pages.find(p => p !== popup);
   await popup.waitForFunction(() => !!window.captureNotes);
   await expect.poll(() => messages.some(m => m.action === 'ready')).toBe(true);
   let state = { mode: 'editor', current: 1, position: [200, 160], notes: [], drafts: [{ pin: 1, t: 123, x: .5, y: .35, text: '' }], error: null };
   const send = (events) => {
     if (!events) {
       events = [];
-      if (!previousFixture || previousFixture.embedded !== state.embedded) events.push({ kind: 'embedded', value: !!state.embedded });
       if (state.badgeRect && JSON.stringify(previousFixture?.badgeRect) !== JSON.stringify(state.badgeRect)) events.push({ kind: 'badge', rect: state.badgeRect });
       if (!previousFixture || previousFixture.mode !== state.mode) {
         events.push(state.mode === 'editor' ? { kind: 'open', pin: state.current, position: state.position } :
@@ -81,31 +80,16 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   await expect.poll(() => messages.find(m => m.action === 'save')?.text).toBe('Smaller button\nx');
   // Real Rust owns this ack in production. This fixture tests renderer behavior only.
   state = { ...state, mode: 'badge', notes: [{ ...state.drafts[0], text: 'Smaller button\nx' }], drafts: [{ ...state.drafts[0], text: 'Smaller button\nx' }] }; send();
-  await expect(badge.getByRole('button', { name: '1 saved notes. Open notes' })).toBeVisible();
-  await badge.getByRole('button').click();
-  await expect.poll(() => messages.some(m => m.action === 'list')).toBe(true);
   state.mode = 'list'; state.badgeRect = [450, 36, 380, 40]; send();
   if (process.platform === 'linux') {
-    const expected = [830 + 6 * scale, 36, 150 * scale, 44 * scale];
-    await expect.poll(() => messages.some(m => m.action === 'surface' && JSON.stringify(m.rect) === JSON.stringify(expected))).toBe(true);
+    const [id, extra] = messages.find(m => m.action === 'windows').ids;
+    assert.equal(extra, undefined);
+    await expect.poll(() => execFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' }).includes('Map State: IsViewable')).toBe(true);
     await expect.poll(() => messages.some(m => m.action === 'surface' && m.rect[3] === 350 * scale)).toBe(true);
     const focusedLists = () => messages.filter(m => m.action === 'surface' && m.focus && m.rect[3] === 350 * scale).length;
     const before = focusedLists();
     send([{ kind: 'list' }]);
     await expect.poll(focusedLists).toBe(before + 1);
-  }
-  // The pill owns the visible count; the same editor/list remains available.
-  state.embedded = true; send();
-  if (process.platform === 'linux') {
-    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
-    const mapped = () => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable');
-    await expect.poll(mapped).toBe(false);
-  }
-  await expect(popup.getByRole('button', { name: /Smaller button/ })).toBeVisible();
-  state.embedded = false; send();
-  if (process.platform === 'linux') {
-    const id = messages.find(m => m.action === 'surface' && m.rect[2] === 150 * scale && m.rect[3] === 44 * scale).id;
-    await expect.poll(() => require('node:child_process').execFileSync('xwininfo', ['-id', String(id)], {encoding:'utf8'}).includes('Map State: IsViewable')).toBe(true);
   }
   await popup.getByRole('button', { name: /Smaller button/ }).click();
   await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);
