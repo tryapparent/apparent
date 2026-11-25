@@ -110,14 +110,14 @@ impl UserPasteOps for LivePaste<'_> {
     fn still_ours(&mut self, value: &'static str) -> Result<bool> {
         match value {
             "image" => super::clipboard::still_ours("image/png", self.image.context("No image was offered")?),
-            "text" => {
-                super::clipboard::still_ours("text/plain;charset=utf-8", self.summary.as_bytes())
-            }
+            "text" => super::clipboard::still_ours("text/plain;charset=utf-8", self.summary.as_bytes()),
             _ => Ok(false),
         }
     }
     fn paste(&mut self) -> Result<()> {
-        std::thread::sleep(Duration::from_millis(20));
+        if self.image.is_some() {
+            std::thread::sleep(Duration::from_millis(20));
+        }
         super::hyprland::paste_into_focused(self.original, false)
     }
     fn fallback(&mut self, offered: &'static str) -> Result<()> {
