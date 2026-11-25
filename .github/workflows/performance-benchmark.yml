@@ -6,7 +6,7 @@ on:
       stream:
         description: Reviewed benchmark stream
         type: choice
-        options: [handoff, onboarding, connect, agent, public, hermes, record-start, record-stop, record-native-probe]
+        options: [handoff, handoff-focused-paste, onboarding, connect, agent, public, hermes, record-start, record-stop, record-native-probe]
         required: true
       control:
         description: Full control commit SHA on main
