@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { isAbsolute, join } from "node:path";
@@ -10,22 +11,24 @@ import {
   measuredWait,
 } from "../../../shared/enablement/performance/measurement.ts";
 import { watchAttempt } from "./watch.ts";
+import { nativeSender, nativeWorkload } from "./native/sender.ts";
 
 const service = new URL("../../service/", import.meta.url);
 const requireService = createRequire(new URL("package.json", service));
 const { chromium } = requireService("playwright-core");
 const { fixture, id, digest } = await import("../../service/test/helpers.mjs");
-const [work, chrome, mode, ...extra] = process.argv.slice(2);
+const [work, chrome, mode, native, ...extra] = process.argv.slice(2);
 if (
   !work ||
   !isAbsolute(work) ||
   !chrome ||
   !isAbsolute(chrome) ||
   (mode && mode !== "watch-traced" && mode !== "watch-untraced") ||
+  (native && (!mode || !isAbsolute(native))) ||
   extra.length
 ) {
   throw Error(
-    "Usage: recipient.ts PRIVATE_RESULTS_DIR ABSOLUTE_CHROMIUM [watch-traced|watch-untraced]",
+    "Usage: recipient.ts PRIVATE_RESULTS_DIR ABSOLUTE_CHROMIUM [watch-traced|watch-untraced [ABSOLUTE_NATIVE_TEST_BINARY]]",
   );
 }
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
@@ -33,6 +36,20 @@ const revision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repo,
   encoding: "utf8",
 }).trim();
+if (native)
+  assert.equal(
+    (await stat(work)).mode & 0o077,
+    0,
+    "Results directory must be private",
+  );
+const sender = native
+  ? nativeSender({
+      hash: createHash("sha256")
+        .update(await readFile(native))
+        .digest("hex"),
+      binary: native,
+    })
+  : undefined;
 const job = await mkdtemp(join(work, "recipient-"));
 const movie = join(job, "fixture.mp4");
 const still = join(job, "frame.png");
@@ -67,12 +84,23 @@ let backend: Awaited<ReturnType<typeof fixture>> | undefined;
 const gateway = createServer(async (request, response) => {
   try {
     if (!backend) throw Error("Synthetic recipient backend has not started");
+    const trace = sender?.observeRequest(
+      request.method ?? "",
+      request.url ?? "",
+    );
+    if (trace) response.once("finish", () => trace.finish(response.statusCode));
+    const chunks: Buffer[] = [];
+    if (trace) for await (const chunk of request) chunks.push(chunk);
+    trace?.dispatch();
     const result = await backend.call(request.url, {
       method: request.method,
       headers: request.headers,
+      ...(chunks.length ? { raw: Buffer.concat(chunks) } : {}),
     });
+    const reply = Buffer.from(await result.arrayBuffer());
+    trace?.workerReply(reply, result.status);
     response.writeHead(result.status, Object.fromEntries(result.headers));
-    response.end(Buffer.from(await result.arrayBuffer()));
+    response.end(reply);
   } catch {
     response.writeHead(500).end("Synthetic recipient gateway failed");
   }
@@ -107,6 +135,8 @@ try {
       ),
     ],
   ]);
+  if (sender)
+    assets.set("contact-sheet.png", assets.get("frames/frame-01.png")!);
   if (mode) {
     const browser = await chromium.launch({
       executablePath: chrome,
@@ -129,6 +159,7 @@ try {
             variant,
             trace: mode === "watch-traced",
             directory: job,
+            sender,
           }),
         );
       }
@@ -136,7 +167,12 @@ try {
       await writeFile(
         receipt,
         JSON.stringify(
-          { revision, chromium: browser.version(), attempts },
+          {
+            revision,
+            chromium: browser.version(),
+            ...(sender ? { workload: nativeWorkload } : {}),
+            attempts,
+          },
           null,
           2,
         ) + "\n",
