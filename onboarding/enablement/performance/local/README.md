@@ -75,31 +75,41 @@ incremental instrumentation, while the checkpoints include the common observer
 cost. Every trace includes host-monotonic intervals. Instrumented Composition
 can additionally emit Unix-time points under the same ephemeral attempt ID.
 
-The click-through dispatches actual coach input and opens the actual Electron
-Whiteboard through its production entry and parent protocol. It verifies the
-painted drawing surface and the lesson’s **Your turn** cue, dispatches an
-input stroke, reads the renderer’s accepted stroke, and verifies the Close
-action and board shutdown. The virtual desktop does not exercise compositor permissions
-or shortcut delivery. The explicitly named `practiceFixture` effects supply a
-fixed first RGBA frame and save receipt for Record, a file-backed clipboard for
-Handoff, and a file-backed completion writer for the native Onboarding config
-transaction. The fixture reads back all three outputs. The production coach
-must admit the scoped Finish setup intent before the writer commits, and the
-probe observes coach closure after readback. The isolated VM remains the
-acceptance path for capture, playback quality, OS clipboard, native config,
-installed launch and permission integration.
+The click-through drives the production Electron coach, Whiteboard host and
+renderer. The fixture parent launches the Whiteboard child when its local
+practice take starts, as the native coordinator does during active practice.
+It sends the initial paper only after a real renderer click returns the
+attempt-scoped coach action. The adapter observes the Whiteboard show
+acknowledgement and canvas paint, then draws at the first verified opportunity.
+The receipt records the prewarm lead, the lesson text at input, the exact
+non-demo stroke, and the matching paper acknowledgement and practice
+disposition. The lesson text is an annotation. The observer can draw during
+the demo and advance the lesson before **Your turn** appears.
+
+The fixture supplies the native parent effects for both variants, including
+the scoped practice projection, a fixed first RGBA frame and save receipt, a
+file-backed clipboard and a file-backed completion writer. The fixture reads
+back all three outputs. The production coach must admit the scoped Finish
+setup intent before the writer commits, and the probe observes coach closure
+after readback. The isolated VM remains the acceptance path for the native
+coordinator deciding when to prewarm, physical shortcut and capture,
+playback quality, OS clipboard, native config, installed launch and permissions.
 
 Each observation prints raw milliseconds and writes a receipt and a
 Perfetto-compatible trace. Driver dwell appears independently. Per-stage
 attribution reports covered, overlapping and unattributed time without adding
-parallel spans twice. Accepted ink and the Whiteboard Close action have their own checkpoints. The baseline and candidate scores focus on opening the coach to
-the first usable surface. Other stage times and CPU, process RSS, output size,
-verification, candidate stage regression and contention guards are in `benchmark.json`. A qualified
-control is normalized to 100. Preserve diagnostic receipts for rejected runs
-and repeat on a quiet host. Both runs require at least 1 GiB available memory.
-Local replay retains the original 10% host CPU PSI and 30% host idle guards.
-Compare native capture resource guardrails in the VM lane before retaining
-a product improvement.
+parallel spans twice. Endpoint version 2 scores
+`practice-record-to-accepted-ink`, from dispatch of the synthetic start until
+the exact acknowledged stroke is visible after paint. It also records the
+first verified coach action and the Whiteboard-open-to-ink interval. Coach
+startup, painted canvas, first media, clipboard, and completion still have
+stage checks. CPU, process RSS, output size and contention remain guarded.
+A qualified control is normalized to 100. Calibrate again on the current
+main build with this collector before scoring product changes. The previous
+epoch launched the board on click, waited for the teaching cue and scored
+coach startup. Same-build differences between observers are measurement
+corrections. Both runs require at least 1 GiB available memory. Local replay
+retains the original 10% host CPU PSI and 30% host idle guards.
 
 A focused campaign ledger is an array of entries with `hypothesis` and
 `activeSeconds`. Add the path to a matched `comparison`, or an `outcome` and a

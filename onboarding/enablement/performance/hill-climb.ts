@@ -9,6 +9,7 @@ import {
 } from "../../../shared/enablement/bend/build.ts";
 
 import { run } from "../../../shared/enablement/bend/toolchain.ts";
+import { endpoint, endpointVersion } from "./click-trace.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const policySource = "enablement/timing/journey/journey-scoring.bend";
@@ -35,6 +36,8 @@ type Policy = {
 
 type Comparison = {
   schema: number;
+  endpointVersion: number;
+  scoreStage: string;
   eligibility?: "hosted-scoring" | "local-diagnostic";
   hostIdentity: {
     provider?: string;
@@ -47,6 +50,7 @@ type Comparison = {
   candidate: { revision: string };
   baseline?: {
     variant: string;
+    stage: string;
     controlMeanMs: number;
     speedNoise: number;
     qualified: boolean;
@@ -96,14 +100,22 @@ export async function evaluate(
   const primary = baseline.observations.find(
     ({ group, variant }) => group === "repeat" && variant === "cold",
   );
-  assert.equal(baseline.schema, 1);
+  const verifyEndpoint = (report: Comparison) => {
+    assert.equal(report.schema, 2, "Rebaseline the v2 Onboarding endpoint");
+    assert.equal(report.endpointVersion, endpointVersion);
+    assert.equal(report.scoreStage, endpoint);
+  };
+  verifyEndpoint(baseline);
   assert.notEqual(
     baseline.eligibility,
     "local-diagnostic",
     "Local replay is diagnostic",
   );
   assert(
-    cold && primary && Number.isFinite(cold.speedNoise) && cold.speedNoise >= 0,
+    cold?.stage === endpoint &&
+      primary &&
+      Number.isFinite(cold.speedNoise) &&
+      cold.speedNoise >= 0,
   );
   assert(
     cold.controlMeanMs > 0 &&
@@ -167,7 +179,7 @@ export async function evaluate(
       continue;
     }
     const result: Comparison = await read(entry.comparison);
-    assert.equal(result.schema, baseline.schema);
+    verifyEndpoint(result);
     assert.notEqual(
       result.eligibility,
       "local-diagnostic",
@@ -190,7 +202,7 @@ export async function evaluate(
         "Hosted comparison requires its same-job calibration receipt",
       );
       const calibration: Comparison = await read(entry.calibration);
-      assert.equal(calibration.schema, baseline.schema);
+      verifyEndpoint(calibration);
       assert.deepEqual(calibration.hostIdentity, result.hostIdentity);
       assert.deepEqual(calibration.contention, result.contention);
       for (const field of ["provider", "cohort", "kernel", "node"] as const)
@@ -237,9 +249,7 @@ export async function evaluate(
       }
     }
     if (!contentionInvalid) hypotheses.add(hypothesis);
-    const metric = observation.stages.find(
-      ({ stage }) => stage === "coach-open-to-interactive",
-    );
+    const metric = observation.stages.find(({ stage }) => stage === endpoint);
     assert(
       metric &&
         metric.controlMs.length === 2 &&

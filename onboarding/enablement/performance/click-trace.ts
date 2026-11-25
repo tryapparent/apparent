@@ -1,7 +1,60 @@
+import assert from "node:assert/strict";
 import {
   interval,
   measuredWait,
 } from "../../../shared/enablement/performance/measurement.ts";
+
+export const endpoint = "practice-record-to-accepted-ink";
+export const endpointVersion = 2;
+
+export const required = [
+  endpoint,
+  "coach-open-to-interactive",
+  "practice-start-to-effective-whiteboard-control",
+  "whiteboard-open-to-accepted-ink",
+  "whiteboard-open-to-painted-canvas",
+  "practice-record-to-first-media",
+  "practice-finish-to-verified-clipboard",
+  "finish-setup-to-persisted-close",
+] as const;
+
+export type ClickThroughResult = {
+  schema: number;
+  endpointVersion: number;
+  attempt: string;
+  variant: "cold" | "resumed";
+  detailed: boolean;
+  waits: Record<string, { ms: number; verified: boolean }>;
+  verified: Record<string, boolean>;
+};
+
+export function verifyClickThrough(
+  raw: ClickThroughResult,
+  variant: string,
+  detailed: boolean,
+) {
+  assert.equal(raw.schema, 3);
+  assert.equal(raw.endpointVersion, endpointVersion);
+  assert.equal(raw.variant, variant);
+  assert.equal(raw.detailed, detailed);
+  assert.match(raw.attempt, /^[a-f0-9]{32}$/);
+  for (const stage of required) {
+    assert.equal(raw.waits[stage]?.verified, true, stage);
+    assert(
+      Number.isFinite(raw.waits[stage].ms) && raw.waits[stage].ms > 0,
+      stage,
+    );
+  }
+  for (const check of [
+    "coach",
+    "renderedWhiteboardStroke",
+    "syntheticFirstMediaReadback",
+    "syntheticClipboardReadback",
+    "syntheticProgressReadback",
+    "coachClosed",
+  ])
+    assert.equal(raw.verified[check], true, check);
+}
 
 export function clickTrace(attempt: string, detailed: boolean) {
   const waits: Record<string, ReturnType<typeof measuredWait>> = {};

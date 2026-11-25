@@ -24,6 +24,13 @@ import {
   hostedLimits,
   startHostedMeter,
 } from "./hosted-contention.ts";
+import {
+  endpoint,
+  endpointVersion,
+  required,
+  verifyClickThrough,
+  type ClickThroughResult,
+} from "./click-trace.ts";
 
 const [
   runtime,
@@ -66,15 +73,6 @@ if (hosted)
 else await mkdir(scratch);
 process.env.TMPDIR = scratch;
 const driver = fileURLToPath(new URL("../click-through.ts", import.meta.url));
-const scoreStage = "coach-open-to-interactive";
-const required = [
-  scoreStage,
-  "whiteboard-open-to-usable",
-  "whiteboard-open-to-painted-canvas",
-  "practice-record-to-first-media",
-  "practice-finish-to-verified-clipboard",
-  "finish-setup-to-persisted-close",
-] as const;
 const hostPsiLimitPercent = 10;
 const minimumHostIdlePercent = 30;
 const minimumHostAvailableMemoryKiB = 1024 * 1024;
@@ -102,12 +100,7 @@ type Usage = {
   systemSeconds: number;
   peakProcessRssKiB: number;
 };
-type Raw = {
-  attempt: string;
-  variant: Variant;
-  detailed: boolean;
-  waits: Record<string, { ms: number; verified: boolean }>;
-  verified: Record<string, boolean>;
+type Raw = ClickThroughResult & {
   identity: {
     runtimeSha256: string;
     entrySha256: string;
@@ -269,25 +262,7 @@ async function observation(
     assert.equal(code, 0, "Click-through exited " + (signal ?? code));
     const receiptPath = join(dir, "click-through-1.json");
     const raw = JSON.parse(await readFile(receiptPath, "utf8")) as Raw;
-    assert.equal(raw.variant, variant);
-    assert.equal(raw.detailed, detailed);
-    assert.match(raw.attempt, /^[a-f0-9]{32}$/);
-    for (const stage of required) {
-      assert.equal(raw.waits[stage]?.verified, true, stage);
-      assert(
-        Number.isFinite(raw.waits[stage].ms) && raw.waits[stage].ms > 0,
-        stage,
-      );
-    }
-    for (const check of [
-      "coach",
-      "renderedWhiteboardStroke",
-      "syntheticFirstMediaReadback",
-      "syntheticClipboardReadback",
-      "syntheticProgressReadback",
-      "coachClosed",
-    ])
-      assert.equal(raw.verified[check], true, check);
+    verifyClickThrough(raw, variant, detailed);
     const {
       cpuPressureBefore,
       cpuPressureAfter,
@@ -408,8 +383,7 @@ for (const variant of ["cold", "resumed"] as const) {
     );
     const guardedStages = required.filter(
       (stage) =>
-        group === "candidate" &&
-        (variant === "resumed" || stage !== scoreStage),
+        group === "candidate" && (variant === "resumed" || stage !== endpoint),
     );
     const stageLimits = guardedStages.flatMap((stage) =>
       guard(stageWaits[required.indexOf(stage)], 20),
@@ -474,7 +448,7 @@ const baseline =
           const speedNoise = Math.max(...speeds) - Math.min(...speeds);
           return {
             variant,
-            stage: scoreStage,
+            stage: endpoint,
             qualified,
             controlScore: 100,
             controlMeanMs,
@@ -483,7 +457,9 @@ const baseline =
         })
     : undefined;
 const summary = {
-  schema: 1,
+  schema: 2,
+  endpointVersion,
+  scoreStage: endpoint,
   eligibility: hosted ? "hosted-scoring" : "local-diagnostic",
   hostIdentity,
   control,
