@@ -85,12 +85,12 @@ test('Connect shipped Electron IPC, consent presentation, browser action and lif
     await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
     await application.evaluate(({BrowserWindow},{loginOn,recording,label,error}) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:general-state', {type:'general-state',
     platform:'linux',login:{on:loginOn,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label,recording,externallyManaged:false,isDefault:true,clearable:false,error}],
-    errorReporting:true,lowerPlayback:false,playbackLevel:35,playbackAvailable:false,
+    errorReporting:true,
   }),{loginOn,recording,label,error});
     await expect(page.getByRole('switch',{name:'Launch at login',exact:true})).toBeVisible();
   };
   await projectGeneral();
-  await application.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:general-state', {type:'general-state',platform:'linux',login:{on:false,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label:'F1',recording:true,externallyManaged:false,isDefault:false,clearable:false,error:null}],errorReporting:true,lowerPlayback:false,playbackLevel:35,playbackAvailable:false}));
+  await application.evaluate(({BrowserWindow}) => BrowserWindow.getAllWindows()[0].webContents.send('apparent:general-state', {type:'general-state',platform:'linux',login:{on:false,available:true,needsApproval:false},shortcuts:[{kind:'record',title:'Record',label:'F1',recording:true,externallyManaged:false,isDefault:false,clearable:false,error:null}],errorReporting:true}));
   await expect(page.getByRole('button',{name:'Cancel changing Record shortcut',exact:true})).toBeVisible();
   await page.keyboard.press('F12');
   await expect.poll(()=>parentOutput.includes('"keyCode":123')).toBe(true);

@@ -10,8 +10,6 @@ type ParentMessage =
 
 type Hooks = {
   bind(name: string, handle: (...values: unknown[]) => unknown): void;
-  platform: string;
-  openExternal(url: string): Promise<void>;
 };
 
 type SettingsWindow = {
@@ -51,14 +49,6 @@ export class RecordingHost {
       this.wantsMeter = visible;
       updateMeter();
     });
-    hooks.bind("volume-guide", (...args) => {
-      if (args.length) throw new Error("Invalid guide request");
-      if (hooks.platform !== "linux")
-        throw new Error("Volume guide unavailable");
-      return hooks.openExternal(
-        "https://github.com/tryapparent/apparent/blob/main/capture/desktop/docs/linux/linux-playback.md#manual-setup",
-      );
-    });
   }
 
   private updateMeter(window: SettingsWindow) {
@@ -71,6 +61,12 @@ export class RecordingHost {
 
   private save(change: unknown): Promise<void> {
     if (!isChange(change) || !this.state || this.pending) {
+      return Promise.reject(new Error("Recording preference unavailable"));
+    }
+    if (
+      (change.key === "lowerPlayback" || change.key === "playbackLevel") &&
+      !this.state.playback
+    ) {
       return Promise.reject(new Error("Recording preference unavailable"));
     }
     const id = ++this.next;

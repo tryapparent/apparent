@@ -133,10 +133,8 @@ const entry = `document.visibilityState === "visible" && (
 )`;
 const recording = `document.visibilityState === "visible"
   && document.title === "Apparent Settings — Recording"
-  && [...document.querySelectorAll("main button, main [role=combobox]")].some(control =>
-    (control.getAttribute("role") === "combobox"
-      || control.textContent.trim() === "Set up and test volume lowering")
-    && !control.disabled && control.getBoundingClientRect().height > 0)`;
+  && [...document.querySelectorAll("main select, main [role=combobox]")].some(control =>
+    !control.disabled && control.getBoundingClientRect().height > 0)`;
 async function painted(observer: Observer, predicate: string) {
   try {
     await until(

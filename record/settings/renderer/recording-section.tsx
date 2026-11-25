@@ -15,7 +15,7 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
   const [feed] = useState(() => new RecordingFeed(bridge));
   const state = useSyncExternalStore(feed.subscribe, feed.snapshot);
   const [pending, setPending] = useState<RecordingChange>();
-  const [failure, setFailure] = useState<"save" | "guide">();
+  const [failure, setFailure] = useState(false);
   const retry = useRef<() => void>(() => {});
   const focused = useRef<HTMLElement | null>(null);
   const inFlight = useRef(false);
@@ -39,23 +39,12 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
     setPending(change);
     try {
       await bridge.save(change);
-      if (feed.connected) setFailure(undefined);
+      if (feed.connected) setFailure(false);
     } catch {
-      if (feed.connected) setFailure("save");
+      if (feed.connected) setFailure(true);
     } finally {
       inFlight.current = false;
       if (feed.connected) setPending(undefined);
-    }
-  }
-
-  async function openGuide() {
-    rememberFocus();
-    retry.current = () => void openGuide();
-    try {
-      await bridge.openVolumeGuide();
-      if (feed.connected) setFailure(undefined);
-    } catch {
-      if (feed.connected) setFailure("guide");
     }
   }
 
@@ -76,7 +65,6 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
           bridge={bridge}
           pending={pending}
           save={save}
-          openGuide={openGuide}
         />
       ) : (
         <p role="status">Loading recording settings…</p>
@@ -87,20 +75,12 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
         </span>
       )}
       <ErrorDialog
-        open={!!failure}
-        title={
-          failure === "guide"
-            ? "Couldn’t open the setup guide"
-            : "Couldn’t confirm the recording preference"
-        }
-        description={
-          failure === "save"
-            ? "Check the current value before trying again."
-            : "Try again to reconnect to Settings."
-        }
+        open={failure}
+        title="Couldn’t confirm the recording preference"
+        description="Check the current value before trying again."
         recoveryLabel="Try again"
         onRecover={() => retry.current()}
-        onClose={() => setFailure(undefined)}
+        onClose={() => setFailure(false)}
         busy={!!pending}
         restoreFocus={() => focused.current?.focus()}
       />

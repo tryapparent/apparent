@@ -11,7 +11,6 @@ SCRIPTS = (
     "capture/desktop/scripts/release/setup-sparkle.sh",
     "capture/desktop/scripts/linux/appimage/appimage.sh",
     "capture/desktop/scripts/linux/appimage/smoke-cpu.sh",
-    "capture/desktop/scripts/linux/maintenance/build-playback.sh",
     "capture/desktop/scripts/support/check-ca-roots.sh",
 )
 
@@ -39,10 +38,6 @@ SOURCES = {
         "capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh",
     ),
     "capture/desktop/scripts/linux/appimage/smoke-cpu.sh": ("Cargo.toml",),
-    "capture/desktop/scripts/linux/maintenance/build-playback.sh": (
-        "capture/desktop/linux/playback/plugin.c",
-        "capture/desktop/linux/playback/helper.c",
-    ),
     "capture/desktop/scripts/support/check-ca-roots.sh": ("Cargo.lock",),
 }
 

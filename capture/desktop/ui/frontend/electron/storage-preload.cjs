@@ -117,7 +117,6 @@ contextBridge.exposeInMainWorld('apparentRecording', Object.freeze({
   subscribeLevel: callback => recordingSubscription('apparent:recording-level', callback),
   setMeterVisible: visible => ipcRenderer.invoke('apparent:recording-meter', visible),
   save: change => ipcRenderer.invoke('apparent:recording-save', change),
-  openVolumeGuide: () => ipcRenderer.invoke('apparent:recording-volume-guide'),
 }));
 
 contextBridge.exposeInMainWorld('apparentPermissions', Object.freeze({

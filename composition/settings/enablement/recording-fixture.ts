@@ -119,9 +119,7 @@ export function recordingFixture(send: (message: object) => void) {
       command: null,
     },
     speech: { state: "ready", progress: 1 },
-    lowerPlayback: false,
-    playbackLevel: 20,
-    playbackAvailable: false,
+    playback: null,
     videoExport: false,
     mediaWarnings: [],
   };
@@ -143,8 +141,7 @@ export function recordingFixture(send: (message: object) => void) {
     },
     mac() {
       state.platform = "macos";
-      state.playbackAvailable = true;
-      state.lowerPlayback = true;
+      state.playback = { enabled: true, level: 20 };
       state.speech = {
         state: "downloading",
         locale: "en_US",

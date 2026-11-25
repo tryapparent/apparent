@@ -222,7 +222,6 @@ fn watch_desktop_tooling() {
         "capture/desktop/scripts/packaging/install-app-remote.sh",
         "capture/desktop/scripts/packaging/install-app.sh",
         "capture/desktop/scripts/linux/appimage/appimage.sh",
-        "capture/desktop/scripts/linux/maintenance/build-playback.sh",
         "capture/desktop/scripts/linux/gui/capture-smoke.py",
         "capture/desktop/scripts/linux/appimage/check-appimage-decoder.sh",
         "capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh",
