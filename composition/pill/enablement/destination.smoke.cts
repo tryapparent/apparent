@@ -84,14 +84,14 @@ test("real pill keeps Paste by default, then selects during processing and dispa
           const r = document.querySelector("main")!.getBoundingClientRect();
           return (
             innerWidth === Math.ceil(r.width) &&
-            innerHeight === Math.max(58, Math.ceil(r.height))
+            innerHeight >= Math.max(58, Math.ceil(r.height))
           );
         }),
       )
       .toBe(true);
     if (process.env.APPARENT_T3_PROOF) {
       await fs.mkdir(process.env.APPARENT_T3_PROOF, { recursive: true });
-      await page.screenshot({
+      await page.locator("main").screenshot({
         path: path.join(process.env.APPARENT_T3_PROOF, name + ".png"),
       });
     }
@@ -185,19 +185,8 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   await publish();
   if (pickerWindow) page = await pickerWindow;
   if (pickerWindow) {
-    const replacementWindowId = await app.evaluate(
-      ({ BrowserWindow }, initialId) =>
-        Number(
-          BrowserWindow.getAllWindows()
-            .find(
-              (w) => Number(w.getMediaSourceId().split(":")[1]) !== initialId,
-            )
-            .getMediaSourceId()
-            .split(":")[1],
-        ),
-      initialWindowId,
-    );
-    await expect.poll(() => readyIds.includes(replacementWindowId)).toBe(true);
+    await expect.poll(() => readyIds.length).toBe(2);
+    const replacementWindowId = readyIds[1];
     await activate(initialWindowId);
     assert.equal(
       await app.evaluate(
@@ -215,6 +204,13 @@ test("real pill keeps Paste by default, then selects during processing and dispa
         (w) => Number(w.getMediaSourceId().split(":")[1]) === id,
       );
       const focus = picker.focus.bind(picker);
+      const show = picker.show.bind(picker);
+      picker.show = () => {
+        picker.overlapped = BrowserWindow.getAllWindows().some(
+          (w) => w !== picker && w.isVisible(),
+        );
+        show();
+      };
       picker.focus = () => {
         if (!picker.isVisible()) throw Error("Focus before native admission");
         focus();
@@ -222,6 +218,13 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     }, replacementWindowId);
     await page.evaluate(() => window.apparentPill.destinationFocus(true));
     await activate(replacementWindowId);
+    assert.equal(
+      await app.evaluate(
+        ({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.overlapped,
+      ),
+      false,
+      "the replacement maps after the outgoing window is hidden",
+    );
     holdActivation = false;
     await expect.poll(() => oldPage.isClosed()).toBe(true);
   }
@@ -424,38 +427,18 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     });
     await page.keyboard.press("Escape");
     await expect
-      .poll(async () => {
-        const height = await app.evaluate(
-            ({ BrowserWindow }) =>
-              BrowserWindow.getAllWindows()[0].getBounds().height,
-          ),
-          body = await page.locator("main").boundingBox();
-        return (
-          !!body &&
-          height >= body.height &&
-          height <= Math.ceil(body.height) + 3
-        );
-      })
-      .toBe(true);
-    await trigger.focus();
+      .poll(() => page.evaluate(() => window.__pickerFrames.length))
+      .toBeGreaterThan(0);
+    assert.ok(
+      (await app.evaluate(
+        ({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0].getBounds().height,
+      )) > 160,
+      "the expanded native bounds survive a pending collapse",
+    );
+    await expect(trigger).toBeFocused();
     await page.keyboard.press("ArrowDown");
     await expect(options).toHaveCount(6);
-    await expect
-      .poll(() =>
-        app.evaluate(
-          ({ BrowserWindow }) =>
-            BrowserWindow.getAllWindows()[0].getBounds().height,
-        ),
-      )
-      .toBeGreaterThan(160);
-    assert.equal(
-      await app.evaluate(({ BrowserWindow }) =>
-        BrowserWindow.getAllWindows()[0].__pickerShapes.every(
-          (shape) => shape.length === 1,
-        ),
-      ),
-      true,
-    );
     await page.evaluate(async (revision) => {
       for (let i = 0; i < 8; i++) {
         for (const callback of window.__pickerFrames.splice(0))
@@ -474,11 +457,22 @@ test("real pill keeps Paste by default, then selects during processing and dispa
           .map((shape) => Math.max(...shape.map((r) => r.y + r.height))),
       };
     });
-    assert.ok(masks.rounded.length > 0);
-    assert.ok(
-      masks.rounded.every((height) => Math.abs(height - masks.height) <= 2),
-      "only the current list size may restore the rounded mask, allowing X11 fractional-DPI rounding",
-    );
+    assert.ok(masks.height > 160);
+    assert.ok(masks.rounded.every((h) => Math.abs(h - masks.height) <= 2));
+    const expandedHeight = await page.evaluate(() => innerHeight);
+    await page.keyboard.press("Escape");
+    await expect(trigger).toBeFocused();
+    await expect
+      .poll(() =>
+        app.evaluate(({ BrowserWindow }) => {
+          const shape = BrowserWindow.getAllWindows()[0].__pickerShapes.at(-1);
+          return shape
+            ? Math.max(...shape.map((r) => r.y + r.height))
+            : Infinity;
+        }),
+      )
+      .toBeLessThan(60);
+    assert.equal(await page.evaluate(() => innerHeight), expandedHeight);
   }
   assert.equal(
     await page.evaluate(async () => {

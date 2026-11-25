@@ -14,7 +14,9 @@
       },
       "expectedEvidence": [
         "The admitted window and destination control receive keyboard focus. Down opens thread search, Escape restores focus to the collapsed control, and Down or typing can open it again.",
-        "The Linux replacement stays hidden until its exact window ID is activated by the parent."
+        "The Linux replacement stays hidden until its exact window ID is activated by the parent, and the outgoing window is hidden before the replacement shows.",
+        "With the outer viewport constrained during expansion, Down moves the option selection without scrolling the pill header out of view.",
+        "A visible Hyprland picker keeps its native height and updates its input shape after the collapsed layout paints. Reopening before paint discards the stale shape."
       ],
       "limits": [
         "The smoke test runs the production Electron host and renderer with a synthetic native parent. A real capture and compositor-specific focus require native verification."
