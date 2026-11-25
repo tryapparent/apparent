@@ -239,12 +239,13 @@ type Share is Data:
 type Surface is Data:
   HiddenSurface{}
   PickerSurface{mode: Mode, can_record: Bool, phone: Bool}
+  StartingSurface{}
   RecordingSurface{no_words: Bool, notes: U32, movable: Bool, finish_primary: Bool}
   ProcessingSurface{}
   CompletedSurface{paste: Bool, inspect: Bool, share: Share, copy: Copy, audio_problem: Bool}
 
 type Facts is Data:
-  Facts{phone: Bool, no_words: Bool, note_count: U32, movable: Bool, paste: Bool, inspect: Bool, sharing_enabled: Bool, sharing_online: Bool, microphone_problem: Bool, audio_problem: Bool}
+  Facts{phone: Bool, no_words: Bool, note_count: U32, movable: Bool, paste: Bool, inspect: Bool, sharing_enabled: Bool, sharing_online: Bool, microphone_problem: Bool, audio_problem: Bool, screen_starting: Bool}
 
 def share_control(enabled: Bool, uploading: Bool, retry: Bool, available: Bool) -> Share:
   match enabled:
@@ -291,13 +292,15 @@ def recording_surface(+no_words: Bool, notes: U32, movable: Bool, microphone_pro
 
 def present(phase: Phase, facts: Facts) -> Surface:
   match phase facts:
-    case Selecting{+mode} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
+    case Selecting{+mode} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem, screen_starting}:
       PickerSurface{mode, can_record(mode), phone}
-    case Recording{reveal} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
-      recording_surface(no_words, note_count, movable, microphone_problem)
-    case Processing{released} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
+    case Recording{reveal} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem, screen_starting}:
+      match screen_starting:
+        case True{}: StartingSurface{}
+        case False{}: recording_surface(no_words, note_count, movable, microphone_problem)
+    case Processing{released} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem, screen_starting}:
       ProcessingSurface{}
-    case Completed{result} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem}:
+    case Completed{result} Facts{phone, no_words, note_count, movable, paste, inspect, enabled, online, microphone_problem, audio_problem, screen_starting}:
       completed_surface(result, paste, inspect, enabled, online, audio_problem)
     case other rest:
       HiddenSurface{}

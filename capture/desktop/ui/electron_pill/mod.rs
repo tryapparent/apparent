@@ -3,9 +3,7 @@ mod coordinator;
 mod session;
 #[cfg(target_os = "linux")]
 mod pin;
-use crate::capture::desktop::{
-    SelectionMode,
-};
+use crate::capture::desktop::SelectionMode;
 use anyhow::{Context as _, Result};
 use crate::embedded_policy::EmbeddedPolicy;
 pub(crate) use crate::capture::desktop::PillAction;
@@ -109,6 +107,7 @@ pub(crate) struct Facts {
     pub(crate) audio_issue: Option<&'static str>,
     pub(crate) microphone_problem: bool,
     pub(crate) audio_problem: bool,
+    pub(crate) screen_starting: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

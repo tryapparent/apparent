@@ -170,3 +170,17 @@ test("warning accents are selected by producer facts without consulting copy", (
     false,
   );
 });
+
+test("pending screen startup reserves the live controls and only enables Cancel", () => {
+  const { send, present } = create();
+  send("CaptureStarted", 0);
+  const pending = present({ screenStarting: true });
+  const live = present();
+  assert.equal(pending.phase, live.phase);
+  assert.equal(pending.label, "Starting recording…");
+  assert.deepEqual(pending.actions.map(({ id }) => id), live.actions.map(({ id }) => id));
+  assert.deepEqual(pending.actions.filter(({ enabled }) => enabled).map(({ id }) => id), ["cancel"]);
+  assert.equal(live.actions.find(({ id }) => id === "finish")?.enabled, true);
+  send("CaptureFailed", 1);
+  assert.equal(present().phase, "hidden");
+});
