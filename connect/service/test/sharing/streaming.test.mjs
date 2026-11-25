@@ -4,6 +4,27 @@ import {createHash} from 'node:crypto';
 import {setTimeout as delay} from 'node:timers/promises';
 import {fixture,id,file} from '../helpers.mjs';
 
+test('upload target distinguishes invalid or unlisted files only for the owner', async()=>{
+ const f=await fixture();try {
+  const owner=await f.identity('owner'),other=await f.identity('other'),p='/v1/captures/'+id(203);
+  assert.equal((await f.call(p,{token:owner.token,method:'POST',body:{files:[file()]}})).status,200);
+  const put=(token,path)=>f.call(`${p}/files/${path}`,{token,method:'PUT',raw:'hello'});
+  for(const [token,path,status,code] of [
+   [other.token,'summary.md',404,'not_found'],
+   [other.token,'frames%2Fframe-1.png',404,'not_found'],
+   [owner.token,'frames%2Fframe-1.png',400,'invalid_path'],
+   [owner.token,'frames/frame-1.png',404,'not_found'],
+  ]) {
+   const result=await put(token,path);
+   assert.equal(result.status,status);
+   assert.equal((await result.json()).error.code,code);
+  }
+  assert.equal((await f.db.prepare('SELECT count(*) AS n FROM attempts').first()).n,0);
+  assert.equal((await put(owner.token,'summary.md')).status,200);
+  assert.equal((await f.call(p+'/complete',{token:owner.token,method:'POST'})).status,200);
+ }finally{await f.close();}
+});
+
 test('90MB real streaming upload fits v1 bound without whole-file Worker buffering',async()=>{
  const f=await fixture();try{
  const a=await f.identity('a'),p='/v1/captures/'+id(200),size=90000000,chunk=new Uint8Array(65536).fill(19),h=createHash('sha256');

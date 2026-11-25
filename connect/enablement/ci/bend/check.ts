@@ -47,6 +47,23 @@ await bendScratch(async (scratch) => {
       directory,
     );
     assert.deepEqual(JSON.parse(style), [12, 1024, true, false, false, false]);
+    const uploadTarget = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./upload-target.mjs";
+      const values = [false, true];
+      console.log(JSON.stringify(values.flatMap(path => values.map(listed => policy.problem(path, listed)))));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(uploadTarget), [
+      "invalid_path",
+      "invalid_path",
+      "not_found",
+      "",
+    ]);
     const list = run(
       process.execPath,
       [

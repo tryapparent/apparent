@@ -125,10 +125,10 @@ test('PUT success, duplicate, checksum failure, cap denial and lost-publication 
  const upload=raw=>f.call(p+'/files/summary.md',{token:a.token,method:'PUT',raw});
  const first=await upload('hello');
  console.log('PUT first/lost publication:',first.status,first.headers.get('X-Test-SQL'),first.headers.get('X-Test-R2'));
- assert.equal(first.status,tombstone?404:200);assert.equal(Number(first.headers.get('X-Test-SQL')),tombstone?12:7);assert.equal(Number(first.headers.get('X-Test-R2')),tombstone?3:1);
+ assert.equal(first.status,tombstone?404:200);assert.equal(Number(first.headers.get('X-Test-SQL')),tombstone?11:6);assert.equal(Number(first.headers.get('X-Test-R2')),tombstone?3:1);
  if(!tombstone){
-  for(const [raw,status,sql] of [['hello',200,9],['wrong',400,8]]){const r=await upload(raw);console.log('PUT retry:',r.status,r.headers.get('X-Test-SQL'),r.headers.get('X-Test-R2'));assert.equal(r.status,status);assert.equal(Number(r.headers.get('X-Test-SQL')),sql);assert.equal(Number(r.headers.get('X-Test-R2')),2);}
-  await f.db.prepare('UPDATE r2_budget SET a_cap=a_used').run();const r=await upload('hello');assert.equal(r.status,503);assert.equal(Number(r.headers.get('X-Test-SQL')),6);assert.equal(Number(r.headers.get('X-Test-R2')),0);
+  for(const [raw,status,sql] of [['hello',200,8],['wrong',400,7]]){const r=await upload(raw);console.log('PUT retry:',r.status,r.headers.get('X-Test-SQL'),r.headers.get('X-Test-R2'));assert.equal(r.status,status);assert.equal(Number(r.headers.get('X-Test-SQL')),sql);assert.equal(Number(r.headers.get('X-Test-R2')),2);}
+  await f.db.prepare('UPDATE r2_budget SET a_cap=a_used').run();const r=await upload('hello');assert.equal(r.status,503);assert.equal(Number(r.headers.get('X-Test-SQL')),5);assert.equal(Number(r.headers.get('X-Test-R2')),0);
  }
  }finally{await f.close();}
  }

@@ -1,21 +1,11 @@
 import {live,privateReservation,recordingTime,styleHistory} from './captures/history.ts';
 import reportPolicy from '#bend/report-policy';
+import {allowedPath,decodeFilePath,groupedDelivery,supportPath,transportPath,uploadTarget} from './captures/file-target.ts';
 import {FILE_FORMAT,fileTransport} from '../../client/typescript/contracts.ts';
 import type {Env, CaptureRow, FileRow, ManifestFile, AttemptSnapshot} from './types.ts';
 import {DAY,hex,json,fail,stmt,body,bearer,usage,isRecord,supportCapture} from './common.ts';
 import {checkedHeads,getObject,uploadAttempt,settledAttempt,deleteAttempts} from './storage.ts';
 import {queueDailyActivity} from './reporting/aggregate-dau.ts';
-const supportPath=/^support\/part-[0-5]\.age$/;
-export function validPath(path: unknown): path is string {
- return typeof path==='string'&&path.length<=128&&/^(apparent\.json|notes\.json|summary\.md|contact-sheet(?:-full)?\.png|audio\.wav|recording\.(mp4|mov)|finish-trace\.json|timeline\.json|frames(?:-full)?\/frame-[0-9]+\.png)$/.test(path);
-}
-function transportPath(path:unknown,format:CaptureRow['format'],grouped=false): path is string {
- if(format==='plaintext-v1')return validPath(path);
- if(format===FILE_FORMAT)return typeof path==='string'&&(path==='envelope.json'||/^sealed\/(index|file-[0-9]{6})\.age$/.test(path));
- if(typeof path!=='string')return false;
- return grouped?/^(evidence|media)\/(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path):/^(envelope\.json|sealed\/part-[0-9]{6}\.age)$/.test(path);
-}
-function groupedDelivery(c:CaptureRow) {return c.format==='apparent-encrypted-v1'&&(JSON.parse(c.manifest) as ManifestFile[]).some(f=>f.path==='evidence/envelope.json');}
 export async function evidenceReady(env:Env,c:CaptureRow) {
  if(c.status==='ready')return true;
  const row=await stmt(env,"SELECT count(*) total,sum(CASE WHEN object_key IS NULL THEN 1 ELSE 0 END) missing FROM files WHERE capture_id=? AND path LIKE 'evidence/%'",c.id).first<{total:number;missing:number}>();
@@ -94,7 +84,8 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   // Tombstone is authoritative; cron retries any failed or late object removal.
   return json({ok:true});
  }
- const c=await owned();
+ const target=encoded&&method==='PUT'?await uploadTarget(env,id,a.account_id,support,decodeFilePath(encoded)):null;
+ const c=target?.capture??await owned();
  if(action==='style-history'&&method==='GET')return styleHistory(env,c,support,owned);
  if(!action&&method==='GET')return json({...await info(env,c),...(c.style_history===1?{styleHistory:true}:{}),files:JSON.parse(c.manifest)});
  if(action==='complete'&&method==='POST') {
@@ -107,9 +98,9 @@ export async function captureRoutes(request: Request,env: Env,url: URL,context?:
   const ready=await owned();if(ready.status!=='ready')fail('not_ready',409);return json(await info(env,ready));
  }
  if(encoded) {
-  let path;try {path=encoded.split('/').map(segment=>{const decoded=decodeURIComponent(segment);if(decoded.includes('/')||decoded.includes('\\'))fail('invalid_path');return decoded;}).join('/');}catch{fail('invalid_path');}
-  if(!(support?supportPath.test(path):transportPath(path,c.format,groupedDelivery(c))))fail('invalid_path');
-  const f=await stmt(env,'SELECT * FROM files WHERE capture_id=? AND path=?',id,path).first<FileRow>();if(!f)fail('not_found',404);
+  const path=target?.file.path??decodeFilePath(encoded);
+  if(!target&&!allowedPath(path,c,support))fail('invalid_path');
+  const f=target?.file??await stmt(env,'SELECT * FROM files WHERE capture_id=? AND path=?',id,path).first<FileRow>();if(!f)fail('not_found',404);
   if(method==='GET') {
    if(c.status!=='ready'&&!(groupedDelivery(c)&&path.startsWith('evidence/')&&await evidenceReady(env,c)))fail('not_ready',409);
    const object=await getObject(env,f.object_key);if(!object)fail('not_found',404);
