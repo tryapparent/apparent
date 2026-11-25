@@ -3,6 +3,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
+import { locate } from "../local/attempt.ts";
 import {
   apt,
   command,
@@ -11,6 +12,7 @@ import {
   json,
   openJob,
   receipt,
+  sha256,
   stageRevision,
   stealSince,
 } from "./job.ts";
@@ -27,7 +29,7 @@ apt(
   "libasound2t64",
 );
 
-function build(checkout: string, revision: string, name: string) {
+async function build(checkout: string, revision: string, name: string) {
   const tree = stageRevision(checkout, revision, job, name);
   const desktop = join(tree, "capture/desktop/ui/frontend");
   const options = { cwd: desktop, env: job.env };
@@ -37,23 +39,31 @@ function build(checkout: string, revision: string, name: string) {
     options,
   );
   command(process.execPath, ["node_modules/electron/install.js"], options);
-  accessSync(
-    join(desktop, "node_modules/electron/dist/electron"),
-    constants.X_OK,
-  );
   command("npm", ["run", "build"], options);
+  const { runtime, host, renderer } = locate(desktop);
+  accessSync(runtime, constants.X_OK);
+  receipt(join(job.evidence, name + "-build.json"), {
+    revision,
+    runtimeSha256: await sha256(runtime),
+    hostSha256: await sha256(host),
+    rendererEntrySha256: await sha256(renderer),
+  });
   return desktop;
 }
 
-const control = build(job.control, job.revisions.control, "control");
+const control = await build(job.control, job.revisions.control, "control");
 const candidate = job.calibrationOnly
   ? undefined
-  : build(job.candidate, job.revisions.candidate, "candidate");
+  : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
 async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
-  await waitForQuietStart(AbortSignal.timeout(46_000));
+  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
+    "cpu",
+    "io",
+  ]);
+  receipt(join(job.evidence, phase + "-quiet.json"), { windows: quiet });
   const host = hostCounters();
   const before = cpuSample();
   let failure: unknown;
