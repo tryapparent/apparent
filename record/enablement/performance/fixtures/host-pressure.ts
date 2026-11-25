@@ -4,12 +4,16 @@ import { setTimeout as delay } from "node:timers/promises";
 
 type PressureResource = "cpu" | "io";
 
-function pressureUs(resource: PressureResource) {
-  const sample = /^some .*\btotal=(\d+)$/m.exec(
-    readFileSync("/proc/pressure/" + resource, "utf8"),
-  );
-  assert.ok(sample, "Linux " + resource + " pressure counters are required");
+export const quietPressureLimitPercent = 3;
+
+export function pressureTotalUs(counters: string) {
+  const sample = /^some .*\btotal=(\d+)$/m.exec(counters);
+  assert.ok(sample, "Linux pressure counters are required");
   return Number(sample[1]);
+}
+
+function pressureUs(resource: PressureResource) {
+  return pressureTotalUs(readFileSync("/proc/pressure/" + resource, "utf8"));
 }
 
 export function schedulerPressureUs() {
@@ -32,7 +36,11 @@ export async function waitForQuietStart(
       resource,
       percent: (current[index] - pressure[index]) / elapsed,
     }));
-    if (window.every(({ percent }) => percent >= 0 && percent <= 3)) {
+    if (
+      window.every(
+        ({ percent }) => percent >= 0 && percent <= quietPressureLimitPercent,
+      )
+    ) {
       quiet.push(window);
       if (quiet.length === 3) return quiet;
     } else quiet = [];

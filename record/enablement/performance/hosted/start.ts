@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { accessSync, constants, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { waitForQuietStart } from "../fixtures/host-pressure.ts";
+import {
+  pressureTotalUs,
+  quietPressureLimitPercent,
+  waitForQuietStart,
+} from "../fixtures/host-pressure.ts";
 import { locate } from "../local/attempt.ts";
 import {
   apt,
@@ -57,22 +61,63 @@ const candidate = job.calibrationOnly
   : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
-function prepare(output: string, desktop: string) {
+function prepareAttempt(output: string, desktop: string) {
   const before = hostCounters();
+  const started = performance.now();
   try {
     command(process.execPath, [runner, "--prepare", desktop, output], {
       env: job.env,
     });
   } finally {
-    receipt(output + "-runner.json", { before, after: hostCounters() });
+    const after = hostCounters();
+    const elapsedMs = performance.now() - started;
+    const ioPressurePercent =
+      (pressureTotalUs(after.pressure.io) -
+        pressureTotalUs(before.pressure.io)) /
+      (elapsedMs * 10);
+    receipt(output + "-runner.json", {
+      before,
+      after,
+      elapsedMs,
+      ioPressurePercent,
+    });
+  }
+}
+
+async function prepare(output: string, desktop: string) {
+  await waitForQuietStart(AbortSignal.timeout(46_000), ["cpu", "io"]);
+  try {
+    prepareAttempt(output, desktop);
+  } catch (error) {
+    const failed = join(output, "cold", "failure.json");
+    if (!existsSync(failed)) throw error;
+    const failure = json(failed);
+    const { ioPressurePercent } = json(output + "-runner.json");
+    if (
+      failure.probe !== "prepare" ||
+      failure.visibleMarkerObserved !== false ||
+      failure.replyTimeline.length !== 0 ||
+      !(ioPressurePercent > quietPressureLimitPercent)
+    ) {
+      throw error;
+    }
+    console.error(
+      "Start preparation did not receive readiness during runner I/O pressure",
+      error,
+    );
+    const windows = await waitForQuietStart(AbortSignal.timeout(46_000), [
+      "cpu",
+      "io",
+    ]);
+    receipt(output + "-recovery-quiet.json", { windows, ioPressurePercent });
+    prepareAttempt(output + "-recovery", desktop);
   }
 }
 
 async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
-  await waitForQuietStart(AbortSignal.timeout(46_000), ["cpu", "io"]);
-  prepare(output + "-prepare-control", control);
-  if (other) prepare(output + "-prepare-candidate", other);
+  await prepare(output + "-prepare-control", control);
+  if (other) await prepare(output + "-prepare-candidate", other);
   const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
     "cpu",
     "io",
