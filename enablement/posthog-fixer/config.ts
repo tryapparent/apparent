@@ -2,6 +2,7 @@ import {readFileSync, lstatSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 
 export type Config = {
+  spikePolicyPath?: string;
   support?: { executable: string; tokenFile: string; keyFile: string; agentUid: number };
   projectId: number; t3ProjectId: string; t3Origin: string; t3TokenFile: string;
   webhookTokenFile: string; stateDirectory: string; posthogCommand: string;
@@ -46,7 +47,8 @@ export function config(env: NodeJS.ProcessEnv): Config {
     throw Error('The support reader and its coding agent require separate non-root Linux accounts');
   const queueLimit = integer('QUEUE_LIMIT', 100, 1000);
   const maxBatchSize = Math.min(3, queueLimit);
-  return {support, projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
+  return {support, spikePolicyPath: env.SPIKE_POLICY_PATH ? path('SPIKE_POLICY_PATH') : undefined,
+    projectId: integer('POSTHOG_PROJECT_ID', 329943, 2147483647), t3ProjectId: required('T3_PROJECT_ID'),
     t3Origin: t3Origin.origin, posthogOrigin, t3TokenFile: path('T3_TOKEN_FILE'), webhookTokenFile: path('WEBHOOK_TOKEN_FILE'),
     stateDirectory: path('STATE_DIRECTORY'), posthogCommand: path('POSTHOG_COMMAND'),
     port: integer('PORT', 8646, 65535), dailyLimit: integer('DAILY_LIMIT', 10, 100), queueLimit,

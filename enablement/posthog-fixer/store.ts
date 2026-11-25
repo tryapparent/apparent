@@ -1,10 +1,15 @@
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync, lstatSync, chmodSync} from 'node:fs';
 import {join} from 'node:path';
-import {createHash} from 'node:crypto';
+import {createHash, randomUUID} from 'node:crypto';
+import type {Spike, SpikePolicy} from './spikes/policy.ts';
 
 export type Job = {issue: string; thread: string; command: string; state: 'queued' | 'launching' | 'active' | 'done' | 'held';
-  payload: string | null; attempts: number; next_at: number; reserved_at: number | null; batch_thread: string | null};
+  payload: string | null; attempts: number; next_at: number; reserved_at: number | null; batch_thread: string | null; spike: Spike | null};
+type StoredJob = Omit<Job, 'spike'> & {spike: string | null};
+function decode(row: StoredJob): Job {
+  return {...row, spike: row.spike === null ? null : JSON.parse(row.spike)};
+}
 export type SupportAccess = {report: string; digest: string; expiresAt: number};
 export class Store {
   db!: DatabaseSync;
@@ -31,12 +36,15 @@ export class Store {
       const existing = this.db.prepare('SELECT identity FROM metadata').get();
       if (existing && existing.identity !== identity) throw Error('Queue belongs to a different target; use a separate state directory');
       if (!existing) this.db.prepare('INSERT INTO metadata VALUES (?)').run(identity);
-      if (!this.db.prepare('PRAGMA table_info(jobs)').all().some(column => column.name === 'batch_thread'))
+      const columns = this.db.prepare('PRAGMA table_info(jobs)').all().map(column => column.name);
+      if (!columns.includes('batch_thread'))
         this.db.exec('ALTER TABLE jobs ADD COLUMN batch_thread TEXT');
+      if (!columns.includes('spike')) this.db.exec('ALTER TABLE jobs ADD COLUMN spike TEXT');
+      this.db.exec('CREATE TABLE IF NOT EXISTS spike_hot (issue TEXT PRIMARY KEY)');
     } catch (error) {if (this.db?.isOpen) this.db.close(); this.lock.close(); throw error;}
   }
   enqueue(issue: string, limit: number): 'accepted' | 'duplicate' | 'full' {
-    if (this.db.prepare('SELECT 1 FROM jobs WHERE issue=?').get(issue)) return 'duplicate';
+    if (this.db.prepare("SELECT 1 FROM jobs WHERE issue=? OR json_extract(spike,'$.issue')=?").get(issue, issue)) return 'duplicate';
     const count = this.db.prepare("SELECT count(*) AS n FROM jobs WHERE state != 'done'").get()!.n as number;
     if (count >= limit) return 'full';
     const identity = this.db.prepare('SELECT identity FROM metadata').get()!.identity;
@@ -45,15 +53,48 @@ export class Store {
     this.db.prepare("INSERT INTO jobs(issue,thread,command,state) VALUES (?,?,?,'queued')").run(issue, id, `posthog-${id}`);
     return 'accepted';
   }
-  jobs(): Job[] {return this.db.prepare('SELECT * FROM jobs ORDER BY rowid').all() as Job[];}
+  jobs(): Job[] {return (this.db.prepare('SELECT * FROM jobs ORDER BY rowid').all() as StoredJob[]).map(decode);}
   nextLaunch(now: number, limit: number, batchSize: number): Job[] {
     const retry = this.db.prepare(`SELECT * FROM jobs WHERE state='launching' AND batch_thread IS NULL
-      AND next_at<=? ORDER BY rowid LIMIT 1`).get(now) as Job | undefined;
-    if (retry) return [retry];
+      AND next_at<=? ORDER BY rowid LIMIT 1`).get(now) as StoredJob | undefined;
+    if (retry) return [decode(retry)];
     if (this.dailyCount(now) >= limit) return [];
-    const jobs = this.db.prepare("SELECT * FROM jobs WHERE state='queued' AND next_at<=? ORDER BY rowid LIMIT ?")
-      .all(now, batchSize) as Job[];
-    return jobs.length === batchSize ? jobs : [];
+    const spike = this.db.prepare("SELECT * FROM jobs WHERE state='queued' AND next_at<=? AND spike IS NOT NULL ORDER BY rowid LIMIT 1")
+      .get(now) as StoredJob | undefined;
+    if (spike) return [decode(spike)];
+    const jobs = this.db.prepare("SELECT * FROM jobs WHERE state='queued' AND next_at<=? AND spike IS NULL ORDER BY rowid LIMIT ?")
+      .all(now, batchSize) as StoredJob[];
+    return jobs.length === batchSize ? jobs.map(decode) : [];
+  }
+  recordSpikes(spikes: Spike[], queueLimit: number, policy: SpikePolicy): void {
+    this.db.exec('BEGIN');
+    try {
+      const hot = new Set(this.db.prepare('SELECT issue FROM spike_hot').all().map(row => row.issue));
+      this.db.exec('DELETE FROM spike_hot');
+      const mark = this.db.prepare('INSERT INTO spike_hot VALUES (?)');
+      const prior = this.db.prepare("SELECT max(reserved_at) AS last FROM jobs WHERE json_extract(spike,'$.issue')=?");
+      const outstanding = this.db.prepare(`SELECT issue,state,spike FROM jobs
+        WHERE state!='done' AND (issue=? OR json_extract(spike,'$.issue')=?) LIMIT 1`);
+      const promote = this.db.prepare("UPDATE jobs SET spike=? WHERE issue=? AND state='queued' AND spike IS NULL");
+      const insert = this.db.prepare("INSERT INTO jobs(issue,thread,command,state,spike) VALUES (?,?,?,'queued',?)");
+      let count = Number(this.db.prepare("SELECT count(*) AS n FROM jobs WHERE state!='done'").get()!.n);
+      for (const spike of spikes) {
+        const last = prior.get(spike.issue)?.last as number | null;
+        const elapsed = last === null ? 86400 : Math.min(86400, Math.max(0, Math.floor((spike.observedAt - last) / 1000)));
+        if (policy.admits(hot.has(spike.issue), elapsed)) {
+          const existing = outstanding.get(spike.issue, spike.issue);
+          if (existing?.state === 'queued' && existing.spike === null) {
+            promote.run(JSON.stringify(spike), spike.issue);
+          } else if (!existing && count < queueLimit) {
+            const id = randomUUID();
+            insert.run(id, id, `posthog-${id}`, JSON.stringify(spike));
+            count++;
+          }
+        }
+        mark.run(spike.issue);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {this.db.exec('ROLLBACK'); throw error;}
   }
   reserve(jobs: Job[], payload: string, now: number, grants: Map<string, SupportAccess>): void {
     const [leader] = jobs;

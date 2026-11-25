@@ -5,6 +5,7 @@ import {T3} from './t3.ts';
 import {Worker, contextReader} from './worker.ts';
 import {server} from './http.ts';
 import {activatedSupportFd, supportServer} from './support/socket.ts';
+import {spikeScanner} from './spikes/scan.ts';
 
 async function main() {
   process.umask(0o077);
@@ -13,7 +14,10 @@ async function main() {
   const supportFd = c.support && activatedSupportFd();
   const store = new Store(c.stateDirectory, JSON.stringify({project: c.projectId, posthog: c.posthogOrigin, t3: c.t3Origin, projectId: c.t3ProjectId}));
   const t3 = new T3(c.t3Origin, c.t3TokenFile);
-  const worker = new Worker(store, c, {call: (tag, payload) => t3.call(tag, payload), context: contextReader(c)});
+  const shutdown = new AbortController();
+  const scan = await spikeScanner(c, store, shutdown.signal).catch(error => {store.close(); throw error;});
+  const worker = new Worker(store, c, {call: (tag, payload) => t3.call(tag, payload),
+    context: contextReader(c), scan, shutdown: shutdown.signal});
   const app = server(store, c);
   const support = supportFd === undefined ? undefined : supportServer(store, c);
   try {
@@ -30,7 +34,7 @@ async function main() {
     if (!stopping && !worker.busy) inFlight = worker.tick().catch(() => console.error('posthog-fixer: worker unavailable'));
   }, 5000);
   const stop = () => {
-    if (stopping) return; stopping = true; clearInterval(timer);
+    if (stopping) return; stopping = true; clearInterval(timer); shutdown.abort();
     const closed = [new Promise<void>(resolve => {app.close(() => resolve());})];
     if (support) closed.push(new Promise<void>(resolve => {support.close(() => resolve());}));
     void Promise.all([...closed, inFlight]).finally(() => {store.close();});
