@@ -3,7 +3,7 @@ use crate::embedded_policy::EmbeddedPolicy;
 mod handoff;
 #[path = "../../engine/native/agent_context/timeline.rs"]
 mod timeline;
-use handoff::{ContextLine, FrameText, WindowEvidence, line, window_near_mark};
+use handoff::{ContextLine, FrameText, WindowEvidence, line, stroke_suffix, window_near_mark};
 use timeline::handoff_frames;
 pub(crate) use handoff::{append_frame, audio_notice, frame_is_flagged};
 use crate::shared::model::*;
@@ -13,7 +13,7 @@ use crate::capture::engine::sketch::{
 
 pub(crate) fn clipboard_frame_hint() -> &'static str {
     if crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT) {
-        "\nUse apparent zoom for unidentified targets or visual details.\n"
+        "\nUse apparent zoom for visual details.\n"
     } else {
         "\nInspect relevant frames before edits.\n"
     }
@@ -104,7 +104,7 @@ impl MarkEntry<'_> {
         format!(
             "{frame} ✎{num} {} {} · {}",
             format_clock(self.mark.t0),
-            mark_text(self.mark),
+            mark_text(self.mark, &stroke_suffix(self.mark)),
             self.mark.id
         )
     }
@@ -121,7 +121,7 @@ impl MarkEntry<'_> {
             "shape": self.mark.shape,
             "on": self.mark.on,
             "strokes": self.mark.strokes.len(),
-            "text": mark_text(self.mark),
+            "text": mark_text(self.mark, &stroke_suffix(self.mark)),
             "frame": self.mark.frame,
         })
     }
@@ -413,7 +413,7 @@ fn event_text(event: &InteractionEvent) -> Option<String> {
 
 /// What a mark is: its shape, what it was drawn on when something names that, and its stroke
 /// count when more than one.
-fn mark_text(mark: &Mark) -> String {
+fn mark_text(mark: &Mark, suffix: &str) -> String {
     let mut text = match mark.shape {
         Shape::Circle => "circled".to_owned(),
         Shape::Underline => "underlined".to_owned(),
@@ -432,20 +432,12 @@ fn mark_text(mark: &Mark) -> String {
         });
         text.push_str(&on);
     }
-    text.push_str(&stroke_suffix(mark));
+    text.push_str(suffix);
     text
 }
 
 fn mark_target(mark: &Mark) -> Option<String> {
     mark.on.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(quote_label)
-}
-
-fn stroke_suffix(mark: &Mark) -> String {
-    if mark.strokes.len() > 1 {
-        format!(" ({} strokes)", mark.strokes.len())
-    } else {
-        String::new()
-    }
 }
 
 /// A keyframe's own description without its `(x 0.50, y 0.70)` positions.
@@ -545,7 +537,7 @@ fn action_line<'a>(policy: &EmbeddedPolicy, bundle: &'a ApparentBundle, timed: &
                 let target = mark_target(mark).unwrap_or_default();
                 line(policy, "Circle", t, &number, &target, &stroke_suffix(mark), compact)?
             } else {
-                line(policy, "Mark", t, &number, &mark_text(mark), "", compact)?
+                line(policy, "Mark", t, &number, &mark_text(mark, ""), &stroke_suffix(mark), compact)?
             };
             Some(ContextLine { text, window: WindowEvidence::action(bundle, nearby), page: *page })
         }
