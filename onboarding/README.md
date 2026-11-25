@@ -114,7 +114,9 @@ annotation, save and handoff actions. A completed practice recording and
 **Finish setup** commit the frog to the profile before it lands on the desktop.
 
 The red button appears on hover and starts apparent through the existing
-recording action. Drag to move the frog or double-click to hop. The frog
+recording action. Drag to move the frog or double-click to hop. Right-click it
+and choose **Quit for 1 hour** to hide it temporarily, including across an app
+restart. When the hour ends, it returns when recording and setup are idle. The frog
 pauses during capture and setup. Turning the experiment off hides it, and
 turning it back on restores a previously named and adopted frog. On restart
 the frog starts in the display corner again. Linux keeps its existing tour.

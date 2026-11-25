@@ -19,7 +19,8 @@ export function desktopFrogTable(directory: string) {
     console.log(JSON.stringify({
       naming: flags.flatMap(active => flags.flatMap(named => flags.map(revealed => policy.naming_stage(active, named, revealed)))),
       name: [0, 1, 23, 24, 25].flatMap(length => flags.map(control => policy.accept_name(control, length))),
-      visible: flags.flatMap(adopted => flags.map(unavailable => policy.desktop_visible(adopted, unavailable)))
+      visible: flags.flatMap(adopted => flags.map(unavailable => policy.desktop_visible(adopted, unavailable))),
+      pauseMs: policy.desktop_pause_ms()
     }));
   `,
     ],
