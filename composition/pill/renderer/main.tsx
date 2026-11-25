@@ -15,6 +15,7 @@ function Pill() {
   const {
     view,
     handoffLoaded,
+    documentReady,
     destination,
     background,
     receivedAt,
@@ -27,7 +28,7 @@ function Pill() {
   const showingDestination =
     !!destination && !!view && ["processing", "completed"].includes(view.phase);
   useLayoutEffect(() => {
-    if (!view || !handoffLoaded) return;
+    if (!view || !handoffLoaded || !documentReady) return;
     let active = true,
       last = "";
     const report = () => {
@@ -48,7 +49,13 @@ function Pill() {
       active = false;
       observer.disconnect();
     };
-  }, [view?.revision, view?.phase, showingDestination, handoffLoaded]);
+  }, [
+    view?.revision,
+    view?.phase,
+    showingDestination,
+    handoffLoaded,
+    documentReady,
+  ]);
   if (!view)
     return (
       <div role="status" className="pill connection">

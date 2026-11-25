@@ -1,4 +1,4 @@
-import type { PillBridge, PillView } from "./bridge";
+import type { PillBridge, PillUpdate, PillView } from "./bridge";
 import type { DestinationView } from "../../../handoff/pure/destinations.ts";
 import type { BackgroundHandoff } from "../../../record/pill/renderer/pill-view";
 
@@ -8,6 +8,7 @@ interface Snapshot {
   background: BackgroundHandoff | null;
   receivedAt: number;
   handoffLoaded: boolean;
+  documentReady: boolean;
   systemReduced: boolean;
   sharing: number | null;
   pending: boolean;
@@ -21,6 +22,7 @@ export function createPillSession(bridge: PillBridge | undefined) {
     background: null,
     receivedAt: 0,
     handoffLoaded: false,
+    documentReady: false,
     systemReduced: false,
     sharing: null,
     pending: false,
@@ -53,46 +55,25 @@ export function createPillSession(bridge: PillBridge | undefined) {
     }
   }
 
+  function apply({ view, ...snapshot }: PillUpdate) {
+    if (view && state.view && view.revision < state.view.revision) return;
+    const reset =
+      view && view.revision !== state.view?.revision
+        ? { pending: false, error: false, sharing: null }
+        : {};
+    update({
+      ...snapshot,
+      ...reset,
+      handoffLoaded: true,
+      ...(view ? { view, receivedAt: performance.now() } : {}),
+    });
+  }
+
+  bridge?.subscribe(apply, () => update({ error: true }));
+
   function subscribe(onChange: () => void) {
     if (!bridge) return () => {};
     notify = onChange;
-    let active = true;
-    function apply(view: PillView | null) {
-      if (
-        !active ||
-        !view ||
-        (state.view && view.revision < state.view.revision)
-      )
-        return;
-      const reset =
-        view.revision !== state.view?.revision
-          ? { pending: false, error: false, sharing: null }
-          : {};
-      update({ ...reset, view, receivedAt: performance.now() });
-    }
-    const unsubscribe = bridge.subscribe(apply);
-    const unsubscribeDestination = bridge.subscribeDestinations((destination) =>
-      update({ destination }),
-    );
-    const unsubscribeBackground = bridge.subscribeBackgroundHandoff?.(
-      (background) => update({ background }),
-    );
-    void bridge
-      .read()
-      .then(apply)
-      .catch(() => {
-        if (active) update({ error: true });
-      });
-    void Promise.allSettled([
-      bridge.destinations().then((destination) => {
-        if (active) update({ destination });
-      }),
-      bridge.backgroundHandoff?.().then((background) => {
-        if (active) update({ background });
-      }),
-    ]).then(() => {
-      if (active) update({ handoffLoaded: true });
-    });
 
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const updateMotion = () => update({ systemReduced: media.matches });
@@ -114,11 +95,7 @@ export function createPillSession(bridge: PillBridge | undefined) {
     }
     window.addEventListener("keydown", handleKey);
     return () => {
-      active = false;
       notify = undefined;
-      unsubscribe();
-      unsubscribeDestination();
-      unsubscribeBackground?.();
       media.removeEventListener("change", updateMotion);
       window.removeEventListener("keydown", handleKey);
     };

@@ -41,10 +41,10 @@ const destinations=require('./t3.cjs').createController(()=>{if(!staging&&!publi
   const view=destinations.view();
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);
-  window.webContents.send('pill:destinations',view);
-  window.webContents.send('pill:background-handoff',destinations.background());void measurePicker();
+  window.webContents.send('pill:update',handoffSnapshot(view));
+  if(current)void requestLayout(current.revision);
 }});
-async function measurePicker(){if(current)await requestLayout(current.revision);}
+const handoffSnapshot=(destination=destinations.view())=>({destination,background:destinations.background()});
 let requestLayout=async()=>{};
 const diagnostics=require('./diagnostics.cjs');
 function diagnosticSnapshot(){
@@ -100,11 +100,7 @@ function commitState(message, next, prepared){
   const update=prepared?Promise.resolve():destinations.update(capture,next.phase,message.t3Eligible===true);
   publishingState=false;
   if(loaded&&!reconcileKeyboardWindow(destinations.view())){
-    window.webContents.send('pill:state',current);
-    if(changedCapture){
-      window.webContents.send('pill:destinations',destinations.view());
-      window.webContents.send('pill:background-handoff',destinations.background());
-    }
+    window.webContents.send('pill:update',changedCapture?{view:current,...handoffSnapshot()}:{view:current});
     visibility();
   }
   void update.catch(()=>{});
@@ -115,7 +111,7 @@ function receiveState(message){
   if(typeof message.capture!=='string'||message.capture.length>=160){
     staging=null;
     publish(next);
-    if(loaded){window.webContents.send('pill:state',current);visibility();}
+    if(loaded){window.webContents.send('pill:update',{view:current});visibility();}
     return;
   }
   if(staging&&next.phase==='processing'&&next.revision===staging.next.revision&&message.capture===staging.message.capture){
@@ -197,11 +193,12 @@ app.whenReady().then(()=>{
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,reply)=>reply({cancel:!details.url.startsWith('file:')}));
   ipcMain.handle('pill:read',(event,...args)=>{valid(event,args);return current;});
+  const sendBootstrap=()=>window.webContents.send('pill:update',{view:current,...handoffSnapshot(),documentReady:loaded});
+  ipcMain.handle('pill:bootstrap',(event,...args)=>{valid(event,args);sendBootstrap();});
   ipcMain.handle('pill:retry-background-handoff',(event,key,...args)=>{
     valid(event,args);if(current?.phase!=='recording'||typeof key!=='string'||key.length>160)throw Error('Handoff unavailable');
     return destinations.retryBackground(key);
   });
-  ipcMain.handle('pill:background-handoff',(event,...args)=>{valid(event,args);return destinations.background();});
   ipcMain.handle('pill:destinations',(event,...args)=>{valid(event,args);return destinations.view();});
   ipcMain.handle('pill:destination-action',async(event,key,action,id,...args)=>{
     valid(event,args);if(sharingConfirmation!==null||pending||key!==capture||!['processing','completed'].includes(current?.phase))throw Error('Recording changed');
@@ -382,7 +379,7 @@ app.whenReady().then(()=>{
     if(reconcileKeyboardWindow(destinations.view()))return;
     if(!placed&&!bounds){const area=screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
       position({x:Math.round(area.x+(area.width-640)/2),y:area.y+34});}
-    if(current)window.webContents.send('pill:state',current);
+    sendBootstrap();
     visibility();
   });
   window.on('closed',()=>{if(window!==owned)return;note('window_closed');clearInterval(watchdog);clearInterval(pointerTimer);app.quit();});

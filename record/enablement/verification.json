@@ -14,7 +14,8 @@
       },
       "expectedEvidence": [
         "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and microphone activity adds no visible ring until Soft Bloom is enabled in Labs.",
-        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry."
+        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry.",
+        "An early bootstrap delivers the current snapshot. Layout waits for the host's document acknowledgement, and native admission still gates showing the pill."
       ],
       "limits": [
         "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."
