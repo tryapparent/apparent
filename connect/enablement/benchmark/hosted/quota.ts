@@ -54,3 +54,13 @@ export async function readCpuQuota(readFile = read) {
   }
   return { limits, groups };
 }
+
+export async function readCpuUsage(group: string, readFile = read) {
+  assert.ok(group.startsWith("/") && posix.normalize(group) === group);
+  const value = await readFile(join(mount, group, "cpu.stat"));
+  const match = /^usage_usec ([0-9]+)$/m.exec(value ?? "");
+  assert.ok(match, "Missing hosted runner cgroup CPU usage counter");
+  const usageUsec = Number(match[1]);
+  assert.ok(Number.isSafeInteger(usageUsec));
+  return usageUsec;
+}

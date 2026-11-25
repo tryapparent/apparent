@@ -56,7 +56,7 @@ export async function benchmark(
   controlTree = repo,
   referencePath?: string,
   candidateTree = repo,
-  hostedProfile?: string,
+  hosted?: { profile: string; cgroup: string },
 ) {
   assert.ok([directory, chrome, controlTree, candidateTree].every(isAbsolute));
   assert.equal(
@@ -65,7 +65,7 @@ export async function benchmark(
     "Results directory must be private",
   );
   const runtime = {
-    host: hostedProfile ?? hostname(),
+    host: hosted?.profile ?? hostname(),
     cpuSpec,
     node: process.version,
     chrome: await hash(chrome),
@@ -89,7 +89,7 @@ export async function benchmark(
   }
   const result = await mkdtemp(join(directory, mode + "-"));
   const baseline = mode === "baseline";
-  if (baseline && !hostedProfile) {
+  if (baseline && !hosted) {
     const main = execFileSync("git", ["rev-parse", "origin/main"], {
       cwd: repo,
       encoding: "utf8",
@@ -104,17 +104,13 @@ export async function benchmark(
       "Collect the baseline on the pinned current-main commit",
     );
   }
-  const first = await sample(controlTree, result, chrome, cpuSpec, !baseline);
+  const replay = (tree: string, traced: boolean) =>
+    sample(tree, result, chrome, cpuSpec, traced, hosted?.cgroup);
+  const first = await replay(controlTree, !baseline);
   const measuredTree = baseline ? controlTree : candidateTree;
-  const candidate = await sample(measuredTree, result, chrome, cpuSpec, true);
-  const candidateRepeat = await sample(
-    measuredTree,
-    result,
-    chrome,
-    cpuSpec,
-    true,
-  );
-  const repeat = await sample(controlTree, result, chrome, cpuSpec, !baseline);
+  const candidate = await replay(measuredTree, true);
+  const candidateRepeat = await replay(measuredTree, true);
+  const repeat = await replay(controlTree, !baseline);
   const samples: Matched<Sample> = [first, candidate, candidateRepeat, repeat];
   for (const item of samples)
     validate(item, reference ? reference.samples[1] : first);
@@ -192,7 +188,7 @@ export async function benchmark(
   await writeFile(receipt, JSON.stringify(payload, null, 2) + "\n", {
     mode: 0o600,
   });
-  if (!hostedProfile) console.log(JSON.stringify(payload, null, 2));
+  if (!hosted) console.log(JSON.stringify(payload, null, 2));
   return payload;
 }
 
