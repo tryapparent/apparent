@@ -13,8 +13,8 @@ import { fileURLToPath } from "node:url";
 import {
   driverCpuSnapshot,
   hostedAccountingPolicy,
+  waitForHostedQuiet,
 } from "../fixtures/host-accounting.ts";
-import { waitForQuietStart } from "../fixtures/host-pressure.ts";
 import {
   apt,
   command,
@@ -175,11 +175,7 @@ function retainWaterfall(evidence: string) {
 }
 
 async function run(label: string, other?: string) {
-  const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
-    "cpu",
-    "io",
-  ]);
-  receipt(join(job.evidence, label + "-quiet.json"), { windows: quiet });
+  await waitForHostedQuiet(join(job.evidence, label + "-quiet.json"));
   const output =
     mkdtempSync("/tmp/apparent-dev-record-hosted-stop-") + "-results";
   const evidence = join(job.evidence, label);

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { cpuSample, stealSince } from "../hosted/job.ts";
-import { pressureTotalUs } from "./host-pressure.ts";
+import { cpuSample, receipt, stealSince } from "../hosted/job.ts";
+import { pressureTotalUs, waitForQuietStart } from "./host-pressure.ts";
 
 export const hostedAccountingPolicy = "record-host-attribution-v1";
 const cgroupRoot = "/sys/fs/cgroup";
@@ -52,9 +52,69 @@ function usage(path: string) {
 
 export function driverCpuSnapshot() {
   const { membership, hierarchy } = accountingHierarchy();
-  return hierarchy.length
-    ? { membership, usageUs: usage(hierarchy[0])("usage_usec") }
-    : null;
+  if (!hierarchy.length) return null;
+  const group = hierarchy[0];
+  const pids = readFileSync(join(group, "cgroup.procs"), "utf8")
+    .trim()
+    .split(/\s+/);
+  return {
+    membership,
+    usageUs: usage(group)("usage_usec"),
+    actors: pids
+      .filter((pid) => /^\d+$/.test(pid))
+      .flatMap((pid) => {
+        try {
+          const stat = readFileSync("/proc/" + pid + "/stat", "utf8");
+          return [{ pid: Number(pid), ...processCpuTicks(stat) }];
+        } catch (error) {
+          if (
+            !["ENOENT", "ESRCH", "EACCES", "EPERM"].includes(
+              (error as NodeJS.ErrnoException).code ?? "",
+            )
+          )
+            throw error;
+          return [];
+        }
+      }),
+  };
+}
+
+export function processCpuTicks(stat: string) {
+  const open = stat.indexOf("(");
+  const close = stat.lastIndexOf(")");
+  const values = stat
+    .slice(close + 2)
+    .trim()
+    .split(/\s+/);
+  const startTicks = Number(values[19]);
+  const cpuTicks = Number(values[11]) + Number(values[12]);
+  assert.ok(
+    open >= 0 &&
+      close > open &&
+      Number.isSafeInteger(startTicks) &&
+      Number.isSafeInteger(cpuTicks),
+  );
+  return { name: stat.slice(open + 1, close), startTicks, cpuTicks };
+}
+
+export async function waitForHostedQuiet(path: string) {
+  const cpus = availableParallelism();
+  const observed: { resource: string; percent: number }[][] = [];
+  let windows: typeof observed | undefined;
+  try {
+    windows = await waitForQuietStart(
+      AbortSignal.timeout(46_000),
+      ["cpu", "io"],
+      {
+        resource: "guest-cpu",
+        limitPercent: outsideCpuLimitPercent,
+        counter: () => usage(cgroupRoot)("usage_usec") / cpus,
+        record: (window) => observed.push(window),
+      },
+    );
+  } finally {
+    receipt(path, { cpus, windows, observed, admitted: windows !== undefined });
+  }
 }
 
 type Sample = {

@@ -3,6 +3,14 @@ import { readFileSync } from "node:fs";
 import { setTimeout as delay } from "node:timers/promises";
 
 type PressureResource = "cpu" | "io";
+type QuietSample = { resource: string; percent: number };
+
+type ExtraQuietProbe = {
+  resource: string;
+  limitPercent: number;
+  counter: () => number;
+  record: (window: QuietSample[]) => void;
+};
 
 export const quietPressureLimitPercent = 3;
 
@@ -23,27 +31,41 @@ export function schedulerPressureUs() {
 export async function waitForQuietStart(
   signal: AbortSignal,
   resources: readonly [PressureResource, ...PressureResource[]] = ["cpu"],
+  extra?: ExtraQuietProbe,
 ) {
   const deadline = performance.now() + 45000;
-  let quiet: { resource: PressureResource; percent: number }[][] = [];
+  const probes: Omit<ExtraQuietProbe, "record">[] = resources.map(
+    (resource) => ({
+      resource,
+      limitPercent: quietPressureLimitPercent,
+      counter: () => pressureUs(resource),
+    }),
+  );
+  if (extra) probes.push(extra);
+  let quiet: QuietSample[][] = [];
   while (performance.now() < deadline) {
     const start = performance.now();
-    const pressure = resources.map(pressureUs);
+    const before = probes.map(({ counter }) => counter());
     await delay(1000, undefined, { signal });
-    const current = resources.map(pressureUs);
+    const current = probes.map(({ counter }) => counter());
     const elapsed = (performance.now() - start) * 10;
-    const window = resources.map((resource, index) => ({
+    const window = probes.map(({ resource }, index) => ({
       resource,
-      percent: (current[index] - pressure[index]) / elapsed,
+      percent: (current[index] - before[index]) / elapsed,
     }));
+    extra?.record(window);
     if (
       window.every(
-        ({ percent }) => percent >= 0 && percent <= quietPressureLimitPercent,
+        ({ percent }, i) => percent >= 0 && percent <= probes[i].limitPercent,
       )
     ) {
       quiet.push(window);
       if (quiet.length === 3) return quiet;
     } else quiet = [];
   }
-  throw Error("No quiet host " + resources.join(" and ") + " window");
+  throw Error(
+    "No quiet host " +
+      probes.map(({ resource }) => resource).join(" and ") +
+      " window",
+  );
 }
