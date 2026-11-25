@@ -48,7 +48,7 @@
       "userEntryPoint": "Begin a recording with the source picker skipped. The local fixture submits the recording state at the Electron parent boundary.",
       "prerequisites": [
         "A verified unpacked Linux AppImage or a pinned Desktop frontend build with the Electron pill host and renderer.",
-        "Node 22, Xvfb, FFmpeg with X11 capture, xdotool and the repository Bend2 toolchain on a quiet host."
+        "Node 22, Xvfb with XWD framebuffer export, xauth, xdotool and the repository Bend2 toolchain on a quiet host."
       ],
       "runner": {
         "path": "record/enablement/performance/local/startup.ts",

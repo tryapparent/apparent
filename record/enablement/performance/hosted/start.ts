@@ -56,15 +56,7 @@ receipt(join(job.evidence, "start-affinity.json"), {
   observer,
   verified,
 });
-apt(
-  "xvfb",
-  "xauth",
-  "xdotool",
-  "ffmpeg",
-  "libgtk-3-0t64",
-  "libnss3",
-  "libasound2t64",
-);
+apt("xvfb", "xauth", "xdotool", "libgtk-3-0t64", "libnss3", "libasound2t64");
 
 async function build(checkout: string, revision: string, name: string) {
   const tree = stageRevision(checkout, revision, job, name);
