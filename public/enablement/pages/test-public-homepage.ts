@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { chromium, type Route } from "playwright-core"
+import { verifyAgentQuickstart } from "./quickstart/browser.ts"
 import "../artifact/app-metadata.test.ts"
 
 import { movie, chunkPath } from "../../site/lib/pages-video-metadata.js"
@@ -446,23 +447,7 @@ test("source homepage preserves accepted responsive layout and interactions", as
           }
           await page.close()
         }
-        for (const width of [1280, 320]) {
-          for (const colorScheme of ["light", "dark"] as const) {
-            const page = await browser.newPage({ viewport: { width, height: 900 }, colorScheme, javaScriptEnabled: false })
-            try {
-              await page.goto(origin)
-              await page.getByRole("link", { name: "Agent quickstart" }).click()
-              await page.getByRole("heading", { name: "Screen recordings your coding agent can read" }).waitFor()
-              assert.equal(new URL(page.url()).pathname, "/agents/")
-              assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
-              await page.keyboard.press("Tab")
-              assert.equal(await page.locator("a:focus-visible").getAttribute("href"), "/")
-              if (process.env.SITE_EVIDENCE) await page.screenshot({ path: join(process.env.SITE_EVIDENCE, `agents-${engine.name()}-${width}-${colorScheme}.png`), fullPage: true })
-              await page.getByRole("link", { name: "Read the skill instructions" }).click()
-              assert.equal(new URL(page.url()).pathname, "/skill.md")
-            } finally { await page.close() }
-          }
-        }
+        await verifyAgentQuickstart(browser, origin)
       } finally { await browser.close() }
     }
     if (process.env.SITE_EVIDENCE) await writeFile(join(process.env.SITE_EVIDENCE, "source-homepage.json"), JSON.stringify(receipts, null, 2))
