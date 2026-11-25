@@ -1,5 +1,7 @@
 {
   "handoff": "handoff/enablement/ci/hosted-performance.ts",
   "onboarding": "onboarding/enablement/performance/hosted.ts",
-  "connect": "connect/enablement/benchmark/hosted.ts"
+  "connect": "connect/enablement/benchmark/hosted.ts",
+  "agent": "agent/enablement/performance/hosted.ts",
+  "public": "public/enablement/browser-proof/homepage-performance/hosted.ts"
 }
