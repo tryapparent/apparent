@@ -1,4 +1,5 @@
 use super::*;
+pub(super) use super::file_transfer::publish_noreplace;
 
 pub(super) fn asset_path(path: &str) -> bool {
     if path.len() > 128
@@ -91,9 +92,10 @@ pub(super) fn no_symlinks(path: &Path) -> Result<()> {
 }
 pub(super) fn trusted_directory_tree(path: &Path, sticky_leaf: bool) -> Result<()> {
     let path = std::path::absolute(path)?;
+    let component_count = path.components().count();
     let mut prefix = PathBuf::new();
     let mut private_ancestor = false;
-    for component in path.components() {
+    for (index, component) in path.components().enumerate() {
         ensure!(
             !matches!(component, std::path::Component::ParentDir),
             "Unsafe path"
@@ -104,15 +106,27 @@ pub(super) fn trusted_directory_tree(path: &Path, sticky_leaf: bool) -> Result<(
         #[cfg(target_os = "macos")]
         no_allow_acl(&prefix)?;
 
-        ensure!(
-            meta.is_dir()
-                && !meta.file_type().is_symlink()
-                && (meta.uid() == 0 || meta.uid() == unsafe { libc::geteuid() })
-                && (meta.mode() & 0o022 == 0
-                    || (sticky && (prefix != path || sticky_leaf))
-                    || (private_ancestor && prefix != path)),
-            "Unsafe shared or unowned directory tree"
-        );
+        let rejection = if !meta.is_dir() || meta.file_type().is_symlink() {
+            Some("must be a directory and must not be a symlink")
+        } else if meta.uid() != 0 && meta.uid() != unsafe { libc::geteuid() } {
+            Some("must be owned by the current user or root")
+        } else if !(meta.mode() & 0o022 == 0
+            || (sticky && (prefix != path || sticky_leaf))
+            || (private_ancestor && prefix != path))
+        {
+            Some("group or other users have write permission")
+        } else {
+            None
+        };
+        if let Some(reason) = rejection {
+            let levels = component_count - index - 1;
+            if levels == 0 {
+                anyhow::bail!("Unsafe shared or unowned directory tree at the directory itself: {reason}");
+            }
+            anyhow::bail!(
+                "Unsafe shared or unowned directory tree at an ancestor ({levels} levels above): {reason}"
+            );
+        }
         private_ancestor |= meta.mode() & 0o077 == 0;
     }
     Ok(())
@@ -485,30 +499,5 @@ pub(super) fn validate_bundle_references(bundle: &Path, files: &[Asset]) -> Resu
             }
         }
     }
-    Ok(())
-}
-
-pub(super) fn publish_noreplace(from: &Path, to: &Path) -> Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let from = CString::new(from.as_os_str().as_bytes())?;
-    let to = CString::new(to.as_os_str().as_bytes())?;
-    #[cfg(target_os = "linux")]
-    let result = unsafe {
-        libc::renameat2(
-            libc::AT_FDCWD,
-            from.as_ptr(),
-            libc::AT_FDCWD,
-            to.as_ptr(),
-            libc::RENAME_NOREPLACE,
-        )
-    };
-    #[cfg(target_os = "macos")]
-    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
-    ensure!(
-        result == 0,
-        "Could not publish capture without replacing existing output: {}",
-        std::io::Error::last_os_error()
-    );
     Ok(())
 }

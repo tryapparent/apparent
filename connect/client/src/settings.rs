@@ -376,7 +376,12 @@ impl Client {
     pub(super) fn reader_profiles(&self) -> Result<Vec<(String, Client)>> {
         let directory = self.readers_directory();
         match fs::symlink_metadata(&directory) {
-            Ok(_) => private_dir(&directory)?,
+            Ok(_) => private_dir(&directory).map_err(|error| {
+                let message = format!(
+                    "Local Connect reader storage (hosted/readers beside the Apparent config): {error}. Check ownership and private permissions on the reader directory and its ancestors"
+                );
+                error.context(message)
+            })?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
             Err(error) => return Err(error.into()),
         }
