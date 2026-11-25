@@ -40,8 +40,9 @@ collect a same-build noise and probe calibration, followed by serial control,
 candidate, candidate and control repeats when comparing different revisions.
 The existing owner runner qualifies decoded output, clipboard or pixel proof,
 and product CPU, memory and storage limits. The standard runner's timed
-subprocesses execute as the runner user in a fresh systemd CPU-accounting
-scope. The scope includes each benchmark, its observers, and their children.
+subprocesses execute as the runner user in a fresh systemd service with a
+dedicated CPU-accounting cgroup. The cgroup includes each benchmark, its
+observers, and their children.
 Per arm, root cgroup CPU time minus the scope's CPU time measures unrelated
 work. The guard allows up to 5% of available guest CPU capacity, 5% CPU steal
 and 5% guest I/O pressure, and rejects any CFS bandwidth throttling in the
@@ -50,9 +51,9 @@ for diagnosis. The adapters also retain CPU topology and allowed CPU lists.
 The Start adapter exercises the accounting through separate unscored owned
 and injected-outside CPU probes before preparing the measurement. It waits
 for the injected process to exit before any product timing.
-Timed subprocess output goes directly to a private benchmark log. The adapter
-prints its summary after the measured work finishes. The host receipt records
-the driver's cgroup CPU counters so runner activity stays visible.
+The service writes output directly to a private benchmark log. The adapter
+waits for the service and prints its summary after the measured process ends.
+The host receipt records the driver's cgroup CPU counters.
 Native and standalone local replays retain their existing pressure checks.
 `record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing

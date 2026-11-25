@@ -20,18 +20,13 @@ export function command(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     capture?: boolean;
-    outputFd?: number;
   } = {},
 ) {
   const result = spawnSync(program, args, {
     cwd: options.cwd,
     env: options.env,
     encoding: "utf8",
-    stdio: options.capture
-      ? ["ignore", "pipe", "inherit"]
-      : options.outputFd === undefined
-        ? "inherit"
-        : ["ignore", options.outputFd, options.outputFd],
+    stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
     maxBuffer: 16 * 1024 * 1024,
   });
   if (result.error) throw result.error;

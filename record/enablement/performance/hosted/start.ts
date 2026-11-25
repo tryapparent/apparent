@@ -24,7 +24,7 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
-import { runInMeasurementScope } from "./measurement-scope.ts";
+import { runInMeasurementUnit } from "./measurement-unit.ts";
 import { verifyAccounting } from "./accounting-proof.ts";
 import { startWaterfall } from "./start-waterfall.ts";
 
@@ -128,7 +128,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   const driverBefore = driverCpuSnapshot();
   let failure: unknown;
   try {
-    runInMeasurementScope(
+    runInMeasurementUnit(
       runner,
       [control, output, ...(other ? [other] : [])],
       job.env,
