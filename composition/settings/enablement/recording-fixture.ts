@@ -121,9 +121,7 @@ export function recordingFixture(send: (message: object) => void) {
       command: null,
     },
     speech: { state: "ready", progress: 1 },
-    lowerPlayback: false,
-    playbackLevel: 20,
-    playbackAvailable: false,
+    playback: null,
     mediaWarnings: [],
   };
   const state = structuredClone(linuxState);
@@ -142,8 +140,7 @@ export function recordingFixture(send: (message: object) => void) {
     },
     mac() {
       state.platform = "macos";
-      state.playbackAvailable = true;
-      state.lowerPlayback = true;
+      state.playback = { enabled: true, level: 20 };
       state.speech = {
         state: "downloading",
         locale: "en_US",
@@ -226,8 +223,12 @@ export function recordingFixture(send: (message: object) => void) {
         });
       }
       if (action.action === "recording-preference") {
-        if (!fixture.refuse && action.key === "lowerPlayback") {
-          state.lowerPlayback = Boolean(action.value);
+        if (
+          !fixture.refuse &&
+          action.key === "lowerPlayback" &&
+          state.playback
+        ) {
+          state.playback.enabled = Boolean(action.value);
           fixture.show();
         }
         send({

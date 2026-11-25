@@ -27,9 +27,7 @@ export type RecordingState = {
     progress: number;
     error?: string;
   };
-  lowerPlayback: boolean;
-  playbackLevel: number;
-  playbackAvailable: boolean;
+  playback: { enabled: boolean; level: number } | null;
   mediaWarnings: string[];
 };
 
@@ -53,5 +51,4 @@ export interface RecordingBridge {
   subscribeLevel(listener: (level: number) => void): () => void;
   setMeterVisible(visible: boolean): Promise<void>;
   save(change: RecordingChange): Promise<void>;
-  openVolumeGuide(): Promise<void>;
 }

@@ -943,15 +943,11 @@ mod tests {
         assert_eq!(serde_json::to_value(panel.view(&host)).unwrap()["updateChannel"], "main");
         set(&mut panel, &mut host, "updateChannel", "untrusted".into());
         assert_eq!(serde_json::to_value(panel.view(&host)).unwrap()["updateChannel"], "main");
-        assert!(!panel.view(&host).lower_playback);
-        assert_eq!(panel.view(&host).playback_level, 20);
         set(&mut panel, &mut host, "lowerPlayback", true.into());
         set(&mut panel, &mut host, "playbackLevel", 35.into());
         set(&mut panel, &mut host, "playbackLevel", 101.into());
         set(&mut panel, &mut host, "playbackLevel", (-1).into());
         set(&mut panel, &mut host, "playbackLevel", 0.5.into());
-        assert!(Panel::default().view(&host).lower_playback);
-        assert_eq!(Panel::default().view(&host).playback_level, 35);
         set(&mut panel, &mut host, "transcriber", "hex".into());
         set(&mut panel, &mut host, "transcriber", "nonsense".into());
         let view = panel.view(&host);
@@ -959,8 +955,9 @@ mod tests {
         set(&mut panel, &mut host, "autoSend", true.into());
         assert!(read_json(&host.path).get("autoSend").is_none());
         let config = read_json(&host.path);
-        assert_eq!(config["recording"]["lowerPlayback"], true);
-        assert_eq!(config["recording"]["playbackLevel"], 35);
+        let mac = cfg!(target_os = "macos");
+        assert_eq!(config["recording"]["lowerPlayback"].as_bool(), mac.then_some(true));
+        assert_eq!(config["recording"]["playbackLevel"].as_u64(), mac.then_some(35));
         assert_eq!(config["recording"]["transcriber"], "hex");
         assert_eq!(config["ingestToken"], "secret");
         set(&mut panel, &mut host, "hexModel", "parakeet".into());

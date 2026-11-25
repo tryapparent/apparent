@@ -120,12 +120,3 @@
   margin: 0;
   padding: 0 16px 12px;
 }
-
-.settings-content .recording-guide {
-  padding-inline: 0;
-  white-space: normal;
-  text-align: left;
-  color: inherit;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}

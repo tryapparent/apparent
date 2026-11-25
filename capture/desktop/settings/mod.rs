@@ -135,8 +135,8 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {
     match key {
-        "lowerPlayback" => value.is_boolean(),
-        "playbackLevel" => value.as_u64().is_some_and(|level| level <= 100),
+        "lowerPlayback" => cfg!(target_os = "macos") && value.is_boolean(),
+        "playbackLevel" => cfg!(target_os = "macos") && value.as_u64().is_some_and(|level| level <= 100),
         "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
             value.as_str().is_some_and(|value| value.len() <= 16_384),
         _ => false,
@@ -226,8 +226,7 @@ fn recording_state(view: View) -> serde_json::Value {
     serde_json::json!({"type":"recording-state","state":{
         "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
-        "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
-        "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking"),
+        "playback":cfg!(target_os = "macos").then(|| serde_json::json!({"enabled":view.lower_playback,"level":view.playback_level})),
         "mediaWarnings":warnings
     }})
 }
@@ -303,7 +302,7 @@ fn recording_preferences_use_one_durable_config_mutation_and_keep_unrelated_valu
     assert!(saved.get("microphone").is_none());
 
     std::fs::write(&path, "invalid config").unwrap();
-    assert!(save_recording(&path, "lowerPlayback", &false.into(), None).is_err());
+    assert!(save_recording(&path, "hexModel", &"selected".into(), None).is_err());
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "invalid config");
 }
 

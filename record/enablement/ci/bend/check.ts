@@ -346,8 +346,7 @@ await bendScratch(async (scratch) => {
     for (const available of [false, true]) {
       for (const saved of [false, true]) {
         assert.equal(captions.preview_allowed(saved, available), saved && available);
-        assert.equal(recording.volume_switch_enabled(available, saved), available || saved);
-        assert.equal(recording.volume_level_enabled(available, saved), available && saved);
+        assert.equal(recording.volume_level_disabled(available, saved), available || !saved);
         assert.equal(recording.transcription_detail(false, saved, available), available || saved ? 1 : 0);
         assert.equal(recording.transcription_detail(true, saved, available), 2);
       }

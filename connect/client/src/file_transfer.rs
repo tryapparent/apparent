@@ -206,7 +206,7 @@ impl Client {
         ensure!(parent.is_dir(), "Output parent must already exist");
         trusted_directory_tree(parent, true).map_err(|error| {
             let message = format!(
-                "{error}. Retry from a private working directory, or use apparent fetch --out to choose a private destination"
+                "Connect download destination directory: {error}. Retry from a private working directory, or use apparent fetch --out to choose a private destination"
             );
             error.context(message)
         })?;
@@ -429,4 +429,29 @@ impl Client {
         }
         Ok(())
     }
+}
+
+pub(super) fn publish_noreplace(from: &Path, to: &Path) -> Result<()> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    let from = CString::new(from.as_os_str().as_bytes())?;
+    let to = CString::new(to.as_os_str().as_bytes())?;
+    #[cfg(target_os = "linux")]
+    let result = unsafe {
+        libc::renameat2(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    #[cfg(target_os = "macos")]
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    ensure!(
+        result == 0,
+        "Could not publish capture without replacing existing output: {}",
+        std::io::Error::last_os_error()
+    );
+    Ok(())
 }

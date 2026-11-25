@@ -58,31 +58,35 @@ test("staged Recording opens directly, receives native facts and saves only on i
       "aria-valuenow",
       "45",
     );
-    await expect(
-      page.getByRole("combobox", { name: "Lower to" }),
-    ).toBeDisabled();
-    const volume = page.getByRole("switch", {
+    const volumeSection = page.getByText("Other-app volume", { exact: true });
+    const volumeSwitch = page.getByRole("switch", {
       name: "Lower volume while recording",
     });
-    await expect(volume).toBeDisabled();
+    const volumeSlider = page.getByRole("slider", { name: "Lower to" });
+    await expect(volumeSection).toHaveCount(0);
+    await expect(volumeSwitch).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Lower to" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Set up and test volume lowering" }),
+    ).toHaveCount(0);
+    for (const change of [
+      { key: "lowerPlayback", value: true },
+      { key: "playbackLevel", value: 35 },
+      { key: "videoExport", value: false },
+    ]) {
+      await assert.rejects(
+        page.evaluate(
+          (change) => Reflect.get(window, "apparentRecording").save(change),
+          change,
+        ),
+        /Recording preference unavailable/,
+      );
+      assert.equal(actions.some((action) => action.key === change.key), false);
+    }
     const exportSection = page.getByRole("region", { name: "Export", exact: true });
     const exportGuide = exportSection.getByText(
       "To save your latest capture as an MP4, choose Export Last Capture as Video… from the Apparent menu.",
       { exact: true },
-    );
-    assert.equal(
-      await page.evaluate(async () => {
-        try {
-          await Reflect.get(window, "apparentRecording").save({
-            key: "videoExport",
-            value: false,
-          });
-          return false;
-        } catch {
-          return true;
-        }
-      }),
-      true,
     );
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
@@ -113,19 +117,21 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(
       page.getByText("Downloading the speech model… 40%"),
     ).toBeVisible();
-    await expect(page.getByRole("slider", { name: "Lower to" })).toBeEnabled();
+    await expect(volumeSection).toBeVisible();
+    await expect(volumeSwitch).toBeChecked();
+    await expect(volumeSlider).toBeEnabled();
     fixture.refuse = true;
-    await volume.press("Space");
+    await volumeSwitch.press("Space");
     const error = page.getByRole("alertdialog", {
       name: "Couldn’t confirm the recording preference",
     });
     await expect(error).toBeVisible();
-    await expect(volume).toBeChecked();
+    await expect(volumeSwitch).toBeChecked();
     fixture.refuse = false;
     await error.getByRole("button", { name: "Try again" }).press("Enter");
     await expect(error).not.toBeVisible();
-    await expect(volume).not.toBeChecked();
-    await expect(volume).toBeFocused();
+    await expect(volumeSwitch).not.toBeChecked();
+    await expect(volumeSwitch).toBeFocused();
 
     fixture.hex();
     const language = page.getByRole("textbox", { name: "Hex language" });
@@ -171,6 +177,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
       )
       .toBe(true);
     fixture.linux();
+    await expect(volumeSection).toHaveCount(0);
 
     const startUrl = page.url();
     const navigate = async (pane: string) => {
@@ -189,8 +196,8 @@ test("staged Recording opens directly, receives native facts and saves only on i
       await page.evaluate(async () => {
         try {
           await Reflect.get(window, "apparentRecording").save({
-            key: "lowerPlayback",
-            value: false,
+            key: "transcriber",
+            value: "hex",
           });
           return false;
         } catch {

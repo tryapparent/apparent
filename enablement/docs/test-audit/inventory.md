@@ -24,7 +24,6 @@
 | Desktop | capture/desktop/linux/capture/portal.rs | source candidate | 903 | pending |
 | Desktop | capture/desktop/linux/integration/appearance.rs | source candidate | 108 | pending |
 | Desktop | capture/desktop/linux/integration/login.rs | source candidate | 95 | pending |
-| Desktop | capture/desktop/linux/integration/playback.rs | source candidate | 149 | pending |
 | Desktop | capture/desktop/linux/integration/shell.rs | source candidate | 206 | pending |
 | Desktop | capture/desktop/linux/interaction/auto_paste.rs | source candidate | 337 | pending |
 | Desktop | capture/desktop/linux/interaction/clipboard.rs | source candidate | 517 | pending |
@@ -36,8 +35,6 @@
 | Desktop | capture/desktop/linux/interaction/shortcuts.rs | source candidate | 142 | pending |
 | Desktop | capture/desktop/linux/interaction/x11.rs | source candidate | 1020 | pending |
 | Desktop | capture/desktop/linux/mod.rs | source candidate | 301 | pending |
-| Desktop | capture/desktop/linux/playback/test_native.c | support/scenario | 104 | pending |
-| Desktop | capture/desktop/linux/playback/test_policy.py | support/scenario | 156 | pending |
 | Desktop | capture/desktop/linux/updates/launch_handler.rs | source candidate | 109 | pending |
 | Desktop | capture/desktop/linux/updates/microphone.rs | source candidate | 132 | pending |
 | Desktop | capture/desktop/linux/updates/update.rs | source candidate | 1565 | pending |
