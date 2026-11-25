@@ -3,6 +3,8 @@ mod build_version { include!("enablement/build_version.rs"); }
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "engine/recognition/session.rs"]
 mod circle_recognition;
+#[path = "engine/native/input/window_ownership/process.rs"]
+pub(crate) mod ui_process;
 mod capture;
 mod composition;
 #[cfg(target_os = "linux")]

@@ -1,18 +1,28 @@
-//! Capture-internal ownership of separately rendered desktop windows.
 use std::{collections::HashMap, process::{Child, ExitStatus}, sync::{Arc, Mutex, Weak}};
 
-static CHILDREN: Mutex<Option<HashMap<u32, Weak<Mutex<Child>>>>> = Mutex::new(None);
+struct Registration {
+    child: Weak<Mutex<Child>>,
+    settings: bool,
+}
 
-/// Keeps ownership tied to the exact child handle, rather than an executable name
-/// or a PID that could be reused after the child is reaped.
+static CHILDREN: Mutex<Option<HashMap<u32, Registration>>> = Mutex::new(None);
+
 pub(crate) struct UiChild(Arc<Mutex<Child>>);
 
 impl UiChild {
     pub(crate) fn new(child: Child) -> Self {
+        Self::register(child, false)
+    }
+
+    pub(crate) fn settings(child: Child) -> Self {
+        Self::register(child, true)
+    }
+
+    fn register(child: Child, settings: bool) -> Self {
         let pid = child.id();
         let child = Arc::new(Mutex::new(child));
         CHILDREN.lock().unwrap().get_or_insert_with(HashMap::new)
-            .insert(pid, Arc::downgrade(&child));
+            .insert(pid, Registration { child: Arc::downgrade(&child), settings });
         Self(child)
     }
 
@@ -27,8 +37,6 @@ impl UiChild {
     pub(crate) fn wait(&mut self) -> std::io::Result<ExitStatus> {
         loop {
             if let Some(status) = self.try_wait()? { return Ok(status); }
-            // Never hold the child lock while waiting for process termination:
-            // capture's ownership check must remain responsive.
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
     }
@@ -38,7 +46,7 @@ impl Drop for UiChild {
     fn drop(&mut self) {
         let pid = self.0.lock().unwrap().id();
         if let Some(children) = CHILDREN.lock().unwrap().as_mut()
-            && children.get(&pid).is_some_and(|entry| entry.ptr_eq(&Arc::downgrade(&self.0)))
+            && children.get(&pid).is_some_and(|entry| entry.child.ptr_eq(&Arc::downgrade(&self.0)))
         {
             children.remove(&pid);
         }
@@ -46,15 +54,21 @@ impl Drop for UiChild {
 }
 
 pub(crate) fn owns(pid: i32) -> bool {
+    owns_with_role(pid, false)
+}
+
+pub(crate) fn owns_settings(pid: i32) -> bool {
+    owns_with_role(pid, true)
+}
+
+fn owns_with_role(pid: i32, settings_only: bool) -> bool {
     let child = CHILDREN.lock().unwrap().as_ref()
-        .and_then(|children| children.get(&(pid as u32))).and_then(Weak::upgrade);
-    // try_wait caches a completed status. Even if the owner has already reaped
-    // this child, a different process reusing its PID cannot become ours.
+        .and_then(|children| children.get(&(pid as u32)))
+        .filter(|entry| !settings_only || entry.settings)
+        .and_then(|entry| entry.child.upgrade());
     child.is_some_and(|child| matches!(child.lock().unwrap().try_wait(), Ok(None)))
 }
 
-/// UI children share the application's focus identity. They must never replace
-/// the last external receiver used by capture context or explicit Paste.
 pub(crate) fn is_external_app(pid: i32) -> bool {
     pid > 0 && pid != std::process::id() as i32 && !owns(pid)
 }

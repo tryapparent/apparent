@@ -16,7 +16,7 @@ import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
 import { assemblePill } from "./pill.ts";
 
-import { gestureTable, gestureTablePath } from "./note-gesture.ts";
+import { checkGesture, gestureTable, gestureTablePath } from "./note-gesture.ts";
 
 import { pushToTalkTable } from "./push-to-talk.ts";
 
@@ -28,12 +28,7 @@ await bendScratch(async (scratch) => {
   const gestureOutput = join(scratch, "gesture");
   await buildBend(root, "record", gestureOutput, undefined, "record/notes/");
   const gesture = gestureTable(gestureOutput);
-  assert.deepEqual(JSON.parse(gesture), {
-    hold: 250,
-    pair: 400,
-    pointer: 12,
-    release: [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2],
-  });
+  checkGesture(gesture);
   if (update) {
     writeFileSync(gestureTablePath, gesture);
     return;

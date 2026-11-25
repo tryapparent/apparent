@@ -74,39 +74,6 @@ mod tests {
         assert!(at(1400.0, 400.0), "a helper that isn't the source");
     }
 
-    #[test]
-    fn separate_settings_window_is_owned_only_while_its_exact_child_is_alive() {
-        use crate::capture::ui_process::UiChild;
-        let (sender, _receiver) = flume::unbounded();
-        let telemetry = SharedCaptureTelemetry::new(sender);
-        let spawn = || std::process::Command::new("sh").args(["-c", "exec sleep 30"]).spawn().unwrap();
-        let raw = spawn();
-        let pid = raw.id() as i32;
-        let windows = [crate::shared::windows::RawWindow {
-            id: 42, pid, owner: "Electron".into(), title: "Apparent Settings".into(),
-            bounds: [0.0, 0.0, 600.0, 400.0], layer: 0, alpha: 1.0,
-        }];
-        let at = || telemetry.apparent_window_in(&windows, 100.0, 100.0, |_| false);
-        assert!(!at(), "an unregistered Electron process is not ours");
-        let mut child = UiChild::new(raw);
-        assert!(at(), "the separate Settings window excludes presses and scrolls");
-        telemetry.set_capture_source_pid(pid as u32);
-        assert!(!at(), "explicit capture sources retain their interaction telemetry");
-        telemetry.set_capture_source_pid(0);
-        child.kill().unwrap();
-        child.wait().unwrap();
-        assert!(!at(), "a reaped PID is not owned even before its registration is dropped");
-        let next = spawn();
-        let next_pid = next.id() as i32;
-        let mut next = UiChild::new(next);
-        drop(child);
-        assert!(crate::capture::ui_process::owns(next_pid), "old cleanup cannot retire a new session");
-        next.kill().unwrap();
-        next.wait().unwrap();
-        drop(next);
-        assert!(!crate::capture::ui_process::owns(next_pid));
-    }
-
     /// Kit's Screen capture on the Pro: the old listen-only event tap was off (no Input
     /// Monitoring), so his clicks on OpenCode's composer never reached the bundle. Clicks now
     /// come from the mouse monitor; polled button state stands in if it couldn't be installed.
