@@ -12,9 +12,27 @@ The scenario measures each wait in a fresh Electron process. The fresh catalogue
 Use the [manual hosted workflow](../../../enablement/timing/hosted/README.md)
 with stream `handoff` and pinned SHAs. The adapter builds both revisions
 before timing and retains calibration, matched receipts and per-trial
-waterfall spans in the run artifact. Hosted guest CPU and I/O pressure
-use the existing 5% limits. The enclosing host's pressure and SMT
-topology are outside the guest's visibility.
+waterfall spans in the run artifact. A dedicated, unrestricted guest cgroup
+accounts for Electron, Xvfb, the receiver, and the benchmark observer.
+Subtract work charged inside that cgroup from guest-wide busy CPU in each
+trial. Qualification allows at most 5% unrelated CPU, 5% observed guest steal,
+and 5% I/O PSI, and rejects observed cgroup throttling. Total guest CPU PSI
+remains in every trial as diagnostic evidence. The enclosing physical host's
+pressure and topology are outside the guest's visibility.
+
+The artifact includes an unscored accounting proof that injects CPU work
+inside the dedicated cgroup and then outside it. The run rejects an outside
+load that evades the guard. The normal replay still needs a full qualified
+calibration, and the stop command requires the same pressure contract on
+its comparisons. Local pressure and native verification rules are unchanged.
+
+When all four pressure attempts for a hosted trial slot fail, the driver
+takes a separate diagnostic replay and retains `scheduler-diagnostic.json`.
+It samples idle guest pressure before launch, process CPU and thread scheduler
+counters at the Electron and Handoff boundaries, and observer and cgroup
+accounting through cleanup. Snapshot work can perturb the replay. The file is
+unscored and cannot qualify a repeat. A missing counter or disabled scheduler
+accounting remains visible in the artifact.
 
 ## Local diagnostic replay
 
