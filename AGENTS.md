@@ -38,11 +38,13 @@ Each stream owns build, tests, packaging, delivery and diagnostics in its `enabl
 
 Discover user-facing verification recipes in `*/enablement/verification.json`. Each stream owns its manifest. In the same PR, update affected entries when the user path, prerequisites, runner, platform coverage or expected evidence changes. Add entries as repeatable checks are established. Include the user entry point, prerequisites, existing runner instructions, observable evidence and coverage limits. Put a cross-stream scenario with the stream that owns the end-to-end check.
 
-Choose proportionate checks for changed behavior and verify boundaries with real producer outputs. Reuse evidence only when relevant inputs match and cite its source. Inspect the changed renderer for UI work and real bundle outputs for output changes. Report test, GUI, permission and publication evidence and gaps.
+Verify changed behavior proportionately and boundaries with real producer outputs. Inspect changed UI in its renderer and changed bundle outputs. Reuse evidence only for matching inputs and cite it.
 
 Use Linux for portable logic and shared Electron UI. Compare migrating a small legacy UI slice with booking Mac time. Verify changed native behavior, permissions, window integration and packaging on the affected OS. For Linux native GUI work use your [isolated VM](capture/desktop/docs/linux/linux.md), never the host or another worker’s VM. Physical-device behavior needs appropriate hardware.
 
 ## Delivery
+
+Capture before/after views, entry-to-result clips, or sample outputs during verification. Carry evidence through merge and release into the final reply so Simon can see or reproduce the change from it alone. Give the exact build, environment, brief safe steps and expected result. Label simulations, candidate builds and verification gaps. Check links, use approved durable storage when available, and collect missing in-scope evidence before handoff.
 
 For Simon-authorized work in `tryapparent/apparent`, finish through merge into current `main` and passing CI for the exact landed commit. Honor holds and branch protections and repair failures caused by the change. Normal automatic CD is authorized. Separate activation, destructive migrations, access, spending and external communications require their own authority. Other repositories normally receive a scoped commit and draft PR.
 
