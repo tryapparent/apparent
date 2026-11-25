@@ -20,8 +20,6 @@ export type PreferenceValues = {
   "agents.agentDemoVideo": boolean;
   "agents.t3DestinationPicker": boolean;
   "labs.localStreamingTranscription": boolean;
-  "labs.pillDoodles": boolean;
-  "labs.softBloom": boolean;
   "labs.pushToTalk": boolean;
   "labs.recordingPerformance": boolean;
   "labs.autoPasteDraft": boolean;

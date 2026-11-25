@@ -59,25 +59,7 @@ try {
   });
   browser = await chromium.connectOverCDP(url);
   const page = browser.contexts()[0].pages()[0];
-  const doodles = page.getByRole("switch", { name: "Recording pill doodles" });
-  await expect(doodles).toBeEnabled();
-  await expect(doodles).not.toBeChecked();
-  await doodles.click();
-  await expect(doodles).toHaveAttribute("aria-checked", "true");
-  const savedDoodles = JSON.parse(await fs.readFile(process.argv[2], "utf8"));
-  assert.equal(savedDoodles.labs.pillDoodles, true);
-  await page.reload();
-  await expect(doodles).toBeEnabled();
-  await expect(doodles).toHaveAttribute("aria-checked", "true");
-  const bloom = page.getByRole("switch", { name: "Soft Bloom" });
-  await expect(bloom).toBeEnabled();
-  await expect(bloom).not.toBeChecked();
-  await bloom.click();
-  await expect(bloom).toBeChecked();
-  assert.equal(
-    JSON.parse(await fs.readFile(process.argv[2], "utf8")).labs.softBloom,
-    true,
-  );
+  await expect(page.getByRole("switch", { name: /^(Recording pill doodles|Soft Bloom)$/ })).toHaveCount(0);
   const agentContext = page.getByRole("switch", {
     name: "Recording context for agents",
   });

@@ -76,8 +76,6 @@ fn project(source: &Pres, revision: u64, mut facts: Facts) -> View {
         revision,
         clock: "00:12".into(),
         input_waveform: None,
-        doodle_ink: None,
-        soft_bloom: None,
         reduced_motion: false,
         transcript: None,
         notice: None,

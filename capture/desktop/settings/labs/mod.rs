@@ -33,8 +33,6 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "pushToTalkSupported": push_to_talk_supported(),
         "wisprSaved": saved("labs.onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
-        "softBloomSaved": saved("labs.softBloom"),
-        "pillDoodlesSaved": saved("labs.pillDoodles"),
         "dictationFrogSaved": saved("labs.dictationFrog"),
         "desktopFrogSaved": saved("labs.desktopFrog"),
     })
@@ -49,8 +47,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("autoPaste") => Some((AUTO_PASTE, true)),
         Some("pushToTalk") => Some(("labs.pushToTalk", true)),
         Some("wisprFlow") => Some(("labs.onboardingWisprFlow", cfg!(target_os = "macos"))),
-        Some("softBloom") => Some(("labs.softBloom", true)),
-        Some("pillDoodles") => Some(("labs.pillDoodles", true)),
         Some("dictationFrog") => Some(("labs.dictationFrog", cfg!(target_os = "macos"))),
         Some("desktopFrog") => Some(("labs.desktopFrog", cfg!(target_os = "macos"))),
         _ => None,
@@ -151,21 +147,19 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
         }
     }
     #[test]
-    fn pill_doodles_keep_an_unset_choice_distinct_from_an_explicit_opt_out() {
+    fn retired_pill_effects_are_not_configurable() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("config.json");
-        std::fs::write(&path, r#"{"experiments":{"other":true}}"#).unwrap();
-        assert!(facts(&path)["pillDoodlesSaved"].is_null());
-        std::fs::write(&path, r#"{"experiments":{"other":true,"pillDoodles":"off"}}"#).unwrap();
-        assert_eq!(facts(&path)["pillDoodlesSaved"], false);
-        for enabled in [true, false] {
-            let response = request(&path, 1, Some(enabled), Some("pillDoodles"));
-            assert_eq!(response["facts"]["pillDoodlesSaved"], enabled);
-            let config = crate::shared::handoff::load_config_from(&path);
-            assert_eq!(config.experiments.get("pillDoodles"), Some(&enabled));
-            assert!(crate::shared::handoff::experiment_enabled_in(&config, "other"));
+        let original = br#"{"labs":{"softBloom":false},"experiments":{"pillDoodles":false,"other":true}}"#;
+        std::fs::write(&path, original).unwrap();
+        assert!(facts(&path).get("softBloomSaved").is_none());
+        assert!(facts(&path).get("pillDoodlesSaved").is_none());
+        for setting in ["softBloom", "pillDoodles"] {
+            assert_eq!(request(&path, 1, Some(false), Some(setting))["facts"]["error"], "config_write_failed");
         }
+        assert_eq!(std::fs::read(&path).unwrap().as_slice(), original);
     }
+
     #[test]
     fn wispr_lab_defaults_off_and_uses_the_shared_config_transaction_only_on_mac() {
         let dir = tempfile::tempdir().unwrap(); let path = dir.path().join("config.json");

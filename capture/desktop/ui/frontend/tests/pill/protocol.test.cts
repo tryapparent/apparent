@@ -48,9 +48,6 @@ test('separate recovery capsules keep their gap and outer corners click-through'
 test('waveform telemetry is a bounded chronological PCM projection',()=>{
  const inputWaveform=Array.from({length:24},(_,index)=>index/24);
  assert.deepEqual(view({...state,inputWaveform}).inputWaveform,inputWaveform);
- assert.equal(view(state).softBloom,null);
- assert.equal(view({...state,softBloom:true}).softBloom,true);
- assert.throws(()=>view({...state,softBloom:"true"}));
  for(const invalid of [[],[.2],Array(25).fill(0),Array(24).fill(NaN),Array(24).fill(-.1),Array(24).fill(1.1)]){
   assert.throws(()=>view({...state,inputWaveform:invalid}));
  }

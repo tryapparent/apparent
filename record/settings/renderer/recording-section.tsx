@@ -109,4 +109,3 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
 }
 
 export { PushToTalk, type PushToTalkProps } from "./push-to-talk";
-export { PillDoodles } from "./pill-doodles";

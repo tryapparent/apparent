@@ -245,8 +245,6 @@ pub(crate) struct View {
     pub note_tip: Option<&'static str>,
     pub reduced_motion: bool,
     pub input_waveform: Option<[f32; 24]>,
-    pub doodle_ink: Option<bool>,
-    pub soft_bloom: Option<bool>,
 }
 
 impl std::ops::Deref for View {
@@ -265,22 +263,6 @@ impl Session {
 }
 
 impl View {
-    fn read_appearance(&mut self, previous: Option<&Self>) {
-        if self.phase != "recording" {
-            return;
-        }
-        if let Some(previous) = previous.filter(|view| view.phase == "recording") {
-            self.doodle_ink = previous.doodle_ink;
-            self.soft_bloom = previous.soft_bloom;
-        } else if !cfg!(test) {
-            use crate::shared::handoff::{default_config_path, preference_value, read_preferences};
-            if let Ok(config) = read_preferences(&default_config_path()) {
-                let saved = |id| preference_value(&config, id).and_then(|value| value.as_bool());
-                self.doodle_ink = saved("labs.pillDoodles");
-                self.soft_bloom = saved("labs.softBloom");
-            }
-        }
-    }
     fn admits_sharing_confirmation(&self, revision: Option<u64>) -> bool {
         self.phase == "completed" && revision == Some(self.revision)
             && self.share_indicator != ShareIndicator::Uploading
