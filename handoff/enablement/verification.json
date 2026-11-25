@@ -1,6 +1,26 @@
 {
   "scenarios": [
     {
+      "id": "destination-keyboard-focus",
+      "description": "Open the T3 destination picker with Down as soon as the recording pill presents it.",
+      "platforms": ["linux-x11", "macos"],
+      "userEntryPoint": "Finish an eligible recording with Send recordings to T3 Code enabled, then press Down without clicking the pill.",
+      "prerequisites": [
+        "Build the Desktop frontend and run its test:pill suite in a graphical session. The smoke test uses a loopback catalogue and an isolated profile."
+      ],
+      "runner": {
+        "path": "composition/pill/enablement/destination.smoke.cts",
+        "instructions": "record/pill/README.md"
+      },
+      "expectedEvidence": [
+        "The admitted window and destination control receive keyboard focus. Down opens thread search, Escape restores focus to the collapsed control, and Down or typing can open it again.",
+        "The Linux replacement stays hidden until its exact window ID is activated by the parent."
+      ],
+      "limits": [
+        "The smoke test runs the production Electron host and renderer with a synthetic native parent. A real capture and compositor-specific focus require native verification."
+      ]
+    },
+    {
       "id": "focused-destination-handoff",
       "description": "Measure picker input to a selectable destination and selection to a verified T3 receipt and Submitted presentation.",
       "platforms": ["linux-x11"],

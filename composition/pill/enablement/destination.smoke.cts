@@ -210,6 +210,17 @@ test("real pill keeps Paste by default, then selects during processing and dispa
       false,
       "stale activation cannot expose the replacement",
     );
+    await app.evaluate(({ BrowserWindow }, id) => {
+      const picker = BrowserWindow.getAllWindows().find(
+        (w) => Number(w.getMediaSourceId().split(":")[1]) === id,
+      );
+      const focus = picker.focus.bind(picker);
+      picker.focus = () => {
+        if (!picker.isVisible()) throw Error("Focus before native admission");
+        focus();
+      };
+    }, replacementWindowId);
+    await page.evaluate(() => window.apparentPill.destinationFocus(true));
     await activate(replacementWindowId);
     holdActivation = false;
     await expect.poll(() => oldPage.isClosed()).toBe(true);
@@ -221,6 +232,13 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   const fade = page.locator(".destination-fade");
   await expect(trigger).toBeEnabled();
   await expect(trigger).toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+  await proofThemes("processing-keyboard-focus");
+  await page.keyboard.press("ArrowDown");
+  await expect(search).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
+  await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
 
   const destination = await page.evaluate(() =>
     window.apparentPill.destinations(),
@@ -242,7 +260,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     destination,
   );
   await expect(trigger).toBeEnabled();
-  await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(search).toBeFocused();
   await expect(options).toHaveCount(6);
@@ -263,7 +281,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   await expect(trigger).toHaveAttribute("aria-expanded", "false");
   await expect(trigger).toContainText("New thread");
   assert.equal(f.calls.length, 0);
-  await trigger.press("c");
+  await page.keyboard.press("c");
   await search.fill("chosen");
   await proofThemes("search");
   await search.press("Enter");
@@ -372,7 +390,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   frame = { ...frame, capture: "narrow", view: { ...frame.view, revision: 5 } };
   await publish();
   await expect(trigger).toBeEnabled();
-  await trigger.focus();
+  await expect(trigger).toBeFocused();
   await page.keyboard.press("ArrowDown");
   const firstTray = await page.locator(".destination-tray").boundingBox();
   for (let i = 0; i < 5; i++) await search.press("ArrowDown");

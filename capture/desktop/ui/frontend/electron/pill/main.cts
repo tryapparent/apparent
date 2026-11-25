@@ -31,7 +31,8 @@ function reconcileKeyboardWindow(view){
 function focusPicker(focused){
   pickerFocused=focused;
   if(process.platform!=='linux')window.setFocusable(focused);
-  if(focused)window.focus();else{
+  if(focused && !window.isVisible())window.show();
+  else if(focused)window.focus();else{
     window.blur();
     if(hyprland && admittedWindowId!==null && destinations.view()?.confirmed)
       emit({releaseFocus:admittedWindowId});
@@ -140,7 +141,9 @@ function visibility(){
   }
   if(!activated){window.hide();return;}
   if(!rendererReady||!current)return;
-  if(!window.isVisible())window.showInactive();
+  const focus=destinations.view() && keyboardCapture!==capture;
+  if(!window.isVisible() && (!focus || process.platform!=='linux'))window.showInactive();
+  if(focus){keyboardCapture=capture;focusPicker(true);}
   if(retiredWindows.length&&retiringFor!==window){
     const incoming=window;
     retiringFor=incoming;
@@ -151,9 +154,6 @@ function visibility(){
         if(Number.isSafeInteger(oldId))emit({retiredWindowId:oldId});
       }}
     }).catch(()=>{if(window===incoming&&!incoming.isDestroyed())fail('replacement_paint_failed');});
-  }
-  if(destinations.view() && keyboardCapture!==capture){
-    keyboardCapture=capture;focusPicker(true);
   }
 }
 function valid(event,args){
@@ -224,7 +224,7 @@ app.whenReady().then(()=>{
   });
   ipcMain.handle('pill:destination-focus',(event,focused,...args)=>{
     valid(event,args);if(typeof focused!=='boolean'||!destinations.view())throw Error('Picker unavailable');
-    focusPicker(focused);
+    if(activated&&window.isVisible())focusPicker(focused);
   });
   ipcMain.handle('pill:act',async(event,revision,action,drop=false,...args)=>{
     valid(event,args);
@@ -257,8 +257,6 @@ app.whenReady().then(()=>{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
       const reserve=current.phase==='recording'?(current.noteCount===0?72:0):null;
       const size=await geometry.measureContents(window.webContents,area.width,reserve);
-      // A newer parent state may arrive while the renderer answers. Never apply
-      // geometry measured for an obsolete document.
       if(window!==measuredWindow||document!==documentGeneration||!loaded||revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(area.height,Math.max(58,Math.ceil(size.height)));
@@ -311,8 +309,6 @@ app.whenReady().then(()=>{
     if(!Number.isSafeInteger(revision) || revision!==current?.revision)return;
     const committed=current.phase==='hidden' || await measure(revision);
     if(committed && revision===current?.revision){
-      // React invokes this after committing the authoritative snapshot. HTML load
-      // alone must never retire the functioning previous presentation.
       rendererReady=true;
       if(!readySent){
         const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
