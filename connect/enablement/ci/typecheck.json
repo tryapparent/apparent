@@ -3,6 +3,8 @@
     "config": "connect/service/tsconfig.json",
     "inputs": [
       "connect/service/scripts/build-recipient.mjs",
+      "connect/enablement/ci/bend/",
+      "shared/enablement/bend/",
       "shared/ui/",
       "shared/assets/"
     ],

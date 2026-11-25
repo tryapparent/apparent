@@ -64,7 +64,7 @@ Routing/rollback: the existing capability Worker remains the only recipient entr
 
 Encryption boundary: this viewer consumes the existing service-readable single-capture contract. Private encrypted captures remain refused by the service until the separate, explicitly authorized shared-copy integration is implemented. This frontend slice does not turn encrypted bytes into public evidence, introduce private key escrow, create a share or grant access on page load. Shared copies use HTTPS and R2's Cloudflare-managed encryption at rest, not end-to-end encryption. See #171/#189 for the accepted integration scope.
 
-Pending HTML explains bounded manifest checks even without JavaScript. Its external script requests only the same-origin manifest, without account cookies or referrers, every five seconds, with a request timeout, at most 24 attempts and a two-minute wall-clock deadline. Ready or terminal transitions reload server-rendered truth. Failures remain pending, and exhausted checks ask the recipient to reload later or contact the sender. No countdown or upload ETA is fabricated.
+Visible pending pages check the same-origin manifest on open, after one second, then about every five seconds. Foreground returns can advance a check. Checks pause while hidden and have a timeout, a 24-attempt cap and a two-minute deadline. Terminal results reload the page. Without JavaScript or after exhaustion, reload manually.
 
 ## Browser entry ownership
 
