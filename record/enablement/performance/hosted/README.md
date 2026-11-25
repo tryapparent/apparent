@@ -67,7 +67,8 @@ performance guarantee. [GitHub runner support](https://docs.github.com/en/action
 The feasibility adapter checks the KVM device and attempts to boot the exact
 runner kernel with a tiny BusyBox initramfs, hardware acceleration and no
 network. It reports the actual four-vCPU guest topology, PSI and steal samples
-if they can be collected. A successful boot establishes this runner's
+if they can be collected. The kernel console and the structured counter sample
+are retained as separate serial logs. A successful boot establishes this runner's
 technical feasibility. Native scoring requires supported virtualization and
 the real synthetic desktop template and guards. Use the existing Clanker VM
 for native acceptance, with diagnostic status.
