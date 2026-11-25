@@ -410,3 +410,22 @@ fn settings_resume_refuses_legacy_read_and_cancelled_grants() {
     assert_eq!(fs::read(&f.client.config).unwrap(), before);
     assert_eq!(server.state.lock().unwrap().requests, 0);
 }
+
+#[test]
+#[ignore]
+fn benchmark_public_copy_sender() -> Result<()> {
+    let root = PathBuf::from(std::env::var("APPARENT_BENCH_SENDER")?);
+    let client = Client::new(provider(root.join("config.json")));
+    let link = client.prepare_public_link(&root.join("synthetic.apparent"), &|| true)?;
+    ensure!(link.authorized());
+    println!("BENCH_LINK {}", link.text);
+    std::io::stdout().flush()?;
+    let mut command = String::new();
+    std::io::stdin().read_line(&mut command)?;
+    ensure!(command == "upload\n");
+    client.process_once()?;
+    let jobs = client.jobs()?;
+    let [job] = jobs.as_slice() else { bail!("Expected one public copy"); };
+    ensure!(job.status == "ready" && job.public_copy && !job.encrypted && job.attempts == 1);
+    Ok(())
+}

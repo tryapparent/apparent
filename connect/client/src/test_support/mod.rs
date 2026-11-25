@@ -1271,22 +1271,17 @@ pub fn hosted_sharing_sender_reports_interruption_and_recovers_under_same_url() 
     f.authorize(&server.url);
     config::enable_experiment(HOSTED_SHARING);
     let bundle = f.bundle();
-    let url = f.client.share(&bundle).unwrap();
+    let link = f.client.prepare_public_link(&bundle, &|| true).unwrap();
     f.client.process_once().unwrap();
-    assert_eq!(
-        server
-            .state
-            .lock()
-            .unwrap()
-            .progress
-            .last()
-            .map(String::as_str),
-        Some("paused")
-    );
-    server.state.lock().unwrap().mode.clear();
+    {
+        let mut state = server.state.lock().unwrap();
+        assert_eq!(state.progress.last().unwrap(), "paused");
+        assert_eq!(state.request_routes.iter().filter(|r| r.starts_with("PUT ")).count(), 2);
+        state.mode.clear();
+    }
     f.client.retry().unwrap();
     f.client.process_once().unwrap();
-    assert_eq!(f.client.share(&bundle).unwrap(), url);
+    assert_eq!(f.client.prepare_public_link(&bundle, &|| true).unwrap().text, link.text);
     assert!(server.state.lock().unwrap().ready);
     server.state.lock().unwrap().mode = "fail-file".into();
     let another = f.root.join("second.apparent");
@@ -1299,16 +1294,7 @@ pub fn hosted_sharing_sender_reports_interruption_and_recovers_under_same_url() 
         f.client.save_job(job).unwrap();
         f.client.process_once().unwrap();
     }
-    assert_eq!(
-        server
-            .state
-            .lock()
-            .unwrap()
-            .progress
-            .last()
-            .map(String::as_str),
-        Some("failed")
-    );
+    assert_eq!(server.state.lock().unwrap().progress.last().unwrap(), "failed");
 }
 
 #[cfg_attr(test, test)]

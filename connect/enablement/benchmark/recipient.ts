@@ -10,18 +10,20 @@ import {
   measuredWait,
 } from "../../../shared/enablement/performance/measurement.ts";
 import { watchAttempt } from "./watch.ts";
+import { nativeSender, type NativeBuild } from "./native/sender.ts";
 
 const service = new URL("../../service/", import.meta.url);
 const requireService = createRequire(new URL("package.json", service));
 const { chromium } = requireService("playwright-core");
 const { fixture, id, digest } = await import("../../service/test/helpers.mjs");
-const [work, chrome, mode, ...extra] = process.argv.slice(2);
+const [work, chrome, mode, native, ...extra] = process.argv.slice(2);
 if (
   !work ||
   !isAbsolute(work) ||
   !chrome ||
   !isAbsolute(chrome) ||
   (mode && mode !== "watch-traced" && mode !== "watch-untraced") ||
+  (native && !mode) ||
   extra.length
 ) {
   throw Error(
@@ -33,6 +35,32 @@ const revision = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repo,
   encoding: "utf8",
 }).trim();
+const sender = native
+  ? nativeSender(
+      JSON.parse(native) as NativeBuild,
+      execFileSync(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL(
+              "../../client/typescript/dist/renewal/cli.js",
+              import.meta.url,
+            ),
+          ),
+        ],
+        {
+          input:
+            JSON.stringify({
+              phase: "request",
+              refreshExpired: false,
+              accessSeconds: 0xffffffff,
+            }) + "\n",
+          encoding: "utf8",
+          timeout: 3000,
+        },
+      ).trim(),
+    )
+  : undefined;
 const job = await mkdtemp(join(work, "recipient-"));
 const movie = join(job, "fixture.mp4");
 const still = join(job, "frame.png");
@@ -67,12 +95,23 @@ let backend: Awaited<ReturnType<typeof fixture>> | undefined;
 const gateway = createServer(async (request, response) => {
   try {
     if (!backend) throw Error("Synthetic recipient backend has not started");
+    const trace = sender?.observeRequest(
+      request.method ?? "",
+      request.url ?? "",
+    );
+    if (trace) response.once("finish", () => trace.finish(response.statusCode));
+    const chunks: Buffer[] = [];
+    if (trace) for await (const chunk of request) chunks.push(chunk);
+    trace?.dispatch();
     const result = await backend.call(request.url, {
       method: request.method,
       headers: request.headers,
+      ...(chunks.length ? { raw: Buffer.concat(chunks) } : {}),
     });
+    const reply = Buffer.from(await result.arrayBuffer());
+    trace?.workerReply(reply, result.status);
     response.writeHead(result.status, Object.fromEntries(result.headers));
-    response.end(Buffer.from(await result.arrayBuffer()));
+    response.end(reply);
   } catch {
     response.writeHead(500).end("Synthetic recipient gateway failed");
   }
@@ -107,6 +146,8 @@ try {
       ),
     ],
   ]);
+  if (sender)
+    assets.set("contact-sheet.png", assets.get("frames/frame-01.png")!);
   if (mode) {
     const browser = await chromium.launch({
       executablePath: chrome,
@@ -129,6 +170,7 @@ try {
             variant,
             trace: mode === "watch-traced",
             directory: job,
+            sender,
           }),
         );
       }

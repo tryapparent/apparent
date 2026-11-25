@@ -19,6 +19,10 @@ test("the hosted artifact retains receipts and waterfalls and excludes scratch m
   const output = join(root, "evidence");
   await mkdir(join(input, "baseline-a", "recipient-b"), { recursive: true });
   await mkdir(join(input, "baseline-a", "sample-c"));
+  await mkdir(
+    join(input, "baseline-a", "recipient-b", "cold-native", "sender"),
+    { recursive: true },
+  );
   await mkdir(output);
 
   for (const name of [
@@ -28,6 +32,8 @@ test("the hosted artifact retains receipts and waterfalls and excludes scratch m
     "baseline-a/recipient-b/warm.json",
     "baseline-a/recipient-b/fixture.mp4",
     "baseline-a/recipient-b/frame.png",
+    "baseline-a/recipient-b/cold-native/native-sender.json",
+    "baseline-a/recipient-b/cold-native/sender/upload.credential",
     "baseline-a/sample-c/resources.txt",
     "baseline-a/sample-c/replay-unit.json",
     "baseline-a/sample-c/replay-unit.log",
@@ -41,6 +47,8 @@ test("the hosted artifact retains receipts and waterfalls and excludes scratch m
   assert.deepEqual((await readdir(output, { recursive: true })).sort(), [
     "baseline-a",
     "baseline-a/recipient-b",
+    "baseline-a/recipient-b/cold-native",
+    "baseline-a/recipient-b/cold-native/native-sender.json",
     "baseline-a/recipient-b/cold.json",
     "baseline-a/recipient-b/warm.json",
     "baseline-a/recipient-b/watch-replay.json",

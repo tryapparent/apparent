@@ -1693,20 +1693,7 @@ impl Client {
                 reserved["status"] == "pending",
                 "Invalid reservation status"
             );
-            for file in &job.files {
-                let response = scratch.0.join(format!("ack-{}", random_id()?));
-                self.request(
-                    &job.server,
-                    Some(&credential),
-                    "PUT",
-                    &format!("{base}/files/{}", file.path),
-                    Some(&scratch.0.join(&file.path)),
-                    &response,
-                    JSON_LIMIT,
-                    Duration::from_secs(60),
-                    &allowed,
-                )?;
-            }
+            self.send_plaintext_files(job, &scratch.0, &credential, &base)?;
             let completed = self.json_request(
                 &job.server,
                 Some(&credential),

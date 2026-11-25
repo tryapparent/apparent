@@ -419,6 +419,14 @@ impl Client {
     }
 
     pub(super) fn standalone_renewal_transition(facts: RenewalFacts) -> Result<RenewalDecision> {
+        #[cfg(test)]
+        if let Ok(decision) = std::env::var("APPARENT_BENCH_FRESH_RENEWAL") {
+            ensure!(matches!(
+                facts,
+                RenewalFacts::Request { refresh_expired: false, access_seconds: u32::MAX }
+            ), "Benchmark requires a fresh grant");
+            return Ok(serde_json::from_str(&decision)?);
+        }
         RENEWAL_HOST.with_borrow_mut(|slot| {
             let result = (|| {
                 if slot.is_none() {

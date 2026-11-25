@@ -2,6 +2,30 @@
 use super::encryption::{Context as CryptoContext, v2};
 use super::*;
 impl Client {
+    pub(super) fn send_plaintext_files(
+        &self, job: &Job, stage: &Path, credential: &Credential, base: &str,
+    ) -> Result<()> {
+        let put = |file: &Asset| {
+            self.request(
+                &job.server, Some(credential), "PUT", &format!("{base}/files/{}", file.path),
+                Some(&stage.join(&file.path)), &stage.join(format!("ack-{}", random_id()?)),
+                JSON_LIMIT, Duration::from_secs(60), &|| self.active(job),
+            )
+        };
+        if !job.public_copy {
+            return job.files.iter().try_for_each(put);
+        }
+        for pair in job.files.chunks(2) {
+            std::thread::scope(|scope| -> Result<()> {
+                let Some(second) = pair.get(1) else { return put(&pair[0]); };
+                let sibling = std::thread::Builder::new().spawn_scoped(scope, || put(second))?;
+                let first = put(&pair[0]);
+                first.and(sibling.join().map_err(|_| anyhow::anyhow!("Hosted PUT worker failed"))?)
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn list_recordings(&self, reader: Option<&str>, limit: u8) -> Result<Value> {
         let (name, client, credential) = match reader {
             Some("default") => ("default".to_owned(), self.clone(), self.read_credential()?),

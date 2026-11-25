@@ -177,3 +177,5 @@ frontier. The shipped journey Bend policy evaluates the stop decision using
 the first two and latest two complete one-hour windows and distinct tested
 ideas since the last gain. It emits the window gains, threshold, hypothesis
 set, qualified incumbent and current score.
+
+For a production sender comparison, see [default public copy](native/README.md).

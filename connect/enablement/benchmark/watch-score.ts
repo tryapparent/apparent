@@ -13,6 +13,7 @@ import {
   type Matched,
 } from "../../../shared/enablement/performance/comparison.ts";
 import type { JourneyContract } from "./watch-ledger.ts";
+import type { NativeBuild } from "./native/sender.ts";
 import {
   hash,
   quietResources,
@@ -56,7 +57,11 @@ export async function benchmark(
   controlTree = repo,
   referencePath?: string,
   candidateTree = repo,
-  hosted?: { profile: string; cgroup: string },
+  hosted?: {
+    profile: string;
+    cgroup: string;
+    native?: { control: NativeBuild; candidate: NativeBuild };
+  },
 ) {
   assert.ok([directory, chrome, controlTree, candidateTree].every(isAbsolute));
   assert.equal(
@@ -104,7 +109,7 @@ export async function benchmark(
       "Collect the baseline on the pinned current-main commit",
     );
   }
-  const replay = (tree: string, traced: boolean) =>
+  const replay = (tree: string, traced: boolean, native?: NativeBuild) =>
     sample(
       tree,
       result,
@@ -113,12 +118,15 @@ export async function benchmark(
       traced,
       hosted?.cgroup,
       Boolean(hosted),
+      native,
     );
-  const first = await replay(controlTree, !baseline);
+  const native = hosted?.native;
+  const first = await replay(controlTree, !baseline, native?.control);
   const measuredTree = baseline ? controlTree : candidateTree;
-  const candidate = await replay(measuredTree, true);
-  const candidateRepeat = await replay(measuredTree, true);
-  const repeat = await replay(controlTree, !baseline);
+  const measuredNative = baseline ? native?.control : native?.candidate;
+  const candidate = await replay(measuredTree, true, measuredNative);
+  const candidateRepeat = await replay(measuredTree, true, measuredNative);
+  const repeat = await replay(controlTree, !baseline, native?.control);
   const samples: Matched<Sample> = [first, candidate, candidateRepeat, repeat];
   for (const item of samples)
     validate(item, reference ? reference.samples[1] : first);
@@ -156,11 +164,32 @@ export async function benchmark(
     guards.map((guard) => guard.limit),
   );
   const quiet = samples.every(({ resource }) => quietResources(resource));
-  const valid = quiet;
+  const nativeOverlap =
+    native &&
+    samples.map(({ replay }, index) => {
+      const peak = (
+        index === 0 || index === 3 ? native.control : measuredNative!
+      ).peakPuts;
+      return replay.attempts.every(
+        ({ proof }) =>
+          proof.nativeSender?.peakPuts === peak &&
+          proof.nativeSender.workerPeakPuts === peak,
+      );
+    });
+  const valid = quiet && (nativeOverlap?.every(Boolean) ?? true);
   const qualified = valid && (baseline || comparison.permitted.every(Boolean));
   const baselineMs = mean(waits[0].slice(1, 3));
   const noiseSpeedIndex =
     Math.abs(1 / waits[0][1] - 1 / waits[0][2]) * baselineMs;
+  const referenceMs =
+    reference &&
+    mean(reference.samples.slice(1, 3).map((item) => runMs(item.replay)));
+  const [a1, b1, b2, a2] = waits[0];
+  const pairedGain =
+    referenceMs &&
+    [1 / b1 - 1 / a1, 1 / b2 - 1 / a2].map(
+      (difference) => difference * referenceMs,
+    );
   const receipt = join(result, "watch-score.json");
   const payload = {
     mode,
@@ -171,6 +200,21 @@ export async function benchmark(
     receipt,
     samples,
     noiseSpeedIndex,
+    ...(native ? { nativeOverlap } : {}),
+    ...(native && reference && pairedGain && referenceMs
+      ? {
+          nativeConfirmation: {
+            referenceNoiseSpeedIndex: reference.noiseSpeedIndex,
+            pairedGain,
+            material:
+              qualified &&
+              [
+                ...pairedGain,
+                (1 / mean([b1, b2]) - 1 / mean([a1, a2])) * referenceMs,
+              ].every((gain) => gain > reference.noiseSpeedIndex),
+          },
+        }
+      : {}),
     comparison: comparison.timings.map((timing, index) => ({
       wait: waitNames[index],
       ...timing,

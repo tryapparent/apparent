@@ -5,6 +5,7 @@ import {
   copyFile,
   mkdir,
   mkdtemp,
+  readFile,
   readdir,
   realpath,
   stat,
@@ -24,10 +25,11 @@ import {
   sample,
 } from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
+import { nativeFixtureSources, type NativeBuild } from "./native/sender.ts";
 
 const service = "connect/service";
 const resultFile =
-  /^(cold|warm|watch-replay|watch-score|replay-unit)\.json$|^resources\.txt$|^replay-unit\.log$/;
+  /^(cold|warm|watch-replay|watch-score|replay-unit|native-sender)\.json$|^resources\.txt$|^replay-unit\.log$/;
 
 function revision(tree: string) {
   const git = (...args: string[]) =>
@@ -57,7 +59,9 @@ export async function copyEvidence(from: string, to: string) {
   for (const item of await readdir(from, { withFileTypes: true })) {
     if (
       item.isDirectory() &&
-      /^(baseline|compare|sample|recipient)-/.test(item.name)
+      /^(baseline|compare|sample|recipient)-|^(cold|warm)-native$/.test(
+        item.name,
+      )
     ) {
       const next = join(to, item.name);
       await mkdir(next, { mode: 0o700 });
@@ -87,7 +91,57 @@ async function buildInputs(tree: string, sha: string) {
   };
 }
 
+async function buildNative(
+  tree: string,
+  sha: string,
+  driver: string,
+  scratch: string,
+  evidence: string,
+  peakPuts: 1 | 2,
+): Promise<NativeBuild> {
+  const client = join(tree, "connect/client");
+  const original = new Map<string, Buffer>();
+  const target = join(scratch, "native-target-" + sha);
+  const binary = join(scratch, "sender-" + sha);
+  const log = join(evidence, "native-build-" + sha + ".log");
+  try {
+    if (tree !== driver)
+      for (const path of nativeFixtureSources) {
+        const inControl = join(tree, path);
+        original.set(inControl, await readFile(inControl));
+        await copyFile(join(driver, path), inControl);
+      }
+    run(client, log, "cargo", [
+      "test",
+      "--locked",
+      "--release",
+      "--target-dir",
+      target,
+      "--lib",
+      "--no-run",
+      "--message-format=json",
+    ]);
+    const built = (await readFile(log, "utf8"))
+      .split("\n")
+      .filter((line) => line.startsWith("{"))
+      .map((line) => JSON.parse(line))
+      .find(
+        (row) =>
+          row.reason === "compiler-artifact" &&
+          row.profile.test &&
+          row.executable,
+      );
+    assert.ok(built?.executable, "Missing native test binary");
+    await copyFile(built.executable, binary);
+  } finally {
+    for (const [path, bytes] of original) await writeFile(path, bytes);
+  }
+  return { sha, binary, hash: await hash(binary), peakPuts };
+}
+
 async function main(args: string[]) {
+  const nativeMode = args.at(-1) === "native-sender";
+  if (nativeMode) args.pop();
   assert.equal(
     args.length,
     3,
@@ -125,6 +179,11 @@ async function main(args: string[]) {
   const controlSha = revision(control);
   const candidateSha = revision(candidate);
   const calibrationOnly = controlSha === candidateSha;
+  if (nativeMode)
+    assert.ok(
+      !calibrationOnly,
+      "Native sender lane needs two pinned sender builds",
+    );
   const scratch = await mkdtemp("/tmp/apparent-dev-cw-");
   assert.ok(scratch !== evidence && !scratch.startsWith(evidence + sep));
   const samples = join(scratch, "samples");
@@ -183,12 +242,66 @@ async function main(args: string[]) {
     execFileSync("/usr/bin/time", ["--version"], { stdio: "ignore" });
     execFileSync("taskset", ["-pc", String(process.pid)], { stdio: "ignore" });
 
-    for (const [name, tree] of calibrationOnly
-      ? [["control", control]]
-      : [
-          ["control", control],
-          ["candidate", candidate],
-        ]) {
+    const driver = nativeMode ? candidate : control;
+    const native = nativeMode
+      ? {
+          control: await buildNative(
+            control,
+            controlSha,
+            driver,
+            scratch,
+            evidence,
+            1,
+          ),
+          candidate: await buildNative(
+            candidate,
+            candidateSha,
+            driver,
+            scratch,
+            evidence,
+            2,
+          ),
+        }
+      : undefined;
+    if (native) {
+      assert.notEqual(
+        native.control.hash,
+        native.candidate.hash,
+        "Native sender builds are identical",
+      );
+      await record("native-builds.json", {
+        ...native,
+        rust: execFileSync("rustc", ["--version"], { encoding: "utf8" }).trim(),
+        curl: execFileSync("curl", ["--version"], { encoding: "utf8" }).split(
+          "\n",
+        )[0],
+        adapter: Object.fromEntries(
+          await Promise.all(
+            nativeFixtureSources.map(
+              async (path) => [path, await hash(join(driver, path))] as const,
+            ),
+          ),
+        ),
+      });
+      for (const [label, command] of [
+        ["install", ["ci", "--ignore-scripts"]],
+        ["build", ["run", "build"]],
+      ] as const) {
+        run(driver, join(evidence, "client-" + label + ".log"), "npm", [
+          "--prefix",
+          "connect/client/typescript",
+          ...command,
+        ]);
+      }
+    }
+    for (const [name, tree] of native
+      ? [["fixture", driver]]
+      : calibrationOnly
+        ? [["control", control]]
+        : [
+            ["control", control],
+            ["candidate", candidate],
+          ]) {
       run(tree, join(evidence, `install-${name}.log`), "npm", [
         "ci",
         "--ignore-scripts",
@@ -202,7 +315,7 @@ async function main(args: string[]) {
         "build",
       ]);
     }
-    const serviceRoot = join(control, service);
+    const serviceRoot = join(driver, service);
     run(serviceRoot, join(evidence, "chromium-install.log"), process.execPath, [
       "node_modules/playwright-core/cli.js",
       "install",
@@ -225,7 +338,7 @@ async function main(args: string[]) {
     ).chromium.executablePath() as string;
     assert.ok(isAbsolute(chrome) && (await stat(chrome)).isFile());
     await record("connect-builds.json", {
-      control: await buildInputs(control, controlSha),
+      control: await buildInputs(driver, native ? candidateSha : controlSha),
       candidate: await buildInputs(
         calibrationOnly ? control : candidate,
         candidateSha,
@@ -242,7 +355,17 @@ async function main(args: string[]) {
         ]) {
       const staged = await withRunnerActors(
         cgroup,
-        () => sample(tree, samples, chrome, cpu.cpuSpec, false, cgroup),
+        () =>
+          sample(
+            native ? driver : tree,
+            samples,
+            chrome,
+            cpu.cpuSpec,
+            false,
+            cgroup,
+            false,
+            label === "control" ? native?.control : native?.candidate,
+          ),
         (report) => record(`prestage-actors-${label}.json`, report),
       );
       await record(`prestage-${label}.json`, { scored: false, ...staged });
@@ -252,13 +375,14 @@ async function main(args: string[]) {
     for (const cpus of completeSubsets(cpu.topology)) {
       const spec = cpus.join(",");
       const probe = await sample(
-        control,
+        driver,
         samples,
         chrome,
         spec,
         false,
         cgroup,
         true,
+        native?.control,
       );
       probes.push({
         cpus,
@@ -287,11 +411,21 @@ async function main(args: string[]) {
       cpuQuota: cpu.cpuQuota.limits,
       replayAccounting: "dedicated-systemd-complete-smt-v1",
       preparation: "unscored-replay-per-build-v1",
+      ...(native ? { workload: "default-public-copy-native-sender-v1" } : {}),
     };
-    const accounting = { profile: JSON.stringify(profile), cgroup };
+    const accounting = { profile: JSON.stringify(profile), cgroup, native };
     await record("connect-subset.json", profile);
     const injected = await withInjectedCpu(chosen.cpus[0], () =>
-      sample(control, samples, chrome, cpuSpec, false, cgroup, true),
+      sample(
+        driver,
+        samples,
+        chrome,
+        cpuSpec,
+        false,
+        cgroup,
+        true,
+        native?.control,
+      ),
     );
     const rejected =
       !quietResources(injected.resource) &&
@@ -313,9 +447,9 @@ async function main(args: string[]) {
       samples,
       chrome,
       cpuSpec,
-      control,
+      driver,
       undefined,
-      control,
+      driver,
       accounting,
     );
     await record("calibration.json", {
@@ -338,9 +472,9 @@ async function main(args: string[]) {
       samples,
       chrome,
       cpuSpec,
-      control,
+      driver,
       baseline.receipt,
-      candidate,
+      native ? driver : candidate,
       accounting,
     );
     await record("comparison.json", {
