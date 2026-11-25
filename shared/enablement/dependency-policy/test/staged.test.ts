@@ -19,7 +19,8 @@ function fixture(t: any) {
   };
   let head: string | undefined;
   const stage = () => git("add", "-A");
-  const check = () => checkStaged(cwd, head, git("write-tree"));
+  const check = (advise?: (message: string) => void) =>
+    checkStaged(cwd, head, git("write-tree"), advise);
   const commit = () => {
     git("-c", "core.hooksPath=/dev/null", "commit", "-qm", "baseline");
     head = git("rev-parse", "HEAD");
@@ -129,6 +130,57 @@ test("Connect can relocate the two exact Rust modules without admitting edits or
   const errors = (await f.check()).join("\n");
   assert.match(errors, /renewal\/mod\.rs: new Rust/);
   assert.match(errors, /other\/mod\.rs: new Rust/);
+});
+test("new staged TypeScript and Rust outside host paths get one non-blocking Bend hint", async (t) => {
+  const f = fixture(t);
+  const ts = "export const ready = true;\n";
+  const rust = "pub fn ready() -> bool { true }\n";
+  f.put("record/existing.ts", ts);
+  f.put("engine/move.rs", rust);
+  f.stage();
+  f.commit();
+  f.put("record/existing.ts", "export const ready = false;\n");
+  f.git("mv", "engine/move.rs", "engine/moved.rs");
+  for (const file of [
+    "record/decision.ts",
+    "record/completion/test/decision.mts",
+    "enablement/timing/journey/native/decision.cts",
+    "public/site/src/components/selection.ts",
+    "composition/pill/renderer/window.ts",
+    "connect/native-adapter/src/caller.ts",
+    "shared/ui/src/button.tsx",
+  ])
+    f.put(file, ts);
+  f.put("record/types.d.ts", "export type Ready = boolean;\n");
+  f.put("engine/native/agent_context/selection.rs", rust);
+  f.put("engine/native/macos/bridge.rs", rust);
+  f.stage();
+  f.put("record/unstaged.ts", ts);
+  f.put("engine/moved.rs", "pub fn ready() -> bool { false }\n");
+
+  const hints: string[] = [];
+  assert.deepEqual(await f.check((hint) => hints.push(hint)), []);
+  assert.equal(hints.length, 1);
+  assert.match(hints[0], /node shared\/enablement\/bend\/scaffold\/run\.ts/);
+  for (const file of [
+    "record/decision.ts",
+    "record/completion/test/decision.mts",
+    "enablement/timing/journey/native/decision.cts",
+    "public/site/src/components/selection.ts",
+    "engine/native/agent_context/selection.rs",
+  ])
+    assert.ok(hints[0].includes(file), file);
+  for (const file of [
+    "record/existing.ts",
+    "engine/moved.rs",
+    "composition/pill/renderer/window.ts",
+    "connect/native-adapter/src/caller.ts",
+    "shared/ui/src/button.tsx",
+    "record/types.d.ts",
+    "engine/native/macos/bridge.rs",
+    "record/unstaged.ts",
+  ])
+    assert.ok(!hints[0].includes(file), file);
 });
 test("Biome checks real blobs; lint ratchet and formatting scope are explicit", () => {
   assert.deepEqual(checkStyle("a.ts", "export const x = 1;\n"), []);

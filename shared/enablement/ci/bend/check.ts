@@ -7,10 +7,12 @@ import { benchmarkComparison } from "../../performance/comparison.ts";
 import { buildSparkleOutcomes } from "./build.ts";
 
 await bendScratch(async (scratch) => {
-  const regression = fileURLToPath(
-    new URL("../../bend/toolchain.test.ts", import.meta.url),
+  const regressions = ["toolchain.test.ts", "scaffold/test.ts"].map((path) =>
+    fileURLToPath(new URL("../../bend/" + path, import.meta.url)),
   );
-  console.log(run(process.execPath, ["--test", regression], scratch).trimEnd());
+  console.log(
+    run(process.execPath, ["--test", ...regressions], scratch).trimEnd(),
+  );
   await buildSparkleOutcomes(
     join(scratch, "sparkle-outcomes.mjs"),
     proofOptions(process.argv.slice(2)),

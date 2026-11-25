@@ -1,5 +1,18 @@
 # Bend2 owner builds
 
+From the repository root, scaffold a starter in an existing source directory
+of an owner that already has a Bend build.
+
+```sh
+node shared/enablement/bend/scaffold/run.ts record/completion/src/finish-admission.bend
+```
+
+The command creates the source, registers it in the owner's `modules.json`,
+and prints the owner check. Connect and Handoff reuse an existing consumer
+route. Pass `--consumers web,service` for a new Connect module whose production
+consumers are Web and Service. After scaffolding, replace the starter function
+and wire its production caller and verification.
+
 Record completion and the Connect service build typed Bend2 policy into standalone
 ES modules. The [migration rule](../../../AGENTS.md#architecture-and-migration)
 requires new or changed decisions, validation, transformations and state

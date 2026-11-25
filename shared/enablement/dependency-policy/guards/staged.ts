@@ -16,10 +16,33 @@ import { git } from "../snapshot.ts";
 import { checkStyles } from "./style.ts";
 import { architectureErrors } from "./architecture.ts";
 
+const typescriptHostPaths = [
+  "capture/desktop/ui/frontend/electron/",
+  "composition/pill/renderer/",
+  "composition/settings/renderer/",
+  "connect/native-adapter/src/",
+  "handoff/renderer/",
+  "onboarding/renderer/",
+  "record/pill/renderer/",
+  "record/settings/renderer/",
+  "record/storage/renderer/",
+];
+const jsxHostPaths = [
+  "connect/web/src/",
+  "public/site/src/components/",
+  "shared/ui/src/",
+];
+const rustHostPaths = [
+  "engine/native/macos/",
+  "engine/native/src/audio_macos/",
+  "engine/wayland/",
+];
+
 export async function checkStaged(
   cwd: string,
   head: string | undefined,
   tree: string,
+  advise?: (message: string) => void,
 ): Promise<string[]> {
   const before = new Map<string, string>();
   const after = new Map<string, string>();
@@ -113,6 +136,7 @@ export async function checkStaged(
       );
   }
   const style: { file: string; text: string; old?: string }[] = [];
+  const bendCandidates: string[] = [];
   for (const [file, meta] of after) {
     if (meta === before.get(file) || !meta.startsWith("100")) continue;
     const text = git(["show", `${tree}:${file}`], cwd);
@@ -125,6 +149,19 @@ export async function checkStaged(
     errors.push(...sourceBudget(file, text, inherited));
     const ext = path.posix.extname(file).toLowerCase();
     const base = path.posix.basename(file);
+    if (advise && !before.has(file) && !renamed) {
+      const hostPaths = ext === ".rs" ? rustHostPaths : typescriptHostPaths;
+      if (
+        /\.(?:ts|tsx|mts|cts|rs)$/i.test(file) &&
+        !/\.d\.(?:ts|mts|cts)$/i.test(file) &&
+        !hostPaths.some((prefix) => file.startsWith(prefix)) &&
+        !(
+          ext === ".tsx" &&
+          jsxHostPaths.some((prefix) => file.startsWith(prefix))
+        )
+      )
+        bendCandidates.push(JSON.stringify(file));
+    }
     if (ext === ".md") {
       const cap = (
         { "agents.md": 2000, "readme.md": 2000, "skill.md": 3000 } as Record<
@@ -197,5 +234,9 @@ export async function checkStaged(
         : undefined,
     ),
   );
+  if (bendCandidates.length)
+    advise?.(
+      `Consider Bend2 for new logic in ${bendCandidates.join(", ")}. To scaffold a module, run node shared/enablement/bend/scaffold/run.ts <owner/path.bend>.`,
+    );
   return errors;
 }
