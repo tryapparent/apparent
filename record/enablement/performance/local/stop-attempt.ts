@@ -4,6 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { hostedAccounting } from "../fixtures/host-accounting.ts";
 import {
   schedulerPressureUs,
   waitForQuietStart,
@@ -120,6 +121,7 @@ export async function stopAttempt(
       })(),
     ]);
     await waitForQuietStart(AbortSignal.timeout(46_000));
+    const hostWindow = hostedAccounting()?.start();
     const pressure = schedulerPressureUs();
     const start = performance.now();
     const usage = join(output, "resources.tsv");
@@ -158,6 +160,7 @@ export async function stopAttempt(
     const verified = performance.now();
     const cpuPressurePercent =
       (schedulerPressureUs() - pressure) / ((verified - start) * 10);
+    const hostAccounting = hostWindow?.();
     assert.equal(
       clipboard.status,
       0,
@@ -214,6 +217,7 @@ export async function stopAttempt(
         .digest("hex"),
       totalMs: verified - start,
       cpuPressurePercent,
+      hostAccounting,
       resources: {
         cpuSeconds: user + system,
         peakRssKiB,

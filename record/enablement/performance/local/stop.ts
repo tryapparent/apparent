@@ -14,6 +14,7 @@ import {
   benchmarkComparison,
   type Limit,
 } from "../../../../shared/enablement/performance/comparison.ts";
+import { hostedAccounting } from "../fixtures/host-accounting.ts";
 import { shutDown } from "./attempt.ts";
 import { locateStopBuild, stopAttempt } from "./stop-attempt.ts";
 import {
@@ -141,6 +142,9 @@ async function collect(
 async function score(output: string) {
   const raw: Evidence = json(join(output, "raw.json"));
   const hosted = raw.fixture === hostedFixtureId;
+  const accounting = hostedAccounting();
+  if (accounting)
+    assert.ok(hosted, "Hosted accounting requires the hosted Stop fixture");
   assert.ok(hosted || raw.fixture === threshold.id);
   assert.equal(raw.transcription, "whole-file");
   assert.equal(raw.trials.length, 4);
@@ -162,11 +166,12 @@ async function score(output: string) {
   const comparisonArms = raw.candidate ? [b, c] : [];
   const limits: { dimension: string; limits: Limit[] }[] = [
     {
-      dimension: "CPU pressure",
-      limits: raw.trials.map((trial) => [
-        trial.cpuPressurePercent,
-        maxPressurePercent,
-      ]),
+      dimension: accounting ? "Hosted resource accounting" : "CPU pressure",
+      limits: raw.trials.map((trial) =>
+        accounting
+          ? [trial.hostAccounting?.qualified === true ? 0 : 1, 0]
+          : [trial.cpuPressurePercent, maxPressurePercent],
+      ),
     },
     {
       dimension: "transcript",
@@ -236,6 +241,9 @@ async function score(output: string) {
     probeOverheadMs: raw.candidate
       ? undefined
       : [waited(a) - waited(b), waited(d) - waited(c)],
+    hostedResources: accounting
+      ? raw.trials.map((trial) => trial.hostAccounting)
+      : undefined,
     guards,
     raw: join(output, "raw.json"),
   };
@@ -295,6 +303,9 @@ if (mode === "--xvfb-child") {
         HOME: home,
         TMPDIR: output,
         APPARENT_STOP_BENCH_SPANS: traceSpans ? "1" : undefined,
+        APPARENT_RECORD_HOSTED_SCOPE: process.env.APPARENT_RECORD_HOSTED_SCOPE,
+        APPARENT_RECORD_HOST_CPU_LIST:
+          process.env.APPARENT_RECORD_HOST_CPU_LIST,
       },
       stdio: "inherit",
     },

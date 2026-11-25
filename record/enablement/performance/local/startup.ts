@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { benchmarkComparison } from "../../../../shared/enablement/performance/comparison.ts";
+import { hostedAccounting } from "../fixtures/host-accounting.ts";
 import { schedulerPressureUs } from "../fixtures/host-pressure.ts";
 import { attempt, locate, type Setup } from "./attempt.ts";
 import {
@@ -21,6 +22,7 @@ import {
 
 const fixture = "record-pill-xvfb-v2";
 const maxSchedulerPressurePercent = 5;
+const accounting = hostedAccounting();
 
 async function sha256(path: string) {
   const hash = createHash("sha256");
@@ -34,6 +36,7 @@ function median(values: number[]) {
 }
 
 async function measure(setup: Setup, output: string, framebuffer: string) {
+  const hostWindow = accounting?.start();
   const time = performance.now();
   const pressure = schedulerPressureUs();
   const display = watchDisplay(framebuffer);
@@ -72,6 +75,7 @@ async function measure(setup: Setup, output: string, framebuffer: string) {
     observerMaxRssKiB: process.resourceUsage().maxRSS,
     schedulerPressurePercent:
       (schedulerPressureUs() - pressure) / ((performance.now() - time) * 10),
+    hostAccounting: hostWindow?.(),
     hostSha256: await sha256(setup.host),
     rendererEntrySha256: await sha256(setup.renderer),
     electronSha256: await sha256(setup.runtime),
@@ -127,6 +131,10 @@ if (!childModes.includes(args[0])) {
           PATH: process.env.PATH,
           HOME: process.env.HOME,
           TMPDIR: process.env.TMPDIR,
+          APPARENT_RECORD_HOSTED_SCOPE:
+            process.env.APPARENT_RECORD_HOSTED_SCOPE,
+          APPARENT_RECORD_HOST_CPU_LIST:
+            process.env.APPARENT_RECORD_HOST_CPU_LIST,
         },
         stdio: "inherit",
       },
@@ -210,17 +218,13 @@ if (!childModes.includes(args[0])) {
         visible.evidenceBytes === bytesPerFrame,
     ),
   );
-  const eligible =
-    complete &&
-    runs.every(
-      (run) => run.schedulerPressurePercent <= maxSchedulerPressurePercent,
-    );
-  const pressureLimit = runs.map(
-    ({ schedulerPressurePercent }): [number, number] => [
-      schedulerPressurePercent,
-      maxSchedulerPressurePercent,
-    ],
+  const pressureLimit = runs.map((run): [number, number] =>
+    accounting
+      ? [run.hostAccounting?.qualified === true ? 0 : 1, 0]
+      : [run.schedulerPressurePercent, maxSchedulerPressurePercent],
   );
+  const eligible =
+    complete && pressureLimit.every(([measured, limit]) => measured <= limit);
   const resourceLimits = [];
   if (candidate) {
     for (const mode of ["cold", "warm"]) {
@@ -262,6 +266,7 @@ if (!childModes.includes(args[0])) {
   );
   let overhead;
   if (!candidate && eligible) {
+    const hostWindow = accounting?.start();
     const at = performance.now();
     const pressure = schedulerPressureUs();
     const observations: (Awaited<ReturnType<typeof attempt>> & {
@@ -286,9 +291,13 @@ if (!childModes.includes(args[0])) {
     }
     const pressurePercent =
       (schedulerPressureUs() - pressure) / ((performance.now() - at) * 10);
+    const hostAccounting = hostWindow?.();
     overhead = {
       pressurePercent,
-      eligible: pressurePercent <= maxSchedulerPressurePercent,
+      hostAccounting,
+      eligible: accounting
+        ? hostAccounting?.qualified === true
+        : pressurePercent <= maxSchedulerPressurePercent,
       observations,
       ackMs: Object.fromEntries(
         ["cold", "warm"].map((mode) => {
@@ -329,7 +338,9 @@ if (!childModes.includes(args[0])) {
     overhead,
     runs,
     guards: {
-      maxSchedulerPressurePercent,
+      maxSchedulerPressurePercent: accounting
+        ? undefined
+        : maxSchedulerPressurePercent,
       maxSampleGapMs,
       frameEvidenceComplete: complete,
       pressurePermitted: comparison.permitted.slice(0, runs.length),

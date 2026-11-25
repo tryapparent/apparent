@@ -39,10 +39,19 @@ Both scored adapters build their immutable inputs before measuring. They
 collect a same-build noise and probe calibration, followed by serial control,
 candidate, candidate and control repeats when comparing different revisions.
 The existing owner runner qualifies decoded output, clipboard or pixel proof,
-and resource limits. The hosted adapter also requires at most 5% virtual-CPU
-steal in the Linux accounting window. It retains the CPU topology, allowed
-CPU list and CPU/I/O PSI snapshots. Both adapters inherit the runner's
-normal scheduler allocation. `record-run.json` is the successful hosted receipt. It links
+and product CPU, memory and storage limits. The standard runner's timed
+subprocesses execute as the runner user in a fresh systemd CPU-accounting
+scope. The scope includes each benchmark, its observers, and their children.
+Per arm, root cgroup CPU time minus the scope's CPU time measures unrelated
+work. The guard allows up to 5% of available guest CPU capacity, 5% CPU steal
+and 5% guest I/O pressure, and rejects any CFS bandwidth throttling in the
+scope or its ancestors. Total guest CPU PSI remains in each arm's receipt
+for diagnosis. The adapters also retain CPU topology and allowed CPU lists.
+The Start adapter exercises the accounting through separate unscored owned
+and injected-outside CPU probes before preparing the measurement. It waits
+for the injected process to exit before any product timing.
+Native and standalone local replays retain their existing pressure checks.
+`record-run.json` is the successful hosted receipt. It links
 the comparison and raw attempts, including the millis needed by the existing
 `score/frontier.ts` ledger. Its decision and active-effort rules are unchanged.
 Local and old Clanker timings are diagnostic history.
