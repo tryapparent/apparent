@@ -4,6 +4,7 @@
     "host/tips/note-tip.bend",
     "host/tips/frog-nudge.bend",
     "host/traversal/desktop-frog.bend",
+    "host/traversal/frog-wardrobe.bend",
     "settings/dictation-preference.bend"
   ],
   "inputs": [
@@ -13,6 +14,7 @@
     "host/tips/",
     "host/traversal/desktop-frog.d.mts",
     "host/traversal/desktop-frog.json",
+    "host/traversal/frog-wardrobe.json",
     "settings/"
   ]
 }

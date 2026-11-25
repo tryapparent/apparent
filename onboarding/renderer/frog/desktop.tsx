@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { blend, FrogSprite, hop, hopDuration } from "./sprite";
 import lily from "./lily.png";
+import { FrogAccessory, type Accessory } from "./wardrobe/accessory";
 
 type Flight = {
   fromX: number;
@@ -10,10 +11,16 @@ type Flight = {
   toX: number;
   toY: number;
 };
-type State = { name: string; shortcut: string; flight?: Flight };
+type State = {
+  name: string;
+  shortcut: string;
+  flight?: Flight;
+  equipped?: Accessory[];
+};
 type FrogBridge = {
   read(): Promise<State>;
   onShortcut(listener: (shortcut: string) => void): () => void;
+  onWardrobe(listener: (items: Accessory[]) => void): () => void;
   start(): void;
   menu(): void;
   drag(phase: "begin" | "move" | "drop" | "cancel"): void;
@@ -65,7 +72,20 @@ function subscribeShortcut(changed: () => void) {
   });
 }
 
-function DesktopFrog({ name, shortcut }: State) {
+let currentWardrobe: Accessory[] | undefined;
+const emptyWardrobe: Accessory[] = [];
+function subscribeWardrobe(changed: () => void) {
+  return window.desktopFrog.onWardrobe((items) => {
+    currentWardrobe = items;
+    changed();
+  });
+}
+
+function DesktopFrog({ name, shortcut, equipped }: State) {
+  const wardrobe = useSyncExternalStore(
+    subscribeWardrobe,
+    () => currentWardrobe ?? equipped ?? emptyWardrobe,
+  );
   const key = useSyncExternalStore(
     subscribeShortcut,
     () => currentShortcut ?? shortcut,
@@ -91,7 +111,18 @@ function DesktopFrog({ name, shortcut }: State) {
   );
   return (
     <main className="desktop-frog" data-dragging={dragging || undefined}>
-      <img className="desktop-frog-lily" src={lily} alt="" draggable={false} />
+      {wardrobe.includes("lily-pad") ? (
+        <span className="desktop-frog-lily desktop-frog-alternate-pad">
+          <FrogAccessory item="lily-pad" />
+        </span>
+      ) : (
+        <img
+          className="desktop-frog-lily"
+          src={lily}
+          alt=""
+          draggable={false}
+        />
+      )}
       <button
         className="desktop-frog-pet"
         type="button"
@@ -147,7 +178,7 @@ function DesktopFrog({ name, shortcut }: State) {
           if (event.detail === 0) setJumping(true);
         }}
       >
-        <FrogSprite motion={jumping ? motion : undefined} />
+        <FrogSprite motion={jumping ? motion : undefined} wardrobe={wardrobe} />
       </button>
       <button
         className="desktop-frog-record"

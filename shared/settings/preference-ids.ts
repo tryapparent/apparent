@@ -28,6 +28,7 @@ export type PreferenceValues = {
   "labs.onboardingWisprFlow": boolean;
   "labs.dictationFrog": boolean;
   "labs.desktopFrog": boolean;
+  "labs.frogWardrobe": boolean;
   "labs.hostedSharing": boolean;
   "about.updateChannel": string;
 };

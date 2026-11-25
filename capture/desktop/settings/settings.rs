@@ -264,7 +264,7 @@ pub enum Action {
     Navigate { pane: Pane },
     AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
     AgentsConnection { request: u32, connection: Option<super::agents::Connection>, #[serde(default)] disconnect: Option<String> },
-    LabsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
+    LabsPreference { request: u32, enabled: Option<bool>, setting: Option<String>, wardrobe: Option<super::super::frog_wardrobe::Request> },
     RecordingPreference { request: u32, key: String, value: serde_json::Value },
     RecordingMeter { visible: bool },
     PermissionAction { request: u32, intent: PermissionIntent },
@@ -919,15 +919,15 @@ impl Session {
                 }
                 Effect::None
             }
-            Event::Action(Action::LabsPreference { request, enabled, setting }) => {
+            Event::Action(Action::LabsPreference { request, enabled, setting, wardrobe }) => {
                 if self.pane == Some(Pane::Labs) {
-                    let reply = super::labs::request(&host.config_path(), request, enabled, setting.as_deref());
-                    #[cfg(any(target_os = "linux", target_os = "macos"))]
-                    if setting.as_deref().is_none_or(|name| name == "streaming")
-                        && let Some(on) = enabled && reply["facts"]["saved"].as_bool() == Some(on) {
-                        if on { crate::capture::engine::runtime::audio::transcription::speech_preview::prepare(); }
-                        else { crate::capture::engine::runtime::audio::transcription::speech_preview::release_cache(); }
-                    }
+                    let path = host.config_path();
+                    let setting = setting.as_deref();
+                    let reply = match wardrobe {
+                        Some(intent) => super::super::frog_wardrobe::response(&path, request, enabled, setting, intent),
+                        None => super::labs::request(&path, request, enabled, setting),
+                    };
+                    crate::recording_preferences::apply_streaming(setting, enabled, &reply);
                     self.send(&reply);
                 }
                 Effect::None

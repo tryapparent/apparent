@@ -25,5 +25,13 @@
     "apply": "live",
     "platforms": ["macos"],
     "legacy": { "path": "experiments.desktopFrog", "lenient": true }
+  },
+  {
+    "id": "labs.frogWardrobe",
+    "label": "Frog wardrobe",
+    "kind": "boolean",
+    "default": false,
+    "apply": "live",
+    "platforms": ["macos"]
   }
 ]

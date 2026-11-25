@@ -1,5 +1,5 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'agentContext' | 'speakingStyle' | 'recordingPerformance';
+export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'frogWardrobe' | 'agentContext' | 'speakingStyle' | 'recordingPerformance';
 type AgentContextAccess = 'enabled' | 'approval_required' | 'disabled' | 'unavailable';
 type Preferences = {
   saved: boolean | null;
@@ -16,25 +16,18 @@ type Preferences = {
   wisprSupported?: boolean;
   dictationFrogSaved?: boolean | null;
   desktopFrogSaved?: boolean | null;
-  error?: never;
+  frogWardrobe?: unknown;
 };
-export type LabsFacts = Preferences | {
-  error: 'config_read_failed' | 'config_write_failed';
-  speakingStyleSaved?: never;
-  agentContextSaved?: never;
-  agentContextAccess?: never;
-  recordingPerformanceSaved?: never;
-  pushToTalkSaved?: never;
-  pushToTalkSupported?: never;
-  saved?: never; sharingSaved?: never; autoPasteSaved?: never; autoPasteSupported?: never; wisprSaved?: never; wisprSupported?: never; dictationFrogSaved?: never; desktopFrogSaved?: never;
-};
+export type LabsFacts = (Preferences & {error?: never}) | ({
+  [Key in keyof Preferences]?: never;
+} & {error: 'config_read_failed' | 'config_write_failed'});
 const savedFlag = (value: unknown): value is boolean | null => value === null || typeof value === 'boolean';
 export function facts(value: unknown): LabsFacts {
   if (!value || typeof value !== 'object') throw Error('Invalid Labs reply');
   const input = value as Record<string, unknown>;
   if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
   if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
-  const result: Preferences = {saved: input.saved};
+  const result: Preferences = {saved: input.saved, ...(input.frogWardrobe == null ? {} : {frogWardrobe: input.frogWardrobe})};
   const access = input.agentContextAccess;
   if (access === 'enabled' || access === 'approval_required' || access === 'disabled' || access === 'unavailable') result.agentContextAccess = access;
   for (const key of ['autoPasteSaved', 'pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'desktopFrogSaved', 'agentContextSaved', 'speakingStyleSaved', 'recordingPerformanceSaved'] as const) {
@@ -59,18 +52,18 @@ export class LabsPreferences {
   private pending?: {id: number; resolve: (value: LabsFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>};
   private send: (value: object) => void;
   constructor(send: (value: object) => void) {this.send = send;}
-  request(value?: unknown, setting: LabsSetting = 'streaming'): Promise<LabsFacts> {
-    if (value === undefined && setting === 'streaming')
+  request(value?: unknown, setting: LabsSetting = 'streaming', wardrobe?: unknown): Promise<LabsFacts> {
+    if (value === undefined && setting === 'streaming' && wardrobe === undefined)
       return this.reading ??= this.sendRequest(value, setting).finally(() => {this.reading = undefined;});
-    return this.sendRequest(value, setting);
+    return this.sendRequest(value, setting, wardrobe);
   }
-  private sendRequest(value: unknown, setting: LabsSetting): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','agentContext','speakingStyle','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+  private sendRequest(value: unknown, setting: LabsSetting, wardrobe?: unknown): Promise<LabsFacts> {
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','frogWardrobe','agentContext','speakingStyle','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);
       this.pending = {id: request, resolve, reject, timer};
-      try {this.send({action: 'labs-preference', request, ...(value === undefined ? {} : {enabled: value}),...(setting === 'streaming' ? {} : {setting})});}
+      try {this.send({action: 'labs-preference', request, ...(value === undefined ? {} : {enabled: value}),...(setting === 'streaming' ? {} : {setting}), ...(wardrobe === undefined ? {} : {wardrobe})});}
       catch {this.close();}
     });
   }
@@ -80,4 +73,11 @@ export class LabsPreferences {
     try {pending.resolve(facts(value.facts));} catch {pending.reject(Error('Invalid Labs reply'));}
   }
   close() {if (this.pending) {clearTimeout(this.pending.timer); this.pending.reject(Error('Settings closed')); this.pending = undefined;}}
+}
+export function admitLabsRequest(pane: string | undefined, args: unknown[], platform: string): boolean {
+  const [enabled, setting, intent] = args;
+  if (pane !== 'labs') return false;
+  if (args.length === 3) return platform === 'darwin' && enabled === undefined && setting === undefined && !!intent && typeof intent === 'object' && !Array.isArray(intent);
+  return args.length <= 2 && (!args.length || typeof enabled === 'boolean') &&
+    (platform === 'darwin' || setting !== 'wisprFlow' && setting !== 'frogWardrobe');
 }

@@ -7,10 +7,10 @@ import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts,
 import {bindPreference} from '../../../../../../../shared/settings/binding';
 
 declare global {interface Window {apparentLabs: {
-  read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
+  read(): Promise<LabsFacts>; save(...command: [value: boolean, setting?: LabsSetting] | [value: undefined, setting: undefined, intent: unknown]): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = React.ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
@@ -28,11 +28,11 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
 }) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
-  const [setting, setSetting] = useState<LabsSetting>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
+  const [setting, setSetting] = useState<Exclude<LabsSetting, 'frogWardrobe'>>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
   const alive = useRef(true), pending = useRef(false);
   const restoreFocus = useRef<string | null>(null);
   const autoPasteSupported = useRef(false), wisprSupported = useRef(false);
-  async function request(value?: boolean, setting: LabsSetting = 'streaming') {
+  async function request(value?: boolean, setting: Exclude<LabsSetting, 'frogWardrobe'> = 'streaming') {
     if (pending.current) return;
     if (value !== undefined) {
       const active = document.activeElement;

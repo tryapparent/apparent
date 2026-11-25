@@ -32,6 +32,7 @@
   "labs.onboardingWisprFlow": true,
   "labs.dictationFrog": true,
   "labs.desktopFrog": true,
+  "labs.frogWardrobe": true,
   "labs.hostedSharing": true,
   "about.updateChannel": "main"
 }

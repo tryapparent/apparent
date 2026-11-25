@@ -9,15 +9,14 @@ use serde::{Deserialize, Serialize};
 use crate::shared::model::ApparentBundle;
 
 mod config_store;
-pub(crate) use config_store::ConfigPublicationUncertain;
 pub(crate) mod capture_location;
 pub use config_store::{builtin_captures_dir, default_config_path, set_config_value_in};
-pub(crate) use config_store::{configure_nightly_child, is_nightly};
+pub(crate) use config_store::{configure_nightly_child, is_nightly, ConfigPublicationUncertain};
 #[cfg(unix)]
 pub(crate) use config_store::{capture_socket, launch_socket};
 #[cfg(target_os = "macos")]
 pub use config_store::log_dir;
-pub(crate) use config_store::{update_config_in, update_config_allowed_in};
+pub(crate) use config_store::{update_config_in, update_config_allowed_in, update_onboarding_progress_in};
 pub(crate) use config_store::{edit_preference, write_preference};
 pub(crate) use super::preferences::{preference_state, preference_value, preferences, read_preferences};
 use super::preferences::{experiment_boolean, preference};

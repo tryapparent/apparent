@@ -3,6 +3,7 @@ struct DesktopFrog {
     name: Option<String>,
     takeoff: Option<[f64; 3]>,
     checked: Option<std::time::Instant>,
+    equipped: Vec<&'static str>,
     host: Option<crate::capture::desktop::settings::onboarding::DesktopFrogHost>,
 }
 
@@ -20,19 +21,17 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
     unavailable: bool,
     shortcut: impl FnOnce() -> String,
 ) -> bool {
-    use crate::capture::desktop::settings::onboarding::{DesktopFrogHost, Progress, frog_policy};
+    use crate::capture::desktop::settings::onboarding::{DesktopFrogHost, frog_policy};
     let frog = cx.default_global::<DesktopFrog>();
     let refresh = frog
         .checked
         .is_none_or(|time| time.elapsed().as_millis() >= 1500);
     if refresh {
         frog.checked = Some(std::time::Instant::now());
-        let name = if crate::shared::handoff::experiment_preference("labs.desktopFrog") {
-            let saved = Progress::load();
-            saved.frog_name.filter(|_| saved.frog_adopted)
-        } else {
-            None
-        };
+        use crate::capture::desktop::frog_wardrobe;
+        let config = crate::shared::handoff::read_preferences(&crate::shared::handoff::default_config_path()).ok();
+        let name = config.as_ref().and_then(frog_wardrobe::frog_name).map(str::to_owned);
+        frog.equipped = config.as_ref().map(frog_wardrobe::equipped).unwrap_or_default();
         if frog.name != name {
             frog.host = None;
             frog.name = name;
@@ -48,7 +47,7 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
     let Some(host) = frog.host.as_mut() else {
         return false;
     };
-    match host.tick(visible, &shortcut()) {
+    match host.tick(visible, &shortcut(), &frog.equipped) {
         Some(start) => start,
         None => {
             frog.host = None;

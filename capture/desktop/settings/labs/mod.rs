@@ -16,10 +16,8 @@ use crate::capture::desktop::settings::shortcut::push_to_talk_supported;
 #[cfg(not(target_os = "linux"))]
 fn push_to_talk_supported() -> bool { false }
 
-pub(super) fn facts(path: &Path) -> serde_json::Value {
-    let Ok(value) = read_preferences(path) else {
-        return serde_json::json!({"error":"config_read_failed"});
-    };
+pub(in crate::capture::desktop) fn facts(path: &Path) -> serde_json::Value {
+    let Ok(value) = read_preferences(path) else { return serde_json::json!({"error":"config_read_failed"}); };
     let saved = |id| preference_value(&value, id);
     serde_json::json!({
         "saved": saved(KEY),
@@ -35,6 +33,7 @@ pub(super) fn facts(path: &Path) -> serde_json::Value {
         "wisprSupported": cfg!(target_os = "macos"),
         "dictationFrogSaved": saved("labs.dictationFrog"),
         "desktopFrogSaved": saved("labs.desktopFrog"),
+        "frogWardrobe": super::super::frog_wardrobe::facts(&value),
     })
 }
 pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
@@ -48,6 +47,7 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("pushToTalk") => Some(("labs.pushToTalk", true)),
         Some("wisprFlow") => Some(("labs.onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("dictationFrog") => Some(("labs.dictationFrog", cfg!(target_os = "macos"))),
+        Some("frogWardrobe") => Some((super::super::frog_wardrobe::PREFERENCE, cfg!(target_os = "macos"))),
         Some("desktopFrog") => Some(("labs.desktopFrog", cfg!(target_os = "macos"))),
         _ => None,
     }
@@ -192,7 +192,7 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
         let mut input = child.stdin.take().unwrap();
         for line in std::io::BufReader::new(child.stdout.take().unwrap()).lines() {
             let line = line.unwrap();
-            if let Ok(super::super::settings::Action::LabsPreference {request: id, enabled, setting}) = serde_json::from_str(&line) {
+            if let Ok(super::super::settings::Action::LabsPreference {request: id, enabled, setting, ..}) = serde_json::from_str(&line) {
                 writeln!(input, "{}", request(&path, id, enabled, setting.as_deref())).unwrap();
             } else if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled, setting }) = serde_json::from_str(&line) {
                 assert!(setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none());

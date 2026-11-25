@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
 
 contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:labs-preference'),
-  save: (enabled, setting) => ipcRenderer.invoke('apparent:labs-preference', enabled, ...(setting === undefined ? [] : [setting])),
+  save: (...args) => ipcRenderer.invoke('apparent:labs-preference', ...args),
   subscribe: callback => {
     const listener = (_event, facts) => callback(facts);
     ipcRenderer.on('apparent:labs-state', listener);

@@ -52,6 +52,7 @@
     "onboarding/renderer/frog-nudge/wave.webp",
     "composition/onboarding/frog-nudge/build.ts",
     "composition/onboarding/frog-nudge/entry.ts",
+    "onboarding/renderer/frog/wardrobe/accessory.tsx",
     "onboarding/renderer/frog/coach-copy.ts",
     "onboarding/renderer/frog/couch-hops.png",
     "onboarding/renderer/frog/desktop.css",
@@ -62,13 +63,16 @@
     "onboarding/renderer/frog/meet.tsx",
     "onboarding/renderer/frog/preference.tsx",
     "onboarding/renderer/frog/sprite.tsx",
+    "onboarding/renderer/frog/wardrobe/wardrobe.css",
+    "onboarding/renderer/frog/wardrobe/wardrobe.tsx",
     "composition/onboarding/frog/build.ts",
     "composition/onboarding/frog/host.ts",
     "composition/onboarding/frog/preload.ts",
     "onboarding/host/projection.ts",
     "composition/onboarding/build.ts",
     "composition/onboarding/package-lock.json",
-    "onboarding/enablement/ci/bend/desktop-frog.ts"
+    "onboarding/enablement/ci/bend/desktop-frog.ts",
+    "onboarding/enablement/ci/bend/frog-wardrobe.ts"
   ],
   "prefix": "onboarding/renderer/wispr/"
 }

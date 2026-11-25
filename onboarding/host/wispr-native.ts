@@ -11,7 +11,7 @@ import preferences from "../settings/preferences.json" with { type: "json" };
 import type { WisprProvider } from "./wispr.ts";
 
 const wispr = preferences.find(({ id }) => id === "labs.onboardingWisprFlow");
-if (!wispr) throw Error("Missing dictation conflicts preference");
+if (!wispr?.legacy) throw Error("Missing dictation conflicts preference");
 const {
   id,
   legacy: { path: oldPath },

@@ -1,0 +1,41 @@
+.frog-wardrobe-items {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.frog-wardrobe-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-height: 54px;
+}
+.frog-wardrobe-art {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  background: var(--apparent-stock);
+}
+.frog-wardrobe-item-name {
+  font-weight: 500;
+}
+.frog-wardrobe-item small {
+  display: block;
+  font-size: var(--apparent-type-metadata, 1rem);
+}
+.frog-wardrobe-item button {
+  min-height: 44px;
+}
+@media (max-width: 400px) {
+  .frog-wardrobe-item {
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 4px 12px;
+  }
+  .frog-wardrobe-item button {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
