@@ -42,6 +42,15 @@ export function diagnosticContracts() {
   ];
 }
 
+export function nativePrerequisites(selected: readonly string[], base: string, head: string, rustChanged: boolean, diagnostics = false) {
+  const commands = [];
+  if (rustChanged && selected.some(owner => ['capture', 'engine', 'client'].includes(owner)))
+    commands.push({argv: ['python3', 'enablement/verification.py', '--base', base, '--preflight'], cwd: '.'});
+  if (diagnostics)
+    commands.push({argv: ['node', '--experimental-strip-types', 'enablement/local-tests/rust/check.ts', base, head], cwd: '.'});
+  return commands;
+}
+
 export function workflowContracts(paths: string[] | null, base: string, workflowControls: string[] = []) {
   const fixture = 'enablement/ci/routing/test-only/workflow-triggers.test.ts';
   const commands = paths === null || paths.some(path => path.startsWith('.github/workflows/') || path === fixture)
