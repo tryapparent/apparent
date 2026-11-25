@@ -2,13 +2,15 @@ import type { DestinationView } from "../../../handoff/pure/destinations.ts";
 import type { PillView } from "../../../record/pill/renderer/view";
 import type { BackgroundHandoff } from "../../../record/pill/renderer/pill-view";
 export type { PillView } from "../../../record/pill/renderer/view";
+export type PillUpdate = Partial<{
+  view: PillView | null;
+  documentReady: boolean;
+  destination: DestinationView | null;
+  background: BackgroundHandoff | null;
+}>;
 export interface PillBridge {
   read: () => Promise<PillView | null>;
   retryBackgroundHandoff: (capture: string) => Promise<void>;
-  backgroundHandoff: () => Promise<BackgroundHandoff | null>;
-  subscribeBackgroundHandoff: (
-    callback: (state: BackgroundHandoff | null) => void,
-  ) => () => void;
   destinations: () => Promise<DestinationView | null>;
   destinationAction: (
     capture: string,
@@ -16,9 +18,6 @@ export interface PillBridge {
     id?: string,
   ) => Promise<DestinationView | null>;
   destinationFocus: (focused: boolean) => Promise<void>;
-  subscribeDestinations: (
-    callback: (state: DestinationView | null) => void,
-  ) => () => void;
   layout: (revision: number) => Promise<void>;
   manualDrag: boolean;
   beginDrag: (revision: number) => Promise<void>;
@@ -29,7 +28,10 @@ export interface PillBridge {
     action: string,
     drop?: boolean,
   ) => Promise<void | { cancelled?: true; confirmationRequired?: true }>;
-  subscribe: (callback: (state: PillView) => void) => () => void;
+  subscribe: (
+    callback: (update: PillUpdate) => void,
+    onError: () => void,
+  ) => () => void;
 }
 declare global {
   interface Window {

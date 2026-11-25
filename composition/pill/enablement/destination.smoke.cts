@@ -226,19 +226,17 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     window.apparentPill.destinations(),
   );
   await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0].webContents.send(
-      "pill:destinations",
-      null,
-    ),
+    BrowserWindow.getAllWindows()[0].webContents.send("pill:update", {
+      destination: null,
+    }),
   );
   await expect(page.locator(".pill-row")).toBeVisible();
   await proof("destination-pending");
   await app.evaluate(
     ({ BrowserWindow }, value) =>
-      BrowserWindow.getAllWindows()[0].webContents.send(
-        "pill:destinations",
-        value,
-      ),
+      BrowserWindow.getAllWindows()[0].webContents.send("pill:update", {
+        destination: value,
+      }),
     destination,
   );
   await expect(trigger).toBeEnabled();

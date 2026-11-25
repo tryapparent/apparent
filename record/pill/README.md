@@ -70,6 +70,13 @@ title, and prepares its scoped motion rule before mapping. The parent ignores
 hidden geometry for admission and retires and restarts Electron if compositor
 admission fails, even when the child reports a visible window.
 
+The sandboxed preload requests a single initial snapshot while the document
+loads. Main sends the snapshot and subsequent updates on the same ordered
+channel. React can render early, then it reports its layout after the same
+document receives the host's load acknowledgement. The host checks the
+current revision before measuring the layout. On Linux it waits two renderer
+frames before showing the first active layout.
+
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
 Add `--proof` for the pinned kernel verdict. The root native suite exercises

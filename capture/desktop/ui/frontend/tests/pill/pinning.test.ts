@@ -27,7 +27,7 @@ function host(platform = 'linux', nativeWindowAccepted = true) {
       mainFrame: {url: ''},
       setWindowOpenHandler() {},
       invalidate() {},
-      send(_channel: string, state: {revision: number}) { revision = state.revision; },
+      send(_channel: string, state: {view?: {revision: number}}) { revision = state.view?.revision ?? revision; },
       executeJavaScript: async () => ({width: 640, height: 58, revision}),
     });
     constructor(_options: unknown) { super(); window = this; }
@@ -67,7 +67,7 @@ function host(platform = 'linux', nativeWindowAccepted = true) {
     require: (name: string) => name === 'electron' ? electron
       : name === './protocol.cjs' ? require('./protocol.cts')
       : name === './geometry.cjs' ? require('./geometry.cts')
-      : name === './t3.cjs' ? {createController: () => ({view: () => null})}
+      : name === './t3.cjs' ? {createController: () => ({view: () => null, background: () => null})}
       : name === './native/window.node' ? {preventActivation: (id: number) => {
         nativeAdmissions.push(id);
         if (!nativeWindowAccepted) throw Error('Synthetic native window refusal');
