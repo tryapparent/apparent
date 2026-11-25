@@ -111,8 +111,11 @@ try {
   writeFileSync(
     join(init, "init"),
     `#!/bin/busybox sh
+set -e
 /bin/busybox mount -t proc proc /proc
 /bin/busybox mount -t sysfs sysfs /sys
+test -c /dev/ttyS1 || /bin/busybox mknod -m 600 /dev/ttyS1 c 4 65
+exec > /dev/ttyS1
 echo RECORD_GUEST_BEGIN
 /bin/busybox cat /sys/devices/system/cpu/online
 /bin/busybox cat /sys/devices/system/cpu/cpu*/topology/thread_siblings_list
@@ -138,6 +141,8 @@ echo RECORD_GUEST_END
   const groups = [
     ...new Set([...process.getgroups!(), report.device.gid]),
   ].sort((a, b) => a - b);
+  const kernelConsole = join(job.evidence, "native-kernel.log");
+  writeFileSync(kernelConsole, "", { mode: 0o600 });
   const qemu = spawnSync(
     "sudo",
     [
@@ -160,6 +165,8 @@ echo RECORD_GUEST_END
       "-display",
       "none",
       "-serial",
+      "file:" + kernelConsole,
+      "-serial",
       "stdio",
       "-monitor",
       "none",
@@ -180,17 +187,27 @@ echo RECORD_GUEST_END
       maxBuffer: 2 * 1024 * 1024,
     },
   );
-  const log = (qemu.stdout ?? "") + "\n" + (qemu.stderr ?? "");
-  writeFileSync(join(job.evidence, "native-guest.log"), log, { mode: 0o600 });
+  const sampleOutput = qemu.stdout ?? "";
+  writeFileSync(join(job.evidence, "native-guest.log"), sampleOutput, {
+    mode: 0o600,
+  });
+  if (qemu.stderr)
+    writeFileSync(join(job.evidence, "native-qemu.log"), qemu.stderr, {
+      mode: 0o600,
+    });
+  report.guestBooted = readFileSync(kernelConsole, "utf8").includes(
+    "Run /init as init process",
+  );
   assert.equal(
     qemu.status,
     0,
     qemu.error?.message ?? "KVM guest failed. See native-guest.log",
   );
-  assert.match(log, /RECORD_GUEST_BEGIN\s+0-3[\s\S]+RECORD_GUEST_END/);
+  const sample = /RECORD_GUEST_BEGIN\r?\n([\s\S]+?)RECORD_GUEST_END/.exec(
+    sampleOutput,
+  );
+  assert.ok(sample, "Missing guest counter frame. See native-guest.log");
   report.guestBooted = true;
-  const sample = /RECORD_GUEST_BEGIN\r?\n([\s\S]+?)RECORD_GUEST_END/.exec(log);
-  assert.ok(sample);
   const rows = sample[1]
     .split(/\r?\n/)
     .map((row) => row.trim())

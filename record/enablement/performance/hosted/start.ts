@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { accessSync, constants } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
@@ -29,11 +30,18 @@ apt(
 function build(checkout: string, revision: string, name: string) {
   const tree = stageRevision(checkout, revision, job, name);
   const desktop = join(tree, "capture/desktop/ui/frontend");
-  command("npm", ["ci", "--no-audit", "--no-fund"], {
-    cwd: desktop,
-    env: job.env,
-  });
-  command("npm", ["run", "build"], { cwd: desktop, env: job.env });
+  const options = { cwd: desktop, env: job.env };
+  command(
+    "npm",
+    ["ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+    options,
+  );
+  command(process.execPath, ["node_modules/electron/install.js"], options);
+  accessSync(
+    join(desktop, "node_modules/electron/dist/electron"),
+    constants.X_OK,
+  );
+  command("npm", ["run", "build"], options);
   return desktop;
 }
 
