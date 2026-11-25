@@ -5,9 +5,9 @@ const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
 const geometry=require('./geometry.cjs');
-if(!['linux','darwin'].includes(process.platform))process.exit(1);
-if(process.platform==='darwin')app.setActivationPolicy('accessory');
-const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
+const {platform}=process, linux=platform==='linux', hyprland=linux && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
+if(!linux&&platform!=='darwin')process.exit(1);
+if(!linux)app.setActivationPolicy('accessory');
 app.setName('Apparent recording controls');
 app.setPath('userData',protocol.profile(app.getPath('appData')));
 nativeTheme.themeSource='system';
@@ -21,7 +21,7 @@ let staging=null,publishingState=false,retiringFor=null;
 let keyboardMode=false,createWindow=null,retiredWindows=[],admittedWindowId=null;
 function reconcileKeyboardWindow(view){
   const next=!!view;
-  if(process.platform!=='linux'||next===keyboardMode||!createWindow||!next&&destinations.loadingPickerPreferences())return false;
+  if(!linux||next===keyboardMode||!createWindow||!next&&destinations.loadingPickerPreferences())return false;
   keyboardMode=next;
   const bounds=window.getBounds();retiredWindows.push(window);
   loaded=false;rendererReady=false;readySent=false;activated=false;admittedWindowId=null;
@@ -30,9 +30,8 @@ function reconcileKeyboardWindow(view){
 }
 function focusPicker(focused){
   pickerFocused=focused;
-  if(process.platform!=='linux')window.setFocusable(focused);
-  if(focused && !window.isVisible())window.show();
-  else if(focused)window.focus();else{
+  if(!linux)window.setFocusable(focused);
+  if(focused){if(window.isVisible())window.focus();else window.show();}else{
     window.blur();
     if(hyprland && admittedWindowId!==null && destinations.view()?.confirmed)
       emit({releaseFocus:admittedWindowId});
@@ -65,7 +64,7 @@ function applyPlacement(point){
   pendingPlace=point;
   if(!window)return;
   const physical={x:Math.round(point[0]),y:Math.round(point[1])};
-  const anchor=process.platform==='linux'?screen.screenToDipPoint(physical):physical;
+  const anchor=linux?screen.screenToDipPoint(physical):physical;
   const area=screen.getDisplayNearestPoint(anchor).workArea;
   const bounds=window.getBounds();
   position({x:Math.round(area.x+area.width/2-(recordingAnchorOffset??(visibleWidth||bounds.width)/2)),y:area.y+34});placed=true;
@@ -80,8 +79,8 @@ function setSharingConfirmation(revision){
 }
 function reportFrame(){
   if(!rendererReady || current?.phase!=='recording' || !window.isVisible())return;
-  const b=window.getBounds(),origin=process.platform==='linux'?screen.dipToScreenPoint({x:b.x,y:b.y}):b;
-  const scale=process.platform==='linux'?screen.getDisplayMatching(b).scaleFactor:1;
+  const b=window.getBounds(),origin=linux?screen.dipToScreenPoint({x:b.x,y:b.y}):b;
+  const scale=linux?screen.getDisplayMatching(b).scaleFactor:1;
   const frame=[origin.x,origin.y,b.width*scale,b.height*scale],revision=current.revision,key=JSON.stringify({revision,frame});
   if(key!==lastFrame){lastFrame=key;emit({revision,frame});}
 }
@@ -144,7 +143,7 @@ function visibility(){
   const focus=destinations.view() && keyboardCapture!==capture;
   if(!window.isVisible()){
     for(const old of retiredWindows)if(!old.isDestroyed())old.hide();
-    if(!focus || process.platform!=='linux')window.showInactive();
+    if(!focus||!linux)window.showInactive();
   }
   if(focus){keyboardCapture=capture;focusPicker(true);}
   if(retiredWindows.length&&retiringFor!==window){
@@ -177,7 +176,7 @@ process.stdin.on('data',chunk=>{
       else if(message.type==='activate'){if(message.windowId!==undefined&&message.windowId!==admittedWindowId)continue;activated=true;if(loaded)visibility();emit({activated:true,windowId:admittedWindowId});}
       else if(message.type==='place' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
         applyPlacement(message.point);
-      }else if(message.type==='position' && process.platform==='linux' && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
+      }else if(message.type==='position' && linux && Array.isArray(message.point) && message.point.length===2 && message.point.every(Number.isFinite)){
         if(window && activated && rendererReady && window.isVisible() && message.revision===current?.revision && current.phase==='recording' && current.draggable){
           const point=screen.screenToDipPoint({x:Math.round(message.point[0]),y:Math.round(message.point[1])});
           const before=window.getBounds();
@@ -244,7 +243,7 @@ app.whenReady().then(()=>{
     if(drop){
       if(pasteGesture?.revision!==revision || Date.now()>pasteGesture.until)throw Error('Paste gesture expired');
       const dip=screen.getCursorScreenPoint();
-      const point=process.platform==='linux'?screen.dipToScreenPoint(dip):dip;
+      const point=linux?screen.dipToScreenPoint(dip):dip;
       message.target=[point.x,point.y];
     }
     pasteGesture=null;
@@ -263,30 +262,31 @@ app.whenReady().then(()=>{
       if(window!==measuredWindow||document!==documentGeneration||!loaded||revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
       const height=Math.min(area.height,Math.max(58,Math.ceil(size.height)));
-      const before=window.getBounds();
-      const resized=before.width!==width || before.height!==height;
+      const before=window.getBounds(),visible=window.isVisible();
+      const windowHeight=hyprland&&keyboardMode&&visible?Math.max(before.height,height):height;
+      const resized=before.width!==width || before.height!==windowHeight;
       const nextVisibleWidth=width-(reserve??0);
       const nextLayoutKey=JSON.stringify([document,revision,width,height,size.regions]);
       if(nextLayoutKey!==layoutKey){layoutKey=nextLayoutKey;++layoutGeneration;}
-      const measuredLayout=layoutGeneration;
-      const repaintResize=process.platform==='linux' && resized && window.isVisible();
-      if(repaintResize&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
+      const measuredLayout=layoutGeneration, stale=()=>window!==measuredWindow||window.isDestroyed()||document!==documentGeneration||measuredLayout!==layoutGeneration||!loaded||revision!==current?.revision;
+      const repaint=linux && visible && (resized||windowHeight!==height);
+      const paint=()=>measuredWindow.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+      if(repaint&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
       const phaseChanged=layoutPhase!==current.phase;
       const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
       const nextCenter=phaseChanged?size.recordingAnchor??nextVisibleWidth/2:size.recordingCenter??width/2;
-      if(resized||phaseChanged||previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height});
+      if(resized||phaseChanged||previousCenter!==nextCenter)position({x:Math.round(before.x+previousCenter-nextCenter),y:before.y,width,height:windowHeight});
       recordingCenterOffset=size.recordingCenter;
       recordingAnchorOffset=size.recordingAnchor;
       visibleWidth=nextVisibleWidth;layoutPhase=current.phase;
       inputRegions=size.regions?.length?size.regions:null;
-      if(process.platform==='linux'){
-        const paintBeforeShow=!window.isVisible()&&!rendererReady;
+      if(linux){
+        const paintBeforeShow=!visible&&!rendererReady;
         if(resized||paintBeforeShow)window.webContents.invalidate();
-        if(repaintResize||paintBeforeShow&&!shapePaint)
-          shapePaint=window.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))');
+        if(repaint||paintBeforeShow&&!shapePaint)shapePaint=paint();
         const pendingPaint=shapePaint;
         if(pendingPaint)await pendingPaint;
-        if(window!==measuredWindow||window.isDestroyed()||document!==documentGeneration||measuredLayout!==layoutGeneration||!loaded||revision!==current?.revision)return false;
+        if(stale())return false;
         if(shapePaint===pendingPaint)shapePaint=null;
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale,inputRegions]);
@@ -313,12 +313,12 @@ app.whenReady().then(()=>{
       if(!readySent){
         const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
         if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){fail('invalid_native_window_identity');return;}
-        if(process.platform==='darwin'){
+        if(!linux){
           try{
             if(require('./native/window.node').preventActivation(windowId)!==true)throw Error('Native window setup refused');
           }catch{fail('native_window_setup_failed');return;}
         }
-        if(process.platform==='linux')window.setTitle('Apparent Recording Controls '+windowId.toString(16));
+        if(linux)window.setTitle('Apparent Recording Controls '+windowId.toString(16));
         admittedWindowId=windowId;readySent=true;emit({ready:true,windowId,keyboardMode});
       }
       visibility();
@@ -334,7 +334,7 @@ app.whenReady().then(()=>{
   ipcMain.handle('pill:cancel-paste',(event,...args)=>{valid(event,args);pasteGesture=null;});
   ipcMain.handle('pill:begin-drag',async(event,revision,...args)=>{
     valid(event,args);
-    if(process.platform!=='linux' || revision!==current?.revision || current.phase!=='recording' || !current.draggable || pending)throw Error('Drag unavailable');
+    if(!linux || revision!==current?.revision || current.phase!=='recording' || !current.draggable || pending)throw Error('Drag unavailable');
     const point=screen.getCursorScreenPoint(),bounds=window.getBounds();
     const lead=await window.webContents.executeJavaScript(`(() => {const r=document.querySelector('.lead')?.getBoundingClientRect();return r && {x:r.x,y:r.y,width:r.width,height:r.height};})()`);
     if(revision!==current?.revision || !current.draggable || !lead || point.x<bounds.x+lead.x || point.y<bounds.y+lead.y || point.x>=bounds.x+lead.x+lead.width || point.y>=bounds.y+lead.y+lead.height)throw Error('Drag target changed');
@@ -345,15 +345,15 @@ app.whenReady().then(()=>{
     if(!loaded || window.isDestroyed())return;
     const point=screen.getCursorScreenPoint(),bounds=window.getBounds();
     const inside=window.isVisible() && (inputRegions?geometry.containsRegions({x:point.x-bounds.x,y:point.y-bounds.y},inputRegions):geometry.contains(point,{...bounds,width:visibleWidth||bounds.width}));
-    if(process.platform==='linux' && inside && (!hovered || Date.now()-lastRaise>250)){
+    if(linux && inside && (!hovered || Date.now()-lastRaise>250)){
       window.moveTop();lastRaise=Date.now();
     }
     if(inside!==hovered){hovered=inside;emit({hovered});}
     if(pasteGesture && Date.now()>pasteGesture.until)pasteGesture=null;
-    if(process.platform==='darwin')window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
+    if(!linux)window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
   },16);
   createWindow=(focusable,bounds)=>{
-    const owned=new BrowserWindow({...(process.platform==='darwin'?{type:'panel',acceptFirstMouse:true}:{focusable}),width:640,height:58,show:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,
+    const owned=new BrowserWindow({...(linux?{focusable}:{type:'panel',acceptFirstMouse:true}),width:640,height:58,show:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,
     fullscreenable:false,skipTaskbar:true,hasShadow:false,alwaysOnTop:true,title:'Apparent recording controls',
     paintWhenInitiallyHidden:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});
@@ -362,7 +362,7 @@ app.whenReady().then(()=>{
     if(!bounds){visibleWidth=0;layoutPhase=null;}
     if(bounds)position(bounds);else if(pendingPlace)applyPlacement(pendingPlace);
   window.setAlwaysOnTop(true,'screen-saver');
-  if(process.platform==='linux')window.setVisibleOnAllWorkspaces(true);
+  if(linux)window.setVisibleOnAllWorkspaces(true);
   window.setContentProtection(false);
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   window.webContents.on('will-navigate',event=>event.preventDefault());
@@ -383,7 +383,7 @@ app.whenReady().then(()=>{
   window.on('show',()=>{if(window===owned)reportFrame();});
   window.on('move',()=>{if(window===owned)reportFrame();});
   window.on('resize',()=>{if(window===owned)reportFrame();});
-  if(process.platform==='linux'){
+  if(linux){
     for(const event of ['show','move','resize'])window.on(event,()=>{
       if(window!==owned)return;const visible=window.isVisible();
       if(activated && rendererReady && current && current.phase!=='hidden' && visible)

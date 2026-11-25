@@ -74,6 +74,8 @@ When the picker replaces the recording window, the host waits for the
 replacement's measured layout and native admission, hides the outgoing window,
 then shows the picker. Picker resizes stay mapped on XWayland. Keyboard
 selection scrolls the option list and keeps the pill's header in the viewport.
+On Hyprland the mapped picker keeps its native height when content collapses.
+The host updates its visible and clickable shape after the current layout paints.
 
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
