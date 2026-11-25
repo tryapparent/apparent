@@ -66,6 +66,16 @@ function typed(value: unknown, kind: Kind, nullable: boolean): boolean {
   return typeof value === kind;
 }
 
+export function validateSample(entry: Preference, sample: unknown): boolean {
+  return (
+    typed(sample, entry.kind, entry.nullable === true) &&
+    (entry.choices === undefined || entry.choices.includes(sample)) &&
+    (typeof sample !== "number" ||
+      ((entry.min === undefined || sample >= entry.min) &&
+        (entry.max === undefined || sample <= entry.max)))
+  );
+}
+
 function preference(value: unknown, location: string): Preference {
   function check(valid: unknown, message: string): asserts valid {
     if (!valid) throw Error(`${location}: ${message}`);

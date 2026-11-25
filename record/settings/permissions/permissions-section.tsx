@@ -1,3 +1,4 @@
+import { bindPreference } from "../../../shared/settings/binding";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@apparent/ui/button";
 import { Switch } from "@apparent/ui/switch";
@@ -199,9 +200,11 @@ export function PermissionsSection({ bridge }: { bridge: PermissionBridge }) {
             aria-busy={pending?.kind === "screen-selection" || undefined}
             aria-disabled={Boolean(pending) || undefined}
             aria-describedby="record-screen-selection-help"
-            onCheckedChange={(skip) =>
-              void act({ kind: "screen-selection", skip })
-            }
+            onCheckedChange={bindPreference(
+              "permissions",
+              "permissions.skipScreenSelection",
+              (skip) => void act({ kind: "screen-selection", skip }),
+            )}
           />
           <div id="record-screen-selection-help">
             {!selection ? (

@@ -1,0 +1,39 @@
+{
+  "general.launchAtLogin": true,
+  "general.errorReporting": false,
+  "general.recordShortcut": {
+    "key": "F8"
+  },
+  "general.pasteShortcut": null,
+  "recording.microphoneEnabled": false,
+  "recording.microphone": {
+    "id": "fixture-mic"
+  },
+  "recording.transcriber": "apple",
+  "recording.hexModel": "fixture-model",
+  "recording.hexLanguage": "en",
+  "recording.appleLocale": "en-US",
+  "recording.lowerPlayback": true,
+  "recording.playbackLevel": 35,
+  "recording.videoExport": false,
+  "storage.mediaDays": 7,
+  "storage.capturesDir": "/tmp/apparent-settings-fixture",
+  "storage.bundleDays": null,
+  "storage.maximumMb": 0,
+  "permissions.skipScreenSelection": false,
+  "agents.agentDemoVideo": false,
+  "agents.t3DestinationPicker": true,
+  "labs.localStreamingTranscription": true,
+  "labs.pillDoodles": true,
+  "labs.softBloom": true,
+  "labs.pushToTalk": true,
+  "labs.recordingPerformance": true,
+  "labs.autoPasteDraft": false,
+  "labs.agentContext": true,
+  "labs.speakingStyle": true,
+  "labs.onboardingWisprFlow": true,
+  "labs.dictationFrog": true,
+  "labs.desktopFrog": true,
+  "labs.hostedSharing": true,
+  "about.updateChannel": "main"
+}

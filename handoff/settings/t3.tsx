@@ -1,3 +1,4 @@
+import { bindPreference } from "../../shared/settings/binding";
 import {useEffect, useRef, useState} from "react";
 import {Button} from "@apparent/ui/button";
 import {ErrorDialog} from "@apparent/ui/error-dialog";
@@ -213,9 +214,9 @@ export function T3Settings({bridge, artwork}: {bridge: T3SettingsBridge; artwork
       <Switch id="agent-t3-control" className="agent-switch" checked={known ? enabled : undefined}
         aria-labelledby="agent-t3-label" aria-describedby="agent-t3-help"
         aria-busy={saving} aria-disabled={saving || connecting}
-        onCheckedChange={value => {
+        onCheckedChange={bindPreference('agents', 'agents.t3DestinationPicker', value => {
           if (!saving && !connecting) void request(value);
-        }} />
+        })} />
     </div>
     <p id="agent-t3-help">Choose a T3 Code thread from the recording controls.</p>
     {!known && <p id="agent-t3-unconfirmed" role="status">{saving ? "Checking the T3 sending preference…" : "The saved T3 sending preference is unconfirmed."}</p>}

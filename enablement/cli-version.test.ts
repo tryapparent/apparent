@@ -1,6 +1,7 @@
 // Run after the ordinary root build with APPARENT_BIN naming that exact binary.
 // The existing Rust build metadata producer remains the sole identity authority.
 import { after, before, test } from 'node:test';
+import './native-build/settings-cli.test.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';

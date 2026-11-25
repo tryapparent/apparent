@@ -1,3 +1,4 @@
+import { bindPreference } from "../../../shared/settings/binding";
 import {
   useCallback,
   useLayoutEffect,
@@ -316,9 +317,27 @@ export function General({ connect }: { connect: ReactNode }) {
       )
     );
   }
+  const switches = {
+    launchAtLogin: bindPreference(
+      "general",
+      "general.launchAtLogin",
+      (value: boolean) =>
+        void act({ action: "set", key: "launchAtLogin", value }),
+    ),
+    errorReporting: bindPreference(
+      "general",
+      "general.errorReporting",
+      (value: boolean) =>
+        void act({ action: "set", key: "errorReporting", value }),
+    ),
+  };
+  const shortcutActions = {
+    record: bindPreference("general", "general.recordShortcut", act),
+    paste: bindPreference("general", "general.pasteShortcut", act),
+  };
   function toggle(
     label: string,
-    key: string,
+    key: keyof typeof switches,
     on: boolean,
     available = true,
     description?: string,
@@ -338,9 +357,7 @@ export function General({ connect }: { connect: ReactNode }) {
               aria-busy={pending.includes(key) || undefined}
               checked={on}
               disabled={!available || pending.includes(key)}
-              onCheckedChange={(value) =>
-                void act({ action: "set", key, value })
-              }
+              onCheckedChange={switches[key]}
             />
           </div>
           {uncertainNote(key)}
@@ -399,13 +416,7 @@ export function General({ connect }: { connect: ReactNode }) {
                 <Button
                   variant="link"
                   disabled={pending.includes("launchAtLogin")}
-                  onClick={() =>
-                    void act({
-                      action: "set",
-                      key: "launchAtLogin",
-                      value: true,
-                    })
-                  }
+                  onClick={() => switches.launchAtLogin(true)}
                 >
                   Open Login Items
                 </Button>
@@ -468,7 +479,7 @@ export function General({ connect }: { connect: ReactNode }) {
                           s.externallyManaged || pending.includes(s.kind)
                         }
                         onClick={() =>
-                          void act({
+                          void shortcutActions[s.kind]({
                             action: s.recording
                               ? "cancel-shortcut"
                               : "record-shortcut",
@@ -493,7 +504,7 @@ export function General({ connect }: { connect: ReactNode }) {
                                 }
                                 aria-label={`Reset ${s.title} shortcut`}
                                 onClick={() =>
-                                  void act({
+                                  void shortcutActions[s.kind]({
                                     action: "reset-shortcut",
                                     kind: s.kind,
                                   })
@@ -519,7 +530,7 @@ export function General({ connect }: { connect: ReactNode }) {
                             disabled={pending.includes(s.kind)}
                             aria-busy={pending.includes(s.kind) || undefined}
                             onClick={() =>
-                              void act({
+                              void shortcutActions[s.kind]({
                                 action: "clear-shortcut",
                                 kind: s.kind,
                               })
@@ -538,7 +549,7 @@ export function General({ connect }: { connect: ReactNode }) {
                             disabled={pending.includes(s.kind)}
                             aria-busy={pending.includes(s.kind) || undefined}
                             onClick={() =>
-                              void act(
+                              void shortcutActions[s.kind](
                                 {
                                   action: "shortcut",
                                   kind: s.kind,

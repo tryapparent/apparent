@@ -123,6 +123,31 @@ pub(crate) mod preferences {
 
     #[cfg(test)]
     #[test]
+    fn catalog_samples_round_trip_through_the_shared_writer() {
+        use crate::shared::handoff::write_preference;
+
+        let samples: Value = serde_json::from_str(include_str!("settings/roundtrip.json")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, br#"{"unrelated":"keep"}"#).unwrap();
+        for entry in preferences() {
+            let id = entry["id"].as_str().unwrap();
+            let sample = samples.get(id).expect(id);
+            let (pane, key) = id.split_once('.').unwrap();
+            write_preference(&path, id, Some(sample.clone())).unwrap();
+            let stored = read_preferences(&path).unwrap();
+            assert_eq!(stored[pane].get(key), Some(sample), "{id}");
+            assert_eq!(preference_state(&stored, id), (Some(sample.clone()), "explicit"), "{id}");
+            write_preference(&path, id, None).unwrap();
+            let reset = read_preferences(&path).unwrap();
+            assert!(reset[pane].get(key).is_none(), "{id}");
+            assert_eq!(preference_state(&reset, id), (None, "default"), "{id}");
+            assert_eq!(reset["unrelated"], "keep");
+        }
+    }
+
+    #[cfg(test)]
+    #[test]
     fn compatibility_writes_preserve_opt_outs_and_accept_older_app_changes() {
         use crate::shared::handoff::edit_preference;
 

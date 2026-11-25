@@ -8,6 +8,8 @@ import { pathToFileURL } from "node:url";
 import { loadCatalog } from "./catalog.ts";
 import { preferenceSource } from "../../../shared/enablement/ci/settings-inputs.ts";
 import { sourceChecker } from "./source.ts";
+import { verifyCoverage } from "./coverage.ts";
+import { renderPreferenceIds, typesPath } from "./types.ts";
 
 const root = resolve(import.meta.dirname, "../../..");
 const baselinePath = "enablement/ci/settings-contract/legacy-writers.json";
@@ -72,7 +74,9 @@ function previousBaseline(cwd: string, base: string): string[] | undefined {
 }
 
 export async function inspectRepository(cwd: string) {
-  const inspect = await sourceChecker(loadCatalog(cwd));
+  const preferences = loadCatalog(cwd);
+  const bindings = new Set<string>();
+  const inspect = await sourceChecker(preferences, (id) => bindings.add(id));
   const paths = execFileSync(
     "git",
     ["ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -89,7 +93,7 @@ export async function inspectRepository(cwd: string) {
     failures.push(...result.failures);
     raw.push(...result.raw);
   }
-  return { failures, raw };
+  return { failures, raw, preferences, bindings };
 }
 
 if (
@@ -103,7 +107,23 @@ if (
     root,
     process.env.SETTINGS_CONTRACT_BASE ?? process.argv[2] ?? "",
   );
-  const { failures, raw } = await inspectRepository(root);
+  const { failures, raw, preferences, bindings } =
+    await inspectRepository(root);
+  if (
+    readFileSync(resolve(root, typesPath), "utf8") !==
+    renderPreferenceIds(preferences)
+  )
+    failures.push(
+      "Regenerate Settings IDs with node enablement/ci/settings-contract/emit.ts --types",
+    );
+  failures.push(
+    ...(await verifyCoverage(
+      root,
+      preferences,
+      bindings,
+      process.env.SETTINGS_CONTRACT_PROOF === "true",
+    )),
+  );
   failures.push(...enforceBaseline(raw, baseline));
   if (previous) failures.push(...enforceBaselineShrink(baseline, previous));
   if (failures.length) {

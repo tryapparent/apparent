@@ -400,8 +400,9 @@ jobs:
       - name: Verify paired release contracts
         if: env.CHECK_RELEASE == 'true'
         run: node --experimental-strip-types --test composition/enablement/release/*.test.ts composition/enablement/release/test/*.test.ts composition/enablement/release/mac/test.ts composition/enablement/release/mac/publication/*.test.ts
-      - uses: oven-sh/setup-bun@v2
-        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true' || env.CHECK_RELEASE == 'true'
+      - name: Set up Bun for selected contracts
+        uses: oven-sh/setup-bun@v2
+        if: env.CHECK_ENGINEERING == 'true' || env.CHECK_TOOLING == 'true' || env.CHECK_SPARKLE == 'true' || env.CHECK_RELEASE == 'true' || env.CHECK_SETTINGS == 'true'
         with:
           bun-version: '1.3.10'
       - name: Verify shared Sparkle outcome policy
@@ -426,6 +427,7 @@ jobs:
       - name: Verify Settings contract
         if: env.CHECK_SETTINGS == 'true'
         env:
+          SETTINGS_CONTRACT_PROOF: "true"
           SETTINGS_CONTRACT_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
         run: |
           node --experimental-strip-types --test enablement/local-tests/settings-contract.test.ts

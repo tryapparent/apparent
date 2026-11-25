@@ -10,6 +10,10 @@ const allowed: Record<string, string[]> = {
   Connect: ['Shared'], Public: ['Shared'], Hermes: ['Shared'],
   Composition: ['Onboarding', 'Handoff', 'Agent', 'Record', 'Shared', 'Connect', 'Public', 'Hermes'],
 };
+const settingsBindingDonors = new Set([
+  'capture/desktop/ui/frontend/src/settings/agents/agents.tsx',
+  'capture/desktop/ui/frontend/src/settings/labs/labs.tsx',
+]);
 // Enumerate export targets (including condition alternatives); never run a package.
 function targets(value: unknown): string[] {
   if (typeof value === 'string') return value.startsWith('./') && !value.split('/').some(part => ['..', 'node_modules'].includes(part)) ? [value] : [];
@@ -80,7 +84,9 @@ export function analyze(snapshot: Snapshot, observed?: Edge[], ambient: Edge[] =
       observed?.push({from: file, target, spec});
       if (target) {
         const to = owner(target);
-        if (from && to !== from && (!to || !allowed[from].includes(to) || !isPublic))
+        const settingsBinding = from === 'Legacy' && isPublic &&
+          target === 'shared/settings/binding.ts' && settingsBindingDonors.has(file);
+        if (from && to !== from && !settingsBinding && (!to || !allowed[from].includes(to) || !isPublic))
           forbidden.add(`${file} -> ${target} (${from} to ${to}${isPublic ? '' : ', non-public contract'})`);
         return;
       }

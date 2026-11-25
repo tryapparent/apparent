@@ -1,0 +1,9 @@
+{
+  "name": "@apparent/settings-contract",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./binding": "./binding.ts",
+    "./preference-ids": "./preference-ids.ts"
+  }
+}

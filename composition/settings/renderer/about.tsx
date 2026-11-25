@@ -1,3 +1,4 @@
+import { bindPreference } from "../../../shared/settings/binding";
 import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -434,7 +435,11 @@ export function About({
                 <UpdateChannel
                   value={state.updateChannel}
                   disabled={checking === true}
-                  onChange={(value) => void changeChannel(value)}
+                  onChange={bindPreference(
+                    "about",
+                    "about.updateChannel",
+                    (value) => void changeChannel(value),
+                  )}
                 />
               )}
               {showPond && (

@@ -4,20 +4,20 @@ import {Switch} from '@apparent/ui/switch';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../../assets/settings/frog-puzzled.png';
 import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
-import type {ComponentType} from 'react';
+import {bindPreference} from '../../../../../../../shared/settings/binding';
 
 declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(value: boolean, setting?: LabsSetting): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
 const controls: Record<LabsSetting, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', pillDoodles: 'pill-doodles-toggle', softBloom: 'soft-bloom-toggle', recordingPerformance: 'recording-performance-toggle'};
-export type LabsExperiment<Checked = boolean> = ComponentType<{
+export type LabsExperiment<Checked = boolean> = React.ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
-export type AutoPasteExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
-export type PushToTalkExperiment = ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
+export type AutoPasteExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
+export type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
 export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk, pillDoodlesExperiment: PillDoodles}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
@@ -75,55 +75,55 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
     {AgentContext && <AgentContext id={controls.agentContext} checked={facts?.agentContextSaved === true}
       access={facts?.agentContextAccess}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
-      onCheckedChange={value => void request(value, 'agentContext')} />}
+      onCheckedChange={bindPreference('labs', 'labs.agentContext', value => void request(value, 'agentContext'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
-          disabled={busy || on === undefined} onCheckedChange={value => void request(value)} /></div>
+          disabled={busy || on === undefined} onCheckedChange={bindPreference('labs', 'labs.localStreamingTranscription', value => void request(value))} /></div>
       <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
       <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
     {SpeakingStyle && <SpeakingStyle id={controls.speakingStyle} checked={facts?.speakingStyleSaved === true}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'speakingStyle'}
-      onCheckedChange={value => void request(value, 'speakingStyle')} />}
+      onCheckedChange={bindPreference('labs', 'labs.speakingStyle', value => void request(value, 'speakingStyle'))} />}
     {PushToTalk && <PushToTalk id={controls.pushToTalk} checked={facts?.pushToTalkSaved === true}
       supported={facts?.pushToTalkSupported} disabled={busy || !facts || !!facts.error}
-      saving={busy && setting === 'pushToTalk'} onCheckedChange={value => void request(value, 'pushToTalk')} />}
+      saving={busy && setting === 'pushToTalk'} onCheckedChange={bindPreference('labs', 'labs.pushToTalk', value => void request(value, 'pushToTalk'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row">
         <h2 className="settings-preference-label" id="soft-bloom-label">Soft Bloom</h2>
         <Switch id={controls.softBloom} className="agent-switch" checked={facts?.softBloomSaved === true}
           aria-labelledby="soft-bloom-label" aria-describedby="soft-bloom-help"
           disabled={busy || !facts || !!facts.error} aria-busy={busy && setting === 'softBloom'}
-          onCheckedChange={value => void request(value, 'softBloom')} />
+          onCheckedChange={bindPreference('labs', 'labs.softBloom', value => void request(value, 'softBloom'))} />
       </div>
       <p id="soft-bloom-help">Show a microphone-reactive ring around the red recording control. Applies to the next recording.</p>
     </section>
     {PillDoodles && <PillDoodles id={controls.pillDoodles} checked={facts?.pillDoodlesSaved}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'pillDoodles'}
-      onCheckedChange={value => void request(value, 'pillDoodles')} />}
+      onCheckedChange={bindPreference('labs', 'labs.pillDoodles', value => void request(value, 'pillDoodles'))} />}
     {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
       disabled={busy || autoPaste === undefined} saving={busy && setting === 'autoPaste'}
-      onCheckedChange={value => void request(value, 'autoPaste')} />}
+      onCheckedChange={bindPreference('labs', 'labs.autoPasteDraft', value => void request(value, 'autoPaste'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}
-          disabled={busy || sharing === undefined} onCheckedChange={value => void request(value, 'sharing')} /></div>
+          disabled={busy || sharing === undefined} onCheckedChange={bindPreference('labs', 'labs.hostedSharing', value => void request(value, 'sharing'))} /></div>
       <p id="public-sharing-help">Show Public link after your next recording.</p>
       <p id="public-sharing-limits">Anyone with the link can view the shared capture. Shared captures are not end-to-end encrypted.</p>
     </section>
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="wispr-lab-label">Dictation app conflicts</h2>
         <Switch id={controls.wisprFlow} className="agent-switch" checked={wispr ?? false} aria-labelledby="wispr-lab-label" aria-describedby="wispr-lab-help" aria-busy={busy && setting === 'wisprFlow'}
-          disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={value => void request(value, 'wisprFlow')} /></div>
+          disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={bindPreference('labs', 'labs.onboardingWisprFlow', value => void request(value, 'wisprFlow'))} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
     {DesktopFrog && wisprSupported.current && <DesktopFrog id={controls.desktopFrog} checked={facts?.desktopFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'desktopFrog'}
-      onCheckedChange={value => void request(value, 'desktopFrog')} />}
+      onCheckedChange={bindPreference('labs', 'labs.desktopFrog', value => void request(value, 'desktopFrog'))} />}
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
-      onCheckedChange={value => void request(value, 'dictationFrog')} />}
+      onCheckedChange={bindPreference('labs', 'labs.dictationFrog', value => void request(value, 'dictationFrog'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row">
         <h2 className="settings-preference-label" id="recording-performance-label">Share performance metrics</h2>
@@ -132,7 +132,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
           aria-labelledby="recording-performance-label" aria-describedby="recording-performance-help"
           aria-busy={busy && setting === 'recordingPerformance'}
           disabled={busy || !facts || !!facts.error}
-          onCheckedChange={value => void request(value, 'recordingPerformance')} />
+          onCheckedChange={bindPreference('labs', 'labs.recordingPerformance', value => void request(value, 'recordingPerformance'))} />
       </div>
       <p id="recording-performance-help">Send detailed startup and save timings for screen recordings to PostHog, along with your app build, operating system, and recording-length range.</p>
     </section>
