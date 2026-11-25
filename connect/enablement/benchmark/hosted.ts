@@ -138,6 +138,10 @@ async function main(args: string[]) {
     runner: hostname(),
     cpu,
   };
+  const accounting = {
+    profile: runnerProfile,
+    cgroup: cpu.cpuQuota.groups[0].path,
+  };
   const record = (name: string, value: unknown) =>
     writeFile(join(evidence, name), JSON.stringify(value, null, 2) + "\n", {
       mode: 0o600,
@@ -239,7 +243,7 @@ async function main(args: string[]) {
       control,
       undefined,
       control,
-      runnerProfile,
+      accounting,
     );
     await record("calibration.json", {
       sha: controlSha,
@@ -264,7 +268,7 @@ async function main(args: string[]) {
       control,
       baseline.receipt,
       candidate,
-      runnerProfile,
+      accounting,
     );
     await record("comparison.json", {
       controlSha,

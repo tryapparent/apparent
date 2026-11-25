@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readCpuQuota } from "./quota.ts";
+import { readCpuQuota, readCpuUsage } from "./quota.ts";
 
 const root = "/sys/fs/cgroup";
 const fixture = (parentControls: string, childLimit?: string) => {
@@ -36,4 +36,18 @@ test("requires a readable limit for delegated CPU controllers", async () => {
   const quota = await readCpuQuota(fixture("io"));
   assert.deepEqual(quota.limits, ["200000 100000"]);
   assert.equal(quota.groups[0].maximum, null);
+});
+
+test("records a CPU usage snapshot from the runner cgroup", async () => {
+  assert.equal(
+    await readCpuUsage("/system.slice/runner.service", async (path) => {
+      assert.equal(path, root + "/system.slice/runner.service/cpu.stat");
+      return "usage_usec 12345\nuser_usec 10000\nsystem_usec 2345";
+    }),
+    12345,
+  );
+  await assert.rejects(
+    readCpuUsage("/system.slice/runner.service", async () => undefined),
+    /Missing hosted runner cgroup CPU usage counter/,
+  );
 });
