@@ -242,11 +242,18 @@ impl ConfigWriter {
         let name = path.file_name().context("Config has no filename")?;
         let name = std::ffi::CString::new(name.as_bytes())?;
         let lock_name = std::ffi::CString::new([name.as_bytes(), b".lock"].concat())?;
-        let lock = Self::open_at(
+        let lock_flags = libc::O_RDWR | libc::O_NONBLOCK;
+        let lock = match Self::open_at(
             &directory,
             &lock_name,
-            libc::O_RDWR | libc::O_CREAT | libc::O_NONBLOCK,
-        )?;
+            lock_flags | libc::O_CREAT | libc::O_EXCL,
+        ) {
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                Self::open_at(&directory, &lock_name, lock_flags)
+            }
+            result => result,
+        }
+        .context("Could not open config writer lock")?;
         let meta = lock.metadata()?;
         ensure!(
             meta.is_file()
