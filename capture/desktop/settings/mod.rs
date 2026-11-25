@@ -135,8 +135,9 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
 
 fn recording_key(key: &str, value: &serde_json::Value) -> bool {
     match key {
-        "videoExport" | "lowerPlayback" => value.is_boolean(),
-        "playbackLevel" => value.as_u64().is_some_and(|level| level <= 100),
+        "videoExport" => value.is_boolean(),
+        "lowerPlayback" => cfg!(target_os = "macos") && value.is_boolean(),
+        "playbackLevel" => cfg!(target_os = "macos") && value.as_u64().is_some_and(|level| level <= 100),
         "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
             value.as_str().is_some_and(|value| value.len() <= 16_384),
         _ => false,
@@ -226,8 +227,7 @@ fn recording_state(view: View) -> serde_json::Value {
     let message = serde_json::json!({"type":"recording-state","state":{
         "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
-        "lowerPlayback":view.lower_playback,"playbackLevel":view.playback_level,
-        "playbackAvailable":cfg!(target_os="macos") || crate::shared::handoff::experiment("linux-playback-ducking"),
+        "playback":cfg!(target_os = "macos").then(|| serde_json::json!({"enabled":view.lower_playback,"level":view.playback_level})),
         "videoExport":view.video_export,"mediaWarnings":warnings
     }});
     message

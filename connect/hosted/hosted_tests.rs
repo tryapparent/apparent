@@ -209,9 +209,36 @@ fn hosted_inspect_shared_destination_explains_private_retry() {
     assert!(!output.status.success(), "{output:?}");
     let stderr = String::from_utf8_lossy(&output.stderr);
     let diagnostic = stderr.lines().next().unwrap_or_default();
+    assert!(diagnostic.contains("Connect download destination directory"), "{stderr}");
     assert!(diagnostic.contains("Unsafe shared or unowned directory tree"), "{stderr}");
+    assert!(diagnostic.contains("group or other users have write permission"), "{stderr}");
     assert!(diagnostic.contains("Retry from a private working directory"), "{stderr}");
+    assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
     assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
+}
+
+#[test]
+fn hosted_inspect_unsafe_reader_storage_names_the_local_prerequisite() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::create_dir(root.join("hosted")).unwrap();
+    let readers = root.join("hosted/readers");
+    std::fs::create_dir(&readers).unwrap();
+    std::fs::set_permissions(&readers, std::fs::Permissions::from_mode(0o770)).unwrap();
+
+    let id = "0123456789abcdef0123456789abcdef";
+    let output = inspect_subprocess(&root.join("config.json"), &root, &["inspect", id]);
+    assert!(!output.status.success(), "{output:?}");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let diagnostic = stderr.lines().next().unwrap_or_default();
+    assert!(diagnostic.contains("Local Connect reader storage"), "{stderr}");
+    assert!(diagnostic.contains("group or other users have write permission"), "{stderr}");
+    assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
+    assert!(!root.join(format!("{id}.apparent")).exists());
+    assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
 }
 
 #[test]

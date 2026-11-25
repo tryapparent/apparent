@@ -24,7 +24,7 @@ await bendScratch(async (directory) => {
     [
       "--input-type=module",
       "-e",
-      `import { handoffLine, windowAgrees, windowHeading, windowSuffix, keepFrameHead,
+      `import { handoffLine, windowAgrees, nearbyWindow, windowSuffix, keepFrameHead,
   agreedPage, pageScope, samePage, joinPageClicks, pageHeading, pageLine, pinWindowLine } from "./agent-handoff-line.mjs";
 import { readFileSync } from "node:fs";
 const { lines, windows, headings, frames } = JSON.parse(readFileSync(0, "utf8"));
@@ -33,7 +33,7 @@ console.log(JSON.stringify({
   lines: lines.map(args => handoffLine(...args)),
   windows: windows.map(observations => windowSuffix(JSON.stringify(observations))),
   agreements: windows.map(observations => windowAgrees(JSON.stringify(observations))),
-  headings: headings.map(pair => windowHeading(JSON.stringify(pair))),
+  headings: headings.map(pair => nearbyWindow(JSON.stringify(pair))),
   frames: frames.map(args => keepFrameHead(...args)),
   pinWindow: pinWindowLine("0:05", "2", JSON.stringify([
     {role: "button", name: "<Save>", states: ["disabled"]},
@@ -46,12 +46,12 @@ console.log(JSON.stringify({
     agreedPage(JSON.stringify([url, url])),
     agreedPage(JSON.stringify([url, ""])),
     agreedPage(JSON.stringify([url, url + "next"])),
-    pageScope(false, "Nearby: Firefox"),
-    samePage(url, "Nearby: Firefox", url, "Nearby: Chrome"),
+    pageScope(false, " near dog"),
+    samePage(url, " near dog", url, " near cat"),
     joinPageClicks("clicked", "clicked"),
     joinPageClicks("Circled “Next”", "Circled “Next”"),
     pageLine("0:02", "clicked", ""),
-    pageLine("0:03", "clicked", pageHeading(url, pageScope(true, "Nearby: Firefox"))),
+    pageLine("0:03", "clicked", pageHeading(url, pageScope(true, " near dog"))),
   ],
 }));`,
     ],
@@ -67,6 +67,9 @@ console.log(JSON.stringify({
           ["Circle", "0:20", "", "“Date”, “Tomorrow”, “Date”", "", true],
           ["Circle", "0:20", "", "image “dog”, “dog”", "", true],
           ["Circle", "0:20", "", "button “Next”", "", true],
+          ["Circle", "0:20", "②", "", " (3 strokes)", true],
+          ["Circle", "0:20", "", "", "", true],
+          ["Speech", "0:20", "", "Try this.", "", true],
           ["Action", "0:20", "", "clicked", "", true],
         ],
         windows: [
@@ -88,6 +91,18 @@ console.log(JSON.stringify({
             { ...browser, app: "Editor", title: "Text — Mozilla Firefox" },
           ],
           [null, { ...browser, app: "chromium", title: "Search - Chromium" }],
+          [
+            null,
+            { ...browser, title: "Robert Davitt | LinkedIn — Mozilla Firefox" },
+          ],
+          [
+            null,
+            {
+              ...browser,
+              app: "com.t3tools.T3Code",
+              title: "Apparent / Thread",
+            },
+          ],
         ],
         frames: [
           [true, true, true],
@@ -114,6 +129,9 @@ console.log(JSON.stringify({
     "0:20 Circled “Date” ×2, “Tomorrow”",
     "0:20 Circled image “dog”, “dog”",
     "0:20 Circled button “Next”",
+    "0:20 Circled ②",
+    "0:20 Circled",
+    "0:20 “Try this.”",
     "0:20 clicked",
   ]);
   assert.deepEqual(windows, [
@@ -127,12 +145,14 @@ console.log(JSON.stringify({
   ]);
   assert.deepEqual(agreements, ["", "yes", "yes", "", "", "", "yes"]);
   assert.deepEqual(headings, [
-    "Nearby: Firefox · Quick picks",
+    " near Quick picks",
     "",
-    "Nearby: Firefox · Next tab",
-    "Nearby: Firefox · Quick picks",
-    "Nearby: Editor · Text — Mozilla Firefox",
-    "Nearby: chromium · Search",
+    " near Next tab",
+    " near Quick picks",
+    " near Text — Mozilla Firefox",
+    " near Search",
+    " near LinkedIn",
+    " near Apparent / Thread",
   ]);
   assert.deepEqual(frames, ["", "yes", "yes", ""]);
   assert.deepEqual(pages, [
@@ -144,7 +164,7 @@ console.log(JSON.stringify({
     "yes",
     "",
     "0:02 clicked",
-    "0:03 clicked · https://example.com/ · Nearby: Firefox",
+    "0:03 clicked https://example.com/ near dog",
   ]);
   function run(overrides: object) {
     const request = {

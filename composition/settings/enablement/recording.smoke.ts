@@ -58,13 +58,30 @@ test("staged Recording opens directly, receives native facts and saves only on i
       "aria-valuenow",
       "45",
     );
-    await expect(
-      page.getByRole("combobox", { name: "Lower to" }),
-    ).toBeDisabled();
-    const volume = page.getByRole("switch", {
+    const volumeSection = page.getByText("Other-app volume", { exact: true });
+    const volumeSwitch = page.getByRole("switch", {
       name: "Lower volume while recording",
     });
-    await expect(volume).toBeDisabled();
+    const volumeSlider = page.getByRole("slider", { name: "Lower to" });
+    await expect(volumeSection).toHaveCount(0);
+    await expect(volumeSwitch).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Lower to" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Set up and test volume lowering" }),
+    ).toHaveCount(0);
+    for (const change of [
+      { key: "lowerPlayback", value: true },
+      { key: "playbackLevel", value: 35 },
+    ]) {
+      await assert.rejects(
+        page.evaluate(
+          (change) => Reflect.get(window, "apparentRecording").save(change),
+          change,
+        ),
+        /Recording preference unavailable/,
+      );
+      assert.equal(actions.some((action) => action.key === change.key), false);
+    }
     const video = page.getByRole("switch", { name: "Video export" });
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
@@ -84,7 +101,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         if (proof) {
           await screenshot(`recording-${width}-${colorScheme}`);
           await video.focus();
-          await screenshot(`volume-export-${width}-${colorScheme}`);
+          await screenshot(`export-focus-${width}-${colorScheme}`);
           await input.focus();
         }
       }
@@ -109,7 +126,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(
       page.getByText("Downloading the speech model… 40%"),
     ).toBeVisible();
-    await expect(page.getByRole("slider", { name: "Lower to" })).toBeEnabled();
+    await expect(volumeSection).toBeVisible();
+    await expect(volumeSwitch).toBeChecked();
+    await expect(volumeSlider).toBeEnabled();
     fixture.hex();
     const language = page.getByRole("textbox", { name: "Hex language" });
     const apply = page.getByRole("button", { name: "Apply", exact: true });
@@ -154,6 +173,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
       )
       .toBe(true);
     fixture.linux();
+    await expect(volumeSection).toHaveCount(0);
 
     const startUrl = page.url();
     const navigate = async (pane: string) => {

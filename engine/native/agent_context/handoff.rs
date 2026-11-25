@@ -160,8 +160,8 @@ impl<'a> PageRun<'a> {
                 let path_empty = url.split_once("://")
                     .and_then(|(_, rest)| rest.split_once('/')).is_some_and(|(_, path)| path.is_empty());
                 let json = serde_json::to_string(&[None, Some(window)]).ok()?;
-                let heading = policy.call("windowHeading", (json,)).ok()?;
-                policy.call("pageScope", (path_empty, safe_window_text(&heading))).ok()?
+                let nearby = policy.call("nearbyWindow", (json, true)).ok()?;
+                policy.call("pageScope", (path_empty, safe_window_text(&nearby))).ok()?
             }
             None => String::new(),
         };
@@ -194,18 +194,16 @@ impl<'a> PageRun<'a> {
     ) -> Option<()> {
         let Some(run) = pending.take() else { return Some(()); };
         let out = &mut frames[run.frame].lines;
-        let within_window = !run.multiple && run.window.is_some() && run.window == *previous;
-        let scope = if within_window { "" } else { &run.scope };
-        let heading = policy.call("pageHeading", (run.url, scope)).ok()?;
+        let heading = policy.call("pageHeading", (run.url, run.scope.as_str())).ok()?;
         if run.multiple {
             out.push(heading.clone());
         }
         for (clock, text) in run.rows {
             let inline = if run.multiple { "" } else { &heading };
             let line = policy.call("pageLine", (clock, text, inline)).ok()?;
-            out.push(if run.multiple || within_window { format!("  {line}") } else { line });
+            out.push(if run.multiple { format!("  {line}") } else { line });
         }
-        if !within_window {
+        if run.multiple || run.window != *previous {
             *previous = None;
         }
         Some(())
@@ -247,6 +245,14 @@ pub(crate) fn frame_is_flagged(bundle: &ApparentBundle, frame: &Keyframe) -> boo
         .is_some_and(|mark| mark.shape == Shape::Flag)
 }
 
+pub(super) fn stroke_suffix(mark: &Mark) -> String {
+    if mark.strokes.len() > 1 {
+        format!(" ({} strokes)", mark.strokes.len())
+    } else {
+        String::new()
+    }
+}
+
 fn safe_window_text(text: &str) -> String {
     let mut safe = String::new();
     for ch in text.chars() {
@@ -274,15 +280,13 @@ pub(super) fn render_context_line<'a>(
         _ => None,
     };
     let text = match (compact, line.window) {
-        (_, WindowEvidence::None) => line.text,
-        (true, WindowEvidence::Unknown) => line.text + " · Window unknown",
+        (_, WindowEvidence::None) | (true, WindowEvidence::Unknown) => line.text,
         (true, WindowEvidence::Nearby(window)) => {
             let json = serde_json::to_string(&[*previous, Some(window)]).ok()?;
-            let heading: String = policy.call("windowHeading", (json,)).ok()?;
-            if !heading.is_empty() {
-                out.push(safe_window_text(&heading));
-            }
-            format!("  {}", line.text)
+            let suffix = policy.call("nearbyWindow", (json, false)).ok()?;
+            let mut text = line.text;
+            text.insert_str(text.find('\n').unwrap_or(text.len()), &safe_window_text(&suffix));
+            text
         }
         (false, _) => {
             let json = serde_json::to_string(&[nearby]).ok()?;
@@ -324,7 +328,7 @@ pub(super) fn open_handoff_policy() -> Option<EmbeddedPolicy> {
         &[
             "handoffLine",
             "windowAgrees",
-            "windowHeading",
+            "nearbyWindow",
             "windowSuffix",
             "keepFrameHead",
             "agreedPage",

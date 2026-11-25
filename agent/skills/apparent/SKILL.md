@@ -27,6 +27,27 @@ for a plain movie. If the source has no audio or transcription is unavailable,
 continue with the images and state the limitation. If the installed CLI lacks
 import support, use the supported local media tools available in the session.
 
+## Check a one-frame visual state
+
+If a visual state could last one frame, use the contact sheet and `apparent
+zoom` to locate the interval. They sample the movie. To establish whether
+the state appeared, decode every source frame in that interval and retain
+its presentation timestamp (PTS). Run this from a fresh private working
+directory, using the preserved movie in the bundle as input. This example
+uses a synthetic clip:
+
+```sh
+ffmpeg -hide_banner -nostdin -copyts -i /path/to/synthetic.mp4 \
+  -map 0:v:0 -vf "select='between(t,1.8,2.2)',showinfo" \
+  -fps_mode passthrough -start_number 0 frame-%04d.png 2>frames.log
+```
+
+Match PNG numbers to `showinfo`'s `n` and report the observed `pts_time`.
+Inspect every frame before claiming a brief state was absent within that
+interval. For a small UI element, insert `crop=W:H:X:Y` before `showinfo`.
+If import is unavailable and the original movie is accessible, use the same
+direct extraction on the original file.
+
 ## Open the latest Connect recording
 
 For bare `/apparent` or a request for the latest Connect recording, run

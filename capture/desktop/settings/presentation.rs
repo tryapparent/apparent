@@ -317,7 +317,7 @@ mod capability_tests {
             (r#"{"action":"labs-preference","request":1,"setting":"t3","enabled":true}"#, vec![]),
             (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
             (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
-            (r#"{"action":"recording-preference","request":1,"key":"lowerPlayback","value":true}"#, vec![Pane::Recording]),
+            (r#"{"action":"recording-preference","request":1,"key":"videoExport","value":true}"#, vec![Pane::Recording]),
             (r#"{"action":"recording-preference","request":1,"key":"playbackLevel","value":101}"#, vec![]),
             (r#"{"action":"recording-preference","request":1,"key":"launchAtLogin","value":true}"#, vec![]),
             (r#"{"action":"recording-meter","visible":true}"#, vec![Pane::Recording]),

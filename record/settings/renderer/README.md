@@ -47,8 +47,10 @@ Check that the clipboard text and bundle summary contain the correct page
 path at each click and circle time. For consecutive actions on one page, the
 clipboard shows the URL once with the action times underneath. Draw a circle
 with two strokes on the same page and check for one circle entry with its URL.
-The saved summary retains the individual browser observations. Look for the
-test query and fragment in the full summary and clipboard text, including the
-button and circle labels.
+The clipboard uses a short nearby location only when it adds context. Circles
+with an unidentified target keep their timestamps and mark numbers. The saved
+summary retains individual browser observations and records missing context.
+Look for the test query and fragment in the full summary and clipboard text,
+including the button and circle labels.
 Neither marker should appear. Repeat with the Labs switch off to verify that
 the next recording omits browser URLs.

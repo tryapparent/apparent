@@ -30,9 +30,8 @@ installs or changes the selected desktop handler.
 
 Read this before changing `capture/engine/runtime/platform/linux.rs`, `capture/desktop/ui/linux.rs`, `src/linux/`, `capture/desktop/ink_view.rs`, `capture/engine/runtime/audio/transcription/speech.rs`, or anything behind a `platform::` call in `capture/engine/runtime/mod.rs` and `capture/desktop/mod.rs`. The shared GPUI UI uses platform adapters for the macOS and Linux shells. Windows code is retained but unsupported.
 
-Optional [playback lowering](linux-playback.md) is a default-off, manually
-configured experiment on one pinned PipeWire/WirePlumber stack. It does not
-change user volume or routing and has no live effectiveness indicator.
+The playback lowering experiment has been retired. If you manually set it up,
+see [how to remove its audio components](linux-playback.md).
 
 ## X11 everywhere, Wayland around it
 

@@ -99,6 +99,7 @@
     "kind": "boolean",
     "default": false,
     "apply": "next-capture",
+    "platforms": ["macos"],
     "legacy": { "path": "lowerPlayback" }
   },
   {
@@ -109,6 +110,7 @@
     "min": 0,
     "max": 100,
     "apply": "next-capture",
+    "platforms": ["macos"],
     "legacy": { "path": "playbackLevel" }
   },
   {

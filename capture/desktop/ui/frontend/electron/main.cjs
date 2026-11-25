@@ -242,8 +242,6 @@ app.whenReady().then(() => {
       if (pane !== owner || !hasSettingsParent || settingsClosing) throw Error('Unavailable');
       return handle(...args);
     }),
-    platform: process.platform,
-    openExternal: url => shell.openExternal(url),
   });
   const feedback = frame.settingsFeedbackHost({
     token: process.env.APPARENT_MANUAL_REPORT_TOKEN,

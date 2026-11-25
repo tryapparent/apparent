@@ -99,9 +99,7 @@ export function T3DestinationPicker({
     trigger.current = button;
     if (initialFocus.current || !button || button.disabled) return;
     initialFocus.current = true;
-    void onFocus(true)
-      .then(() => trigger.current?.focus({ preventScroll: true }))
-      .catch(() => {});
+    button.focus({ preventScroll: true });
   }
 
   useLayoutEffect(() => {
@@ -160,7 +158,6 @@ export function T3DestinationPicker({
     restore.current = true;
     setOpen(false);
     changeQuery("");
-    void onFocus(false).catch(() => {});
   }
 
   async function act(action: Action, id?: string) {

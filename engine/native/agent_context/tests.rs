@@ -149,14 +149,11 @@ fn compact_handoff_groups_exact_windows_across_routine_scene_changes() {
     assert!(compact.iter().all(|frame| frame.head.is_empty()));
     let lines = compact.into_iter().flat_map(|frame| frame.lines).collect::<Vec<_>>();
     assert_eq!(lines, [
-        "Nearby: Firefox · Board",
-        "  0:03 Circled “Date” ×3",
-        "  0:05 clicked",
-        "Nearby: Firefox · Other tab",
-        "  0:06 clicked",
-        "0:07 clicked · Window unknown",
-        "Nearby: Firefox · Board",
-        "  0:08 clicked",
+        "0:03 Circled “Date” ×3 near Board",
+        "0:05 clicked",
+        "0:06 clicked near Other tab",
+        "0:07 clicked",
+        "0:08 clicked near Board",
     ]);
     let detailed = keyframe_texts(&b).unwrap();
     assert_eq!(detailed[0].head, "scene changed");

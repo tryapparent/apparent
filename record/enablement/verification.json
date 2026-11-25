@@ -1,6 +1,26 @@
 {
   "scenarios": [
     {
+      "id": "recording-settings-platform-controls",
+      "description": "Verify the Recording pane and confirm that playback volume controls are available only on macOS.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Open Settings and select Recording.",
+      "prerequisites": [
+        "The built Settings renderer, locked frontend dependencies and Electron. On Linux with no display, use Xvfb."
+      ],
+      "runner": {
+        "path": "composition/settings/enablement/recording.smoke.ts",
+        "instructions": "From capture/desktop/ui/frontend, run npm run build and then node --experimental-strip-types --test ../../../../composition/settings/enablement/recording.smoke.ts. Set APPARENT_RECORDING_PROOF to save screenshots."
+      },
+      "expectedEvidence": [
+        "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer.",
+        "The macOS fixture shows a playback switch and slider. At 720 and 640 pixels in both themes, the pane remains keyboard accessible and saves or recovers from a refused Video export change."
+      ],
+      "limits": [
+        "The Electron parent uses synthetic platform and recording facts. Native volume effects and installer behavior require their owning checks."
+      ]
+    },
+    {
       "id": "import-local-movie",
       "description": "Import a plain movie through the packaged CLI and read the resulting bundle.",
       "platforms": ["linux", "macos"],
@@ -205,6 +225,7 @@
       },
       "expectedEvidence": [
         "The clipboard groups successive clicks and circles under one verified page URL with their action times. A multi-stroke circle on the same page has one entry.",
+        "The clipboard retains marks with missing labels and shows only a short nearby location when needed, with no unknown-window or unidentified-target placeholders.",
         "The saved summary retains individual browser page observations at their original times.",
         "The synthetic query and fragment are absent from the full handoff, including interaction labels.",
         "The next recording omits browser URLs after disabling the lab."

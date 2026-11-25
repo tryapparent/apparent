@@ -71,6 +71,16 @@ fn compact_browser_handoff_groups_verified_clicks_and_keeps_unverified_actions_s
         click_at(6000),
         page_observation(6000, second),
     ];
+    b.action_context.push(ActionContext {
+        pin_window: None,
+        kind: ActionKind::Pointer,
+        t: 4000,
+        window: ActionWindow {
+            id: "browser".into(),
+            app: "Firefox".into(),
+            title: Some("Robert Davitt | LinkedIn — Mozilla Firefox".into()),
+        },
+    });
     let flat = |frames: Vec<FrameText>| {
         frames
             .into_iter()
@@ -82,9 +92,9 @@ fn compact_browser_handoff_groups_verified_clicks_and_keeps_unverified_actions_s
         [
             first,
             "  0:02, 0:02, 0:03 clicked",
-            "0:04 clicked",
-            "0:05 clicked · https://example.com/first",
-            "0:06 clicked · https://example.com/second",
+            "0:04 clicked near LinkedIn",
+            "0:05 clicked https://example.com/first",
+            "0:06 clicked https://example.com/second",
         ]
     );
     let detailed = flat(keyframe_texts(&b).unwrap());
@@ -124,21 +134,20 @@ fn compact_mark_page_requires_every_stroke_to_resolve_to_the_same_url() {
     ];
     assert_eq!(
         compact_keyframe_texts(&b).unwrap()[0].lines,
-        ["0:01 Circled “dog” (2 strokes) · https://example.com/ · Nearby: Firefox · dog",]
+        ["0:01 Circled “dog” https://example.com/ near dog",]
     );
 
     b.events[1] = page_observation(3000, "https://example.com/other");
     assert_eq!(
         compact_keyframe_texts(&b).unwrap()[0].lines,
         [
-            "Nearby: Firefox · dog",
-            "  0:01 Circled “dog” (2 strokes)",
+            "0:01 Circled “dog” near dog",
             "0:01 browser page https://example.com/",
             "0:03 browser page https://example.com/other",
         ]
     );
     b.events.pop();
-    assert_eq!(compact_keyframe_texts(&b).unwrap()[0].lines.len(), 3);
+    assert_eq!(compact_keyframe_texts(&b).unwrap()[0].lines.len(), 2);
 
     b.events.push(click_at(1500));
     assert!(
