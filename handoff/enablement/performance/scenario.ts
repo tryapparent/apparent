@@ -20,6 +20,7 @@ type Page = RendererPage & {
 type ElectronModule = {
   app: {
     getAppMetrics(): { pid: number; cpu: { cumulativeCPUUsage: number } }[];
+    getGPUFeatureStatus(): { gpu_compositing: string };
   };
   BrowserWindow: {
     getAllWindows(): { isVisible(): boolean; isFocusable(): boolean }[];
@@ -80,6 +81,7 @@ export async function scenario({
   proof?: boolean;
   diagnose?: (stage: string, electron?: number) => Promise<void>;
 }) {
+  const hosted = process.env.RUNNER_ENVIRONMENT === "github-hosted";
   const cleanup: (() => Promise<void>)[] = [];
   const f = await receiver(
     { after: (fn) => cleanup.push(fn) },
@@ -93,7 +95,12 @@ export async function scenario({
     if (diagnose) await diagnose("before-electron-launch");
     const app = await electron.launch({
       executablePath,
-      args: [host, "--no-sandbox", "--ozone-platform=x11"],
+      args: [
+        host,
+        "--no-sandbox",
+        "--ozone-platform=x11",
+        ...(hosted ? ["--disable-gpu"] : []),
+      ],
       env: {
         ...process.env,
         HOME: f.home,
@@ -284,21 +291,35 @@ export async function scenario({
       title: "Chosen thread",
     });
 
-    const runtime = (await app.evaluate(({ app }) => ({
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      processes: app.getAppMetrics().map(({ pid, cpu }) => ({
-        pid,
-        cpuSeconds: cpu.cumulativeCPUUsage,
-      })),
-      spans:
-        Reflect.get(globalThis, Symbol.for("apparent.handoff.benchmark")) ?? [],
-    }))) as {
+    const runtime = (await app.evaluate(
+      ({ app }, hosted) => ({
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        ...(hosted && {
+          gpuCompositing: app.getGPUFeatureStatus().gpu_compositing,
+        }),
+        processes: app.getAppMetrics().map(({ pid, cpu }) => ({
+          pid,
+          cpuSeconds: cpu.cumulativeCPUUsage,
+        })),
+        spans:
+          Reflect.get(globalThis, Symbol.for("apparent.handoff.benchmark")) ??
+          [],
+      }),
+      hosted,
+    )) as {
       electron: string;
       chrome: string;
+      gpuCompositing?: string;
       processes: { pid: number; cpuSeconds: number }[];
       spans: Span[];
     };
+    if (hosted)
+      assert.match(
+        runtime.gpuCompositing ?? "",
+        /^(disabled|unavailable|software)/,
+        "Hosted Xvfb fixture must use software compositing",
+      );
     const pssKiB = await Promise.all(
       runtime.processes.map(async ({ pid }) => {
         const rollup = await readFile(`/proc/${pid}/smaps_rollup`, "utf8");
@@ -349,7 +370,11 @@ export async function scenario({
       witness:
         "trusted click, visible enabled DOM, two renderer animation frames",
       clock: { domain: "linux-monotonic-ms", rendererOffset: { low, high } },
-      runtime: { electron: runtime.electron, chrome: runtime.chrome },
+      runtime: {
+        electron: runtime.electron,
+        chrome: runtime.chrome,
+        ...(hosted && { gpuCompositing: runtime.gpuCompositing }),
+      },
       waits: {
         pickerMs: picker.presented - picker.input,
         sendMs: send.presented - send.input,
