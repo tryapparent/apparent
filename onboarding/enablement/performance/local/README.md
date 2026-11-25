@@ -37,14 +37,24 @@ trials in each group. Every measured trial
 waits for the existing quiet-host gate and uses a new process and profile.
 The hosted cold variant represents a fresh process and welcome profile
 with prepared runner files.
-The hosted adapter puts the click-through, Electron processes, Xvfb, and
-observer in one owned cgroup without changing the runner's CPU allocation.
-Receipts include total guest CPU PSI and the sampled workload CPU counters.
-The hosted guard subtracts attributable workload CPU from guest-wide CPU
-use and requires at most 5% outside CPU, 5% guest steal, and 5% full I/O
-pressure. It rejects any new throttled periods in the workload hierarchy.
-The readings describe the runner OS and its exposed vCPU topology. They do
-not expose hypervisor placement.
+After the builds, the hosted adapter selects the quietest two-vCPU subset
+from one preflight sample. The subset contains a full visible SMT pair or
+two visible cores with one thread each. It uses this subset for setup, every
+calibration arm, and matched comparison. A systemd service cgroup enforces
+placement for the benchmark, observer, Xvfb and every Electron descendant.
+A separate unscored probe verifies that injected CPU work on those same CPUs,
+outside the replay cgroup, trips the 5% outside-CPU guard.
+
+For each whole replay window the guard subtracts replay-cgroup CPU time
+from busy time on the selected CPUs. Selected and guest-wide steal must each
+stay within 5%, guest full I/O pressure within 5%, and throttled periods must
+remain unchanged throughout the workload hierarchy. Guest-wide CPU and
+CPU PSI remain in the raw receipts. The placement receipt describes Linux's
+visible vCPUs and provides no hypervisor placement evidence.
+
+The `complete-visible-smt-v1` placement changes both available CPU capacity
+and attribution. Calibrate a new series and keep guest-wide endpoint-v2
+receipts, including run 45621791935, separate.
 
 ## Local developer replay
 

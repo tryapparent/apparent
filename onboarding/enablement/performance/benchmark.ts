@@ -24,6 +24,7 @@ import {
   hostedLimits,
   startHostedMeter,
 } from "./hosted-contention.ts";
+import { placementProtocol } from "./hosted/placement.ts";
 import {
   endpoint,
   endpointVersion,
@@ -79,7 +80,7 @@ const minimumHostAvailableMemoryKiB = 1024 * 1024;
 const hostWaitLimitMs = 30_000;
 const cohort = process.env.APPARENT_ONBOARDING_HOSTED_COHORT;
 if (hosted) assert.match(cohort ?? "", /^[a-f0-9]{64}$/);
-const hostedMeter = hosted ? await startHostedMeter() : undefined;
+const hostedMeter = hosted ? startHostedMeter() : undefined;
 const hostIdentity = {
   hostname: hostname(),
   kernel: (await readFile("/proc/sys/kernel/osrelease", "utf8")).trim(),
@@ -90,6 +91,7 @@ const hostIdentity = {
     runAttempt: process.env.GITHUB_RUN_ATTEMPT,
     imageVersion: process.env.ImageVersion,
     cohort,
+    selectedCpus: hostedMeter?.selected,
   }),
 };
 const pairs = ["control-1", "candidate-1", "candidate-2", "control-2"] as const;
@@ -136,11 +138,11 @@ function cpuPercentages(before: string, after: string) {
 async function waitForQuietHost(dir: string) {
   if (hostedMeter) {
     const deadline = performance.now() + hostWaitLimitMs;
-    let before = await hostedMeter.sample();
     const samples = [];
     for (;;) {
+      const before = hostedMeter.sample("start");
       await delay(1000);
-      const after = await hostedMeter.sample();
+      const after = hostedMeter.sample("end");
       const contention = hostedContention(
         before,
         after,
@@ -158,7 +160,6 @@ async function waitForQuietHost(dir: string) {
         );
         return;
       }
-      before = after;
     }
   }
   const deadline = performance.now() + hostWaitLimitMs;
@@ -228,7 +229,7 @@ async function observation(
       APPARENT_ONBOARDING_PROFILE_ROOT: scratch,
     };
     delete (env as NodeJS.ProcessEnv).WAYLAND_DISPLAY;
-    const before = await hostedMeter?.sample();
+    const before = hostedMeter?.sample("start");
     const child = spawn(
       "xvfb-run",
       [
@@ -247,7 +248,7 @@ async function observation(
       },
     );
     const [code, signal] = await once(child, "exit");
-    const after = await hostedMeter?.sample();
+    const after = hostedMeter?.sample("end");
     const hostedTrial =
       before && after && hostedMeter
         ? hostedContention(before, after, hostedMeter.ticksPerSecond)
@@ -467,7 +468,7 @@ const summary = {
   contention: {
     minimumHostAvailableMemoryKiB,
     ...(hosted
-      ? { hostedAttribution: "cgroup-v2", ...hostedLimits }
+      ? { hostedAttribution: placementProtocol, ...hostedLimits }
       : { hostPsiLimitPercent, minimumHostIdlePercent }),
   },
   baseline,
