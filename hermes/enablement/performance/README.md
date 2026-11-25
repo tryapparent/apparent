@@ -6,6 +6,21 @@ The host fixture implements Hermes tool, hook, skill and RPC registration, the e
 
 ## Run
 
+Use the shared manual workflow for scored hosted calibration and comparisons.
+Pin an exact revision on main for the control. Equal SHAs request calibration
+only. A different candidate SHA compares its shipping Hermes plugin against
+the control plugin with the same frozen control CLI. The workflow preserves the
+10% unrelated CPU guard, the synthetic endpoint checks and the trace receipts.
+
+```sh
+gh workflow run performance-benchmark.yml --repo tryapparent/apparent \
+  --ref main -f stream=hermes -f control="$main" -f candidate="$main"
+```
+
+For comparisons, retain the hosted experiment receipt and the active
+implementation effort in the campaign ledger. Each job uses its own matched
+same-build calibration. Local replay is available for diagnosis.
+
 Use Node 22, Python 3 with the plugin's pinned-range Pillow dependency, and `taskset` on Linux. Supply a clean full CLI built from the frozen main revision. A source build can use `cargo build --locked --bin apparent` with a private target directory and the normal build prerequisites. Keep the binary beside its linked runtime libraries or use the verified extracted release payload. Benchmark after builds finish. Choose a logical CPU whose SMT sibling is also quiet.
 
 ```sh
