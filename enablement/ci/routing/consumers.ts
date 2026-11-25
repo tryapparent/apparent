@@ -7,7 +7,7 @@ export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client'
 export type Owner = typeof owners[number];
 export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
   .map(file => 'capture/desktop/scripts/packaging/' + file));
-import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
+import { publicMarkdown, hostedBrowserFixture } from '../../../shared/enablement/ci/public-inputs.ts';
 export { publicMarkdown };
 const apparentSkill = 'agent/skills/apparent/';
 const proseRoots = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', 'engine', 'handoff', 'onboarding'];

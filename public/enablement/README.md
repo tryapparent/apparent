@@ -17,7 +17,7 @@ The homepage embeds the Hermes Agent submission through
 a packaged Pages asset. The [archived Pi cut](../site/docs/apparent-demo-pi.md)
 and [Open Graph loop](og-video/capture.mjs) have their own provenance.
 
-`cd/ci/inputs.ts` supplies Public's embedded Markdown, cross-stream fixture and local
+`../../shared/enablement/ci/public-inputs.ts` supplies Public's embedded Markdown, cross-stream fixture and local
 verification command to the existing repository routing/local runner. The central
 router remains the only selection decision. Both workflow entrypoints call the
 moved tools directly. Changes to `public/enablement` retain Public admission;

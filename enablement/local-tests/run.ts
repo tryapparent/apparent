@@ -1,7 +1,7 @@
 import {affectedBendOwners} from "../../shared/enablement/bend/owners.ts";
 import {bendDirectory} from "../../shared/enablement/bend/manifest.ts";
 import {serviceCommands} from '../../connect/enablement/ci/local/service.ts';
-import { verification as publicVerification } from '../../public/enablement/cd/ci/inputs.ts';
+import { verification as publicVerification } from '../../shared/enablement/ci/public-inputs.ts';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';

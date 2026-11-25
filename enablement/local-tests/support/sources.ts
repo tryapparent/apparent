@@ -7,7 +7,7 @@ import {bendDirectory, bendOwners} from '../../../shared/enablement/bend/manifes
 import {affectedBendOwners, regularFile} from '../../../shared/enablement/bend/owners.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'public/enablement/cd/ci', 'connect/enablement/ci/local', 'shared/enablement/ci', 'shared/enablement/bend', 'shared/enablement/issues', 'enablement/timing', 'record/enablement/ci'];
+const sourceOwners = ['enablement/local-tests', 'enablement/ci', 'connect/enablement/ci/local', 'shared/enablement/ci', 'shared/enablement/bend', 'shared/enablement/issues', 'enablement/timing', 'record/enablement/ci'];
 const excluded = new Set(['fixtures', 'node_modules', 'dist', 'target', '.git']);
 export const fixtureBendDirectories = (path: string) => affectedBendOwners(path, null).map(bendDirectory);
 function within(parent: string, child: string): boolean {
