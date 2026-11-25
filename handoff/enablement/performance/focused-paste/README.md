@@ -14,7 +14,9 @@ Wayland clipboard. The independent GTK editor uses Wayland. Shell IPC
 readiness must identify the exact GUI child of the launched binary. The
 synthetic editor has no submit action, and the witness counts Enter separately.
 
-Each arm starts fresh app and editor processes. It verifies a warmup, five
+Each arm starts fresh app and editor processes. After socket and editor
+readiness, the fixture waits up to 10 seconds for 400 ms without an app CPU
+tick before warmup. A timeout fails the run. Each arm verifies a warmup, five
 normal replays, one double invocation inside the product’s 400 ms debounce,
 and one clipboard replacement. `apparent shortcut paste` is the executable
 behind the registered desktop hotkey. The benchmark starts before invoking
@@ -28,8 +30,10 @@ and contact sheet after every attempt.
 
 The receipt reports per-arm normal medians and ranges, maximum absolute
 calibration pair spread, paired savings in milliseconds, and process CPU and
-RSS. Both savings must exceed that run’s calibration spread. Each action has
-absolute limits of 250 ms app CPU and 384 MiB RSS. Candidate medians may use
+RSS. Both savings must exceed that run’s calibration spread. The receipt
+reports startup app CPU through settling and action-through-readback CPU
+separately. The per-trial limits remain 250 ms app CPU from clipboard setup
+through readback and 384 MiB RSS. Candidate medians may use
 at most 10% more CPU plus one guest clock tick and 10% more RSS plus 16 MiB.
 The dedicated hosted measurement service uses the existing Handoff guard
 for unrelated runner CPU, steal, I/O pressure and throttling over the guest
