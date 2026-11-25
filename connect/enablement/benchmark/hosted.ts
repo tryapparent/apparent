@@ -118,7 +118,7 @@ async function main(args: string[]) {
   const controlSha = revision(control);
   const candidateSha = revision(candidate);
   const calibrationOnly = controlSha === candidateSha;
-  const scratch = await mkdtemp(join(temp, "connect-benchmark-"));
+  const scratch = await mkdtemp("/tmp/apparent-dev-cw-");
   assert.ok(scratch !== evidence && !scratch.startsWith(evidence + sep));
   const samples = join(scratch, "samples");
   await mkdir(samples, { mode: 0o700 });
