@@ -20,7 +20,7 @@ import { benchmark } from "./watch-score.ts";
 
 const service = "connect/service";
 const resultFile =
-  /^(cold|warm|watch-replay|watch-score)\.json$|^resources\.txt$/;
+  /^(cold|warm|watch-replay|watch-score|replay-unit)\.json$|^resources\.txt$|^replay-unit\.log$/;
 
 function revision(tree: string) {
   const git = (...args: string[]) =>
@@ -134,7 +134,7 @@ async function main(args: string[]) {
     image,
     topology: cpu.topology,
     cpuQuota: cpu.cpuQuota.limits,
-    replayAccounting: "dedicated-systemd-cgroup-v1",
+    replayAccounting: "dedicated-systemd-cgroup-file-v2",
     preparation: "unscored-replay-per-build-v1",
   });
   const environment = {

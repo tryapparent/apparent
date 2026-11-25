@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { basename, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readCpuQuota, readCpuUsage } from "./quota.ts";
 
@@ -14,6 +15,7 @@ export function runReplayUnit(
   tasksetArgs: string[],
   cwd: string,
   tmp: string,
+  evidence: string,
 ): UnitResult {
   const uid = process.getuid?.();
   const gid = process.getgid?.();
@@ -22,19 +24,22 @@ export function runReplayUnit(
     "Replay unit needs the unprivileged runner account",
   );
   const name = "apparent-connect-replay-" + randomUUID() + ".service";
-  const output = execFileSync(
+  const receipt = join(evidence, "replay-unit.json");
+  const diagnostics = join(evidence, "replay-unit.log");
+  execFileSync(
     "sudo",
     [
       "--non-interactive",
       "systemd-run",
       "--quiet",
-      "--pipe",
       "--wait",
       "--collect",
       "--expand-environment=no",
       "--service-type=exec",
       "--property=RuntimeMaxSec=90s",
       "--property=CPUAccounting=yes",
+      "--property=StandardOutput=truncate:" + receipt,
+      "--property=StandardError=truncate:" + diagnostics,
       "--unit=" + name,
       "--uid=" + uid,
       "--gid=" + gid,
@@ -48,7 +53,7 @@ export function runReplayUnit(
     ],
     { encoding: "utf8", timeout: 95000 },
   );
-  return JSON.parse(output) as UnitResult;
+  return JSON.parse(readFileSync(receipt, "utf8")) as UnitResult;
 }
 
 async function replay(
