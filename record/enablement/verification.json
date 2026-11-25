@@ -4,7 +4,7 @@
       "id": "compact-recording-pill",
       "description": "Verify the compact recording row, live captions, and capture commands.",
       "platforms": ["linux", "macos"],
-      "userEntryPoint": "Select a capture mode before starting a recording. Use the pen for Whiteboard or the red circle to finish. The trailing cross cancels.",
+      "userEntryPoint": "Start a recording and watch the lilac spinner change to the red Finish control once media is ready. The trailing cross cancels during startup and recording.",
       "prerequisites": [
         "Install the locked Desktop frontend dependencies. Use Xvfb on Linux."
       ],
@@ -14,7 +14,7 @@
       },
       "expectedEvidence": [
         "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
-        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry."
+        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. In the isolated Hyprland guest, check that the startup and ready rows have the same size and that a physical click on Cancel during the spinner returns the same capture to idle with no saved bundle."
       ],
       "limits": [
         "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."
