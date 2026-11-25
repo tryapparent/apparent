@@ -4,7 +4,7 @@
       "id": "onboarding-practice-completion",
       "description": "Finish the onboarding practice recording and verify that the app saves the recording, copies its reference, and persists setup completion.",
       "platforms": ["linux-hyprland"],
-      "userEntryPoint": "Resume the practice lesson. Use the Record shortcut, click the pen in the coach, draw on the practice Whiteboard, close it when done, then draw on the screen with Shift held. Click the stop square in the Finish coach, continue from the copied confirmation, and choose Finish setup.",
+      "userEntryPoint": "Resume the practice lesson. Use the Record shortcut, click the pen in the coach once, draw on the practice Whiteboard, close it when done, then draw on the screen with Shift held. Click the stop square in the Finish coach, continue from the copied confirmation, and choose Finish setup.",
       "prerequisites": [
         "A checksum-verified Linux AppImage, the qualified disposable Omarchy guest template, and a new private job directory.",
         "The pinned English Parakeet Q4 model and its adjacent .verified.json receipt. The runner seeds an empty private capture directory and enables the practice lesson for that profile."
@@ -21,6 +21,7 @@
         "vm/result.json records verified artifact retention and completed cleanup of the disposable guest."
       ],
       "limits": [
+        "The Whiteboard Electron test loads its renderer before the parent initializes the board, verifies that it stays hidden until initialization, and checks that the practice mascot and closing instructions fit beside each other.",
         "The Electron window-coach smoke checks coach buttons, keyboard access, and commands in both themes at 380px and 320px. The Composition Onboarding renderer test checks that prompt changes keep the mascot mounted and equivalent compact prompts at the same position. The Composition Onboarding and Whiteboard renderer tests check the fade and Reduce Motion.",
         "This starts at the resumed practice lesson. Initial launch, permissions setup, and shortcut selection are outside its coverage.",
         "The probe verifies the clipboard offer. Pasting into another app, macOS, and independent theme or window-size coverage require separate checks."

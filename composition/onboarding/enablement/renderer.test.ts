@@ -273,6 +273,12 @@ test("trusted practice host drives the real renderer without accepting renderer 
     { type: "ink", board: true, screen: 4 },
   ]);
   await stage("whiteboard");
+  setup({
+    step: "try-it",
+    practice: "board-ink",
+    practiceBoard: [120, 130, 640, 480],
+    penRgb: [217, 76, 68],
+  });
   await batch([
     { type: "ink", board: true, screen: 5 },
     { type: "whiteboard-visible", visible: false },

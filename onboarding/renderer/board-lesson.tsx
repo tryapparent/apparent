@@ -1,3 +1,4 @@
+import { FrogSprite } from "./frog/sprite";
 import "./board-lesson.css";
 import "./prompt-motion.css";
 
@@ -17,11 +18,14 @@ export function BoardLesson({
       : "Your turn";
   return (
     <div className="native-board-lesson" data-ready={ready} data-ink={hasInk}>
-      <p role="status">
-        <span key={prompt} className="onboarding-prompt-enter">
-          {prompt}
-        </span>
-      </p>
+      <div className="native-board-coach">
+        <FrogSprite />
+        <p role="status">
+          <span key={prompt} className="onboarding-prompt-enter">
+            {prompt}
+          </span>
+        </p>
+      </div>
       {!hasInk && (
         <svg aria-hidden="true" viewBox="0 0 720 470">
           <path

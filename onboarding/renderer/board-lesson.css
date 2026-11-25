@@ -6,13 +6,27 @@
   color: var(--apparent-carbon);
 }
 
-.native-board-lesson p {
+.native-board-coach {
   position: absolute;
   z-index: 1;
-  inset: 8% 16px auto;
-  max-width: 38ch;
-  margin: 0 auto;
-  font-size: 24px;
+  inset: 6% 12px auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.native-board-coach canvas {
+  width: 56px;
+  height: auto;
+  flex: none;
+  image-rendering: pixelated;
+}
+
+.native-board-coach p {
+  max-width: 32ch;
+  margin: 0;
+  font-size: clamp(18px, 4vw, 24px);
   text-wrap: balance;
 }
 
