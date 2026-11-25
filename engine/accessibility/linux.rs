@@ -264,8 +264,10 @@ impl Work {
             })?;
         let sampled_after_ms = pin.release.saturating_sub(pin.t)
             .saturating_add(pin.at.elapsed().as_millis() as u64);
-        let (elements, truncated) =
-            self.accessibility.pin_tree(&tree, &window.title, window.size(), unique_client)?;
+        let browser_point = window.browser_attribute().and_then(|_| window.mark_point(rect));
+        let (elements, truncated) = self.accessibility.pin_tree(
+            &tree, &window.title, window.size(), unique_client, browser_point,
+        )?;
         let after = window::pin_focus(rect, pin.note_pid)?;
         let editor = after.editor.as_ref().or(focus.editor.as_ref());
         if after.window != window

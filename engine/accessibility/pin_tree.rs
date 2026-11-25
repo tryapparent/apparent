@@ -12,6 +12,13 @@ const TREE_BUDGET: Duration = Duration::from_millis(180);
 const ENABLED: u32 = 1 << 8;
 const SENSITIVE: u32 = 1 << 24;
 
+struct Branch {
+    object: Object,
+    parent: Option<usize>,
+    depth: usize,
+    document: bool,
+}
+
 impl Bus {
     pub fn pin_tree(
         &self,
@@ -19,6 +26,7 @@ impl Bus {
         title: &str,
         size: [i32; 2],
         unique_client: bool,
+        browser_point: Option<(i32, i32)>,
     ) -> Option<(Vec<PinWindowElement>, bool)> {
         let accessible = self.proxy(root, ACCESSIBLE)?;
         let accessible_title: String = accessible.get_property("Name").ok()?;
@@ -32,17 +40,38 @@ impl Bus {
 
         let deadline = Instant::now() + TREE_BUDGET;
         let mut pending = VecDeque::new();
-        let mut truncated = !self.queue_pin_children(root, None, 1, &mut pending);
+        let mut truncated = !self.queue_pin_children(root, None, 1, false, &mut pending);
+        if let Some(point) = browser_point
+            && let Some(document) = self
+                .embedded_document_at(root, point)
+                .or_else(|| self.documents_at_point(root, point)?.pop())
+        {
+            pending.push_front(Branch {
+                object: document,
+                parent: None,
+                depth: 1,
+                document: true,
+            });
+        }
         let mut seen = HashSet::new();
         let mut elements = Vec::new();
         let mut bytes = 2;
-        while let Some((object, parent, depth)) = pending.pop_front() {
+        while let Some(Branch {
+            object,
+            parent,
+            depth,
+            document,
+        }) = pending.pop_front()
+        {
             if Instant::now() >= deadline || seen.len() >= MAX_NODES {
                 truncated = true;
                 break;
             }
-            if object.0 != root.0 || object == *root || !seen.insert(object.1.clone()) {
+            if object.0 != root.0 || object == *root {
                 truncated = true;
+                continue;
+            }
+            if !seen.insert(object.1.clone()) {
                 continue;
             }
             let Some(state) = self.state(&object) else {
@@ -96,8 +125,13 @@ impl Bus {
                 truncated = true;
                 break;
             }
-            truncated |=
-                !self.queue_pin_children(&object, children_parent, depth + 1, &mut pending);
+            truncated |= !self.queue_pin_children(
+                &object,
+                children_parent,
+                depth + 1,
+                document,
+                &mut pending,
+            );
         }
         if !elements.iter().any(|element| {
             element
@@ -124,7 +158,8 @@ impl Bus {
         object: &Object,
         parent: Option<usize>,
         depth: usize,
-        pending: &mut VecDeque<(Object, Option<usize>, usize)>,
+        document: bool,
+        pending: &mut VecDeque<Branch>,
     ) -> bool {
         let Some(accessible) = self.proxy(object, ACCESSIBLE) else {
             return false;
@@ -135,7 +170,7 @@ impl Bus {
         if count == 0 {
             return true;
         }
-        let room = MAX_NODES - pending.len();
+        let room = MAX_NODES.saturating_sub(pending.len());
         if depth > MAX_DEPTH || count < 0 || room == 0 {
             return false;
         }
@@ -147,21 +182,42 @@ impl Bus {
                 return false;
             };
             let complete = children.len() <= room;
-            pending.extend(
-                children
-                    .into_iter()
-                    .take(room)
-                    .map(|child| (child, parent, depth)),
+            queue_branches(
+                pending,
+                children.into_iter().take(room),
+                parent,
+                depth,
+                document,
             );
             return complete;
         }
-        for index in 0..room.min(8) {
-            let Ok(child) = accessible.call("GetChildAtIndex", &(index as i32,)) else {
-                break;
-            };
-            pending.push_back((child, parent, depth));
-        }
+        let children: Vec<Object> = (0..room.min(8))
+            .map_while(|index| accessible.call("GetChildAtIndex", &(index as i32,)).ok())
+            .collect();
+        queue_branches(pending, children.into_iter(), parent, depth, document);
         false
+    }
+}
+
+fn queue_branches(
+    pending: &mut VecDeque<Branch>,
+    children: impl DoubleEndedIterator<Item = Object>,
+    parent: Option<usize>,
+    depth: usize,
+    document: bool,
+) {
+    let branches = children.map(|object| Branch {
+        object,
+        parent,
+        depth,
+        document,
+    });
+    if document {
+        for branch in branches.rev() {
+            pending.push_front(branch);
+        }
+    } else {
+        pending.extend(branches);
     }
 }
 

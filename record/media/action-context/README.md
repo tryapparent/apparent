@@ -74,7 +74,8 @@ A dedicated worker checks the compositor window and the accessibility root
 before and after reading. Apparent's own note editor may take focus when the
 pin appears. In that case the worker verifies the exact editor process and the
 underlying Chromium or other app window. An unrelated focus or title change
-leaves the pin without the observation. The producer reads
+leaves the pin without the observation. When a browser exposes the document
+under the pin, its branch is read before browser chrome. The producer reads
 accessible names and skips editable, password, and terminal subtrees. It does
 not query text or value interfaces. The saved summary and clipboard show up to
 four named elements alongside the matching pin and label them as app data.

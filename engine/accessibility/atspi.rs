@@ -216,10 +216,18 @@ impl Bus {
         self.document_at(&frame, point, attribute)
     }
 
-    fn document_at(&self, frame: &Object, (x, y): (i32, i32), attribute: &str) -> Option<String> {
+    fn document_at(&self, frame: &Object, point: (i32, i32), attribute: &str) -> Option<String> {
+        self.documents_at_point(frame, point)?
+            .iter()
+            .rev()
+            .find_map(|document| self.document_url(document, attribute))
+            .or_else(|| self.document_url(&self.embedded_document_at(frame, point)?, attribute))
+    }
+
+    fn documents_at_point(&self, frame: &Object, (x, y): (i32, i32)) -> Option<Vec<Object>> {
         let mut hit: Object = self.proxy(frame, COMPONENT)?
             .call("GetAccessibleAtPoint", &(x, y, 1_u32)).ok()?;
-        let mut page = None;
+        let mut documents = Vec::new();
         for _ in 0..20 {
             if hit == *frame {
                 break;
@@ -229,19 +237,17 @@ impl Bus {
             }
             let accessible = self.proxy(&hit, ACCESSIBLE)?;
             let role: String = accessible.call("GetRoleName", &()).ok()?;
-            if role == "document web" {
-                page = self.document_url(&hit, attribute).or(page);
-            }
             let (bus, path) = accessible.get_property::<(String, OwnedObjectPath)>("Parent").ok()?;
             drop(accessible);
+            if role == "document web" {
+                documents.push(hit);
+            }
             hit = Object(bus, path);
         }
-        if hit != *frame {
-            return None;
-        }
-        if page.is_some() {
-            return page;
-        }
+        (hit == *frame).then_some(documents)
+    }
+
+    fn embedded_document_at(&self, frame: &Object, (x, y): (i32, i32)) -> Option<Object> {
         let relations: Vec<(u32, Vec<Object>)> =
             self.proxy(frame, ACCESSIBLE)?.call("GetRelationSet", &()).ok()?;
         let mut embedded = relations.into_iter().filter(|(kind, _)| *kind == 13)
@@ -252,10 +258,8 @@ impl Bus {
         }
         let (left, top, width, height): (i32, i32, i32, i32) =
             self.proxy(&document, COMPONENT)?.call("GetExtents", &(1_u32,)).ok()?;
-        if x < left || y < top || x >= left.saturating_add(width) || y >= top.saturating_add(height) {
-            return None;
-        }
-        self.document_url(&document, attribute)
+        (x >= left && y >= top && x < left.saturating_add(width) && y < top.saturating_add(height))
+            .then_some(document)
     }
 
     fn document_url(&self, document: &Object, attribute: &str) -> Option<String> {
