@@ -8,6 +8,11 @@ import { chromium, devices, type Page } from "playwright-core";
 import { verifyDemo } from "./demo.ts";
 import { externalEffects, scenario, servePackage } from "./fixture.ts";
 import {
+  evaluateInterference,
+  hostedInterference,
+  hostedSampler,
+} from "./hosted-guard/interference.ts";
+import {
   idlePreflight,
   maxCpuPressurePercent,
   pressure,
@@ -54,6 +59,8 @@ const diagnostic = values["pressure-diagnostic"];
 assert(
   !diagnostic || (values.mode === "calibrate" && runs === 1 && maxBlocks === 1),
 );
+const scope = process.env.APPARENT_PUBLIC_BENCHMARK_CGROUP;
+const sampleHosted = scope && hostedSampler(scope);
 
 assert(["desktop", "phone", "small-phone"].includes(values.size));
 assert(values.theme === "dark" || values.theme === "light");
@@ -162,7 +169,11 @@ try {
     const block = receipts.slice(blockStart);
     if (
       !failed.length &&
-      block.every((row) => row.cpuPressurePercent <= maxCpuPressurePercent)
+      block.every(
+        (row) =>
+          row.interference?.passed ??
+          row.cpuPressurePercent <= maxCpuPressurePercent,
+      )
     ) {
       block.forEach((row) => {
         row.eligible = true;
@@ -210,6 +221,7 @@ for (const source of [
   "trace.ts",
   "demo.ts",
   "resources.ts",
+  "hosted-guard/interference.ts",
   "../motion/frame-pacing.ts",
 ])
   probe.update(await readFile(new URL(source, import.meta.url)));
@@ -219,6 +231,7 @@ const compatible = {
   runner,
   detailed: values.mode === "trace",
   ...(values["idle-preflight"] && { idlePreflight: true }),
+  ...(scope && { hostedInterference }),
 };
 const references = await Promise.all(
   (values.control ?? []).map(async (path) =>
@@ -349,6 +362,7 @@ async function attempt(
   const tracePath = join(output, id + ".chrome.json");
   const stopTrace = detailed ? await startTrace(browserCDP) : null;
   const resourceStart = await processes(browserCDP);
+  const hostedStart = sampleHosted && sampleHosted();
   const pressureStart = await pressure();
   const start = performance.now();
   try {
@@ -385,6 +399,10 @@ async function attempt(
     );
     const end = performance.now();
     const pressureEnd = await pressure();
+    const interference =
+      hostedStart &&
+      sampleHosted &&
+      evaluateInterference(hostedStart, sampleHosted());
     const cpuPressurePercent =
       (100 * (pressureEnd - pressureStart)) / ((end - start) * 1000);
     assert(
@@ -489,6 +507,7 @@ async function attempt(
       ...endpoint,
       pageTiming,
       cpuPressurePercent,
+      ...(interference && { interference }),
       chromiumCpuMs: (resourceEnd.cpuSeconds - resourceStart.cpuSeconds) * 1000,
       sampledChromiumPssKiB: resourceEnd.pssKiB,
       hostCommandMs: end - start,

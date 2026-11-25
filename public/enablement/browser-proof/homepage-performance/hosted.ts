@@ -14,6 +14,10 @@ import {
 import { availableParallelism } from "node:os";
 import { delimiter, isAbsolute, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  hostedInterference,
+  scopeCommand,
+} from "./hosted-guard/interference.ts";
 import { idlePreflight } from "./resources.ts";
 
 const inputs = process.argv.slice(2);
@@ -222,12 +226,18 @@ type Site = ReturnType<typeof packageSite>;
 type Replay = {
   qualified: boolean;
   diagnostic?: boolean;
+  compatible: { hostedInterference: string };
   receipt: string;
   revision: string;
   packageSha256: string;
-  receipts: { eligible: boolean; sampledChromiumPssKiB: number }[];
+  receipts: {
+    eligible: boolean;
+    sampledChromiumPssKiB: number;
+    interference: { passed: boolean };
+  }[];
 };
 
+let benchmarkScope: string | undefined;
 function replay(
   label: string,
   site: Site,
@@ -236,22 +246,28 @@ function replay(
 ) {
   const before = snapshot();
   try {
+    assert(benchmarkScope);
     const result = JSON.parse(
-      run(label, process.execPath, [
-        fileURLToPath(new URL("homepage.ts", import.meta.url)),
-        "--artifact",
-        site.artifact,
-        "--revision",
-        site.sha,
-        "--output",
-        join(evidence, label),
-        ...options,
-      ]),
+      run(
+        label,
+        "sh",
+        scopeCommand(benchmarkScope, process.execPath, [
+          fileURLToPath(new URL("homepage.ts", import.meta.url)),
+          "--artifact",
+          site.artifact,
+          "--revision",
+          site.sha,
+          "--output",
+          join(evidence, label),
+          ...options,
+        ]),
+      ),
     ) as Replay;
     assert(
       (diagnostic
         ? result.diagnostic && !result.qualified
         : result.qualified) &&
+        result.compatible.hostedInterference === hostedInterference &&
         result.revision === site.sha &&
         /^[a-f0-9]{64}$/.test(result.packageSha256),
     );
@@ -260,10 +276,17 @@ function replay(
         realpathSync(result.receipt).startsWith(evidence + "/"),
     );
     const raw = JSON.parse(readFileSync(result.receipt, "utf8")) as Replay;
-    const eligible = raw.receipts.filter((row) => diagnostic || row.eligible);
+    const resourceRows = raw.receipts.filter(
+      (row) => diagnostic || row.eligible,
+    );
     assert(
-      eligible.length && eligible.every((row) => row.sampledChromiumPssKiB > 0),
-      "Chromium PSS was unavailable",
+      resourceRows.length &&
+        resourceRows.every(
+          (row) =>
+            row.sampledChromiumPssKiB > 0 &&
+            (diagnostic ? row.interference : row.interference.passed),
+        ),
+      "Chromium PSS or required host evidence was unavailable",
     );
     return result;
   } finally {
@@ -340,8 +363,20 @@ async function execute() {
     aSha === bSha
       ? null
       : packageSite("candidate", candidate, bSha, environment);
+  const suffix = `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
+  assert.match(suffix, /^[0-9]+-[0-9]+$/);
+  const scope = "/sys/fs/cgroup/apparent-public-" + suffix;
+  run("create-benchmark-cgroup", "sudo", ["-n", "mkdir", scope]);
+  benchmarkScope = scope;
+  env.APPARENT_PUBLIC_BENCHMARK_CGROUP = scope;
   if (!b) {
     json("post-build-idle", await idlePreflight());
+    const proof = run("guest-interference-proof", process.execPath, [
+      fileURLToPath(new URL("hosted-guard/proof.ts", import.meta.url)),
+      "prove",
+      scope,
+    ]);
+    json("guest-interference-proof", JSON.parse(proof));
     const options = [
       "--pressure-diagnostic",
       "--mode",
@@ -357,27 +392,11 @@ async function execute() {
     replay("pressure-b-repeat", a, preflight, true);
     replay("pressure-a-repeat", a, options, true);
   }
-  const quiet = [
-    "--mode",
-    "quiet",
-    "--runs",
-    "5",
-    "--max-blocks",
-    "25",
-    "--idle-preflight",
-  ];
+  const quiet = ["--mode", "quiet", "--runs", "5", "--max-blocks", "25"];
   const controlOne = replay("noise-first", a, quiet);
   const controlTwo = replay("noise-second", a, quiet);
   const controls = [controlOne.receipt, controlTwo.receipt];
-  const trace = [
-    "--mode",
-    "trace",
-    "--runs",
-    "1",
-    "--max-blocks",
-    "8",
-    "--idle-preflight",
-  ];
+  const trace = ["--mode", "trace", "--runs", "1", "--max-blocks", "8"];
   replay("control-overhead", a, [
     "--mode",
     "calibrate",
@@ -385,7 +404,6 @@ async function execute() {
     "2",
     "--max-blocks",
     "10",
-    "--idle-preflight",
   ]);
 
   let experiments: {
@@ -460,5 +478,10 @@ try {
   });
   throw error;
 } finally {
-  rmSync(scratch, { recursive: true, force: true });
+  try {
+    if (benchmarkScope)
+      run("remove-benchmark-cgroup", "sudo", ["-n", "rmdir", benchmarkScope]);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }

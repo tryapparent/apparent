@@ -16,6 +16,7 @@ import {
 import {
   browserContract,
   loadHostedEvidence,
+  pressureQualified,
   verifyDemoProof,
   type Effort,
   type HostedLedger,
@@ -146,6 +147,13 @@ if (!ledger.controls.length) {
 const seen = new Set<string>();
 const readRun = async (path: string) => {
   const row = await read<Receipt>(path);
+  if (row.compatible.hostedInterference) {
+    const eligible = row.receipts.filter((wait) => wait.eligible);
+    assert(
+      eligible.length && eligible.every((wait) => pressureQualified(row, wait)),
+      "Hosted run marked an interfered observation eligible",
+    );
+  }
   assert(
     row.qualified &&
       !row.compatible.detailed &&
@@ -199,7 +207,7 @@ const metric = (
           !r.detailed &&
           r.verified &&
           r.eligible &&
-          r.cpuPressurePercent <= 2,
+          pressureQualified(row, r),
       )
       .map(get),
   );
