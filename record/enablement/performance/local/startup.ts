@@ -122,6 +122,7 @@ if (!childModes.includes(args[0])) {
           PATH: process.env.PATH,
           HOME: process.env.HOME,
           TMPDIR: process.env.TMPDIR,
+          APPARENT_START_BENCH_CPUS: process.env.APPARENT_START_BENCH_CPUS,
         },
         stdio: "inherit",
       },

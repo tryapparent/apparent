@@ -24,7 +24,7 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
-import { cpuNumbers, stopReplayCpus } from "./stop-affinity.ts";
+import { cpuNumbers, replayCpuPair } from "./replay-affinity.ts";
 import { fixture, model } from "./stop-input.ts";
 import { waterfall } from "./waterfall.ts";
 
@@ -35,7 +35,7 @@ const allowed = /^Cpus_allowed_list:\s+([0-9,-]+)$/m.exec(
 )?.[1];
 assert.ok(allowed, "Missing runner CPU affinity");
 assert.equal(topology.length, 4, "Expected four standard runner vCPUs");
-const affinity = stopReplayCpus(topology, allowed);
+const affinity = replayCpuPair(topology, allowed);
 const pinned = command(
   "taskset",
   ["--cpu-list", affinity, "cat", "/proc/self/status"],

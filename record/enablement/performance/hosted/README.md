@@ -63,9 +63,15 @@ may cache runtime and graphics files from preparation. Physical first-use
 acceptance uses the separate native fixture. Profiles live outside the
 uploaded evidence.
 
+Hosted Start assigns Electron two vCPUs from distinct runner-reported cores.
+Xvfb and the framebuffer observer use the other two vCPUs. The receipt
+records both masks and their kernel readbacks. The split uses the runner's
+logical topology and does not establish exclusive physical cores.
+
 If Start fails before creating a comparison, it keeps the fixture's IPC and
 frame evidence and tries one unscored cold launch with Chromium logging.
 The diagnostic artifacts do not qualify the failed batch.
+If a batch completes but fails qualification, its waterfall is retained.
 
 The Stop fixture is generated before the timer. FFmpeg supplies the movie and
 eSpeak NG supplies Record's existing synthetic narration script. The replay

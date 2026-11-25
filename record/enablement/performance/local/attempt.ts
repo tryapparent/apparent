@@ -192,9 +192,12 @@ async function visibleFrame(
 }
 
 function launch(setup: Setup, directory: string, diagnostic: boolean) {
+  const affinity = process.env.APPARENT_START_BENCH_CPUS;
+  if (affinity) assert.match(affinity, /^\d+,\d+$/);
   const child = spawn(
-    setup.runtime,
+    affinity ? "taskset" : setup.runtime,
     [
+      ...(affinity ? ["--cpu-list", affinity, setup.runtime] : []),
       "--no-sandbox",
       "--ozone-platform=x11",
       ...(diagnostic ? ["--enable-logging=stderr"] : []),

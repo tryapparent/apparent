@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -20,9 +20,42 @@ import {
   stageRevision,
   stealSince,
 } from "./job.ts";
-import { waterfall } from "./waterfall.ts";
+import { cpuNumbers, replayCpuPair } from "./replay-affinity.ts";
+import { startWaterfall } from "./start-waterfall.ts";
 
 const job = openJob("start");
+const topology = hostCounters().topology;
+const cpuListPattern = /^Cpus_allowed_list:\s+(\S+)$/m;
+const available = cpuListPattern.exec(
+  readFileSync("/proc/self/status", "utf8"),
+)?.[1];
+assert.ok(available, "Missing runner CPU affinity");
+const allowed = cpuNumbers(available);
+assert.equal(allowed.length, 4, "Expected four allowed standard runner vCPUs");
+const renderer = replayCpuPair(topology, available);
+const rendererCpus = cpuNumbers(renderer);
+const observer = allowed.filter((cpu) => !rendererCpus.includes(cpu)).join(",");
+const verified = [renderer, observer].map((mask) => {
+  const status = command(
+    "taskset",
+    ["--cpu-list", mask, "cat", "/proc/self/status"],
+    {
+      capture: true,
+      env: job.env,
+    },
+  );
+  const observed = cpuListPattern.exec(status)?.[1];
+  assert.ok(observed, "Missing pinned process CPU affinity");
+  assert.deepEqual(cpuNumbers(observed), cpuNumbers(mask));
+  return observed;
+});
+receipt(join(job.evidence, "start-affinity.json"), {
+  topology,
+  available,
+  renderer,
+  observer,
+  verified,
+});
 apt(
   "xvfb",
   "xauth",
@@ -61,13 +94,21 @@ const candidate = job.calibrationOnly
   : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
+function runFixture(args: string[]) {
+  command(
+    "taskset",
+    ["--cpu-list", observer, process.execPath, runner, ...args],
+    {
+      env: { ...job.env, APPARENT_START_BENCH_CPUS: renderer },
+    },
+  );
+}
+
 function prepareAttempt(output: string, desktop: string) {
   const before = hostCounters();
   const started = performance.now();
   try {
-    command(process.execPath, [runner, "--prepare", desktop, output], {
-      env: job.env,
-    });
+    runFixture(["--prepare", desktop, output]);
   } finally {
     const after = hostCounters();
     const elapsedMs = performance.now() - started;
@@ -127,11 +168,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   const before = cpuSample();
   let failure: unknown;
   try {
-    command(
-      process.execPath,
-      [runner, control, output, ...(other ? [other] : [])],
-      { env: job.env },
-    );
+    runFixture([control, output, ...(other ? [other] : [])]);
   } catch (error) {
     failure = error;
   } finally {
@@ -142,19 +179,17 @@ async function run(phase: "baseline" | "comparison", other?: string) {
       hostAfter: hostCounters(),
     });
   }
+  const comparison = join(output, "comparison.json");
+  const result = existsSync(comparison) ? json(comparison) : undefined;
+  if (result) startWaterfall(join(output, "waterfall.html"), result);
   if (failure) {
-    if (phase === "baseline" && !existsSync(join(output, "comparison.json"))) {
+    if (phase === "baseline" && !result) {
       try {
-        command(
-          process.execPath,
-          [
-            runner,
-            "--diagnostic",
-            control,
-            join(job.evidence, phase + "-diagnostic"),
-          ],
-          { env: job.env },
-        );
+        runFixture([
+          "--diagnostic",
+          control,
+          join(job.evidence, phase + "-diagnostic"),
+        ]);
       } catch (diagnosticError) {
         console.error(diagnosticError);
       }
@@ -169,7 +204,7 @@ async function run(phase: "baseline" | "comparison", other?: string) {
     limitPercent: 5,
   });
   assert.ok(stealPercent <= 5, "Hosted runner CPU steal exceeded 5%");
-  const result = json(join(output, "comparison.json"));
+  assert.ok(result, "Missing Start comparison receipt");
   assert.equal(result.eligible, true);
   assert.deepEqual(
     result.order,
@@ -181,41 +216,6 @@ async function run(phase: "baseline" | "comparison", other?: string) {
     assert.ok(
       result.timing.every(({ score }: { score: number }) => score === 100),
     );
-  const attempts = result.runs.flatMap(
-    (
-      arm: {
-        attempts: {
-          mode: string;
-          spans: { name: string; startUs: number; endUs: number }[];
-        }[];
-      },
-      index: number,
-    ) =>
-      arm.attempts.map(({ mode, spans }) => {
-        const origin = Math.min(...spans.map((span) => span.startUs));
-        return {
-          label: result.order[index] + " " + (index + 1) + " · " + mode,
-          rows: spans.map(({ name, startUs, endUs }) => {
-            assert.ok(
-              Number.isFinite(startUs) &&
-                Number.isFinite(endUs) &&
-                startUs <= endUs,
-            );
-            return {
-              name,
-              fromMs: (startUs - origin) / 1000,
-              toMs: (endUs - origin) / 1000,
-            };
-          }),
-        };
-      }),
-  );
-  waterfall(
-    join(output, "waterfall.html"),
-    "Hosted Record Start",
-    "Local observer clock. Xvfb and the Electron pill witness both run in the hosted runner.",
-    attempts,
-  );
 }
 
 await run("baseline");
@@ -232,4 +232,5 @@ receipt(join(job.evidence, "record-run.json"), {
   },
   baseline: "baseline/comparison.json",
   comparison: candidate ? "comparison/comparison.json" : null,
+  cpuAffinity: "start-affinity.json",
 });
