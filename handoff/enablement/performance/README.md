@@ -18,7 +18,10 @@ Subtract work charged inside that cgroup from guest-wide busy CPU in each
 trial. Qualification allows at most 5% unrelated CPU, 5% observed guest steal,
 and 5% I/O PSI, and rejects observed cgroup throttling. Total guest CPU PSI
 remains in every trial as diagnostic evidence. The enclosing physical host's
-pressure and topology are outside the guest's visibility.
+pressure and topology are outside the guest's visibility. The hosted Xvfb
+fixture disables Chromium GPU acceleration and records the actual
+compositing feature status. The renderer still supplies the same trusted
+click, hit target, DOM and presented frame witnesses.
 
 The artifact includes an unscored accounting proof that injects CPU work
 inside the dedicated cgroup and then outside it. The run rejects an outside

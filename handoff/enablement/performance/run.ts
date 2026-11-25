@@ -369,6 +369,7 @@ export async function runFocused(driver: Driver, args: string[]) {
       node: process.versions.node,
       electron: quiet[0][0].runtime.electron,
       chrome: quiet[0][0].runtime.chrome,
+      ...(meter && { gpuCompositing: quiet[0][0].runtime.gpuCompositing }),
     },
     control,
     candidate,
