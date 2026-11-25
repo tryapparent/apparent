@@ -1,7 +1,8 @@
 {
   "modules": [
     "timing/journey/journey-scoring.bend",
-    "ci/settings-contract/coverage.bend"
+    "ci/settings-contract/coverage.bend",
+    "posthog-fixer/spikes/spike-policy.bend"
   ],
-  "inputs": ["timing/journey/", "ci/settings-contract/"]
+  "inputs": ["timing/journey/", "ci/settings-contract/", "posthog-fixer/"]
 }

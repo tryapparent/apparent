@@ -5,8 +5,8 @@ SQLite state. It launches one T3 fix thread and isolated `origin/main` worktree
 per three distinct ready issues by default. The service needs only Node. Tests run
 in the tooling suite.
 
-The queue processes **issue created** and deduplicates by project and issue across
-restarts and completion. Fix threads maintain status and GitHub links.
+The webhook deduplicates **issue created** across restarts and completion. The
+optional spike scan gives qualifying older issues a dedicated thread.
 
 ## Configure and run
 
@@ -35,6 +35,10 @@ systemd EnvironmentFile):
 | `STATE_DIRECTORY` | Absolute private queue directory |
 | `PORT`, `DAILY_LIMIT`, `QUEUE_LIMIT` | Defaults: `8646`, `10`, `100` |
 | `BATCH_SIZE` | Defaults to `3` or the queue limit if lower. Accepts `1` to `3` within the queue limit. |
+| `SPIKE_POLICY_PATH` | Absolute path to the built `spike-policy.mjs`. Omit to disable new spike detection. |
+
+Build and install the spike module using
+`node enablement/posthog-fixer/spikes/build.ts /absolute/output-directory`.
 
 Use the owning T3 CLI's `auth session issue` with only `orchestration:read` and
 `orchestration:operate` and a bounded TTL. Capture its token directly into the
@@ -45,19 +49,12 @@ T3 provider settings. New fix threads use the configured permission mode; this
 does not relax the task's spending, access, consent or privacy limits. The deployed
 Apparent configuration uses `codex`, `gpt-6.2-sol`, `high`, and `full-access`.
 
-The PostHog CLI must already be authenticated for read access to this project.
-The bridge uses explicit host/project flags; it fetches compact issue details
-without personal breakdowns. A fix thread may retrieve a representative exception
-using existing access when necessary. Desktop content-free diagnostics may be
-insufficient; fix threads are authorized to expand application instrumentation and
-the existing PostHog setup within existing access and budgets, preserving consent
-and privacy. Prefer bounded, content-free diagnostics and verify safely with
-synthetic inputs. Report what remains unknown and what the next occurrence will
-reveal; additional telemetry alone does not establish a fix. The immutable launch
-payload persists privately in SQLite and T3; do not publish private diagnostic data.
-Prompt and model/permission changes apply after deploying and restarting the
-service, only to jobs not yet reserved. Existing persisted launches retain their
-exact original payloads on retry.
+The PostHog CLI needs project read access. It uses explicit host and project flags
+and fetches compact context without personal breakdowns. Fix threads may inspect
+a representative exception and add bounded, content-free instrumentation within
+the existing permissions, consent and budget. Verify with synthetic inputs and
+report what the next occurrence could reveal. Launch payloads persist privately
+in SQLite and T3. Retry retains the original prompt, model and permissions.
 
 Run with the configured environment:
 
@@ -115,6 +112,13 @@ apart, then holds the batch. Context failures back off per issue. Unknown T3
 status preserves state. Keep completed rows for deduplication. Use a separate
 queue for different PostHog or T3 origins or projects.
 
+Every 15 minutes, check active issues older than an hour for five distinct
+users in the past hour and triple the prior seven-day mean hourly occurrences.
+With a zero baseline, five users suffice. Spikes bypass batching, share the
+existing limits and reuse active work. Repeat launches need a fresh crossing
+and a 24-hour cooldown. Failed scans preserve state. `manage.ts list` shows
+the source issue alongside the recurrence queue UUID.
+
 Stop the service before using its exclusive queue management commands, with the
 same environment as the service:
 
@@ -138,13 +142,10 @@ the service and retain its queue and T3 threads.
 node --experimental-strip-types --test enablement/posthog-fixer/test/*.test.ts
 ```
 
-Tests use private temporary SQLite databases, synthetic PostHog producer-shaped
-inputs, real loopback HTTP and a minimal RFC6455/Effect peer. They do not contact
-production or launch paid agents. An isolated actual T3 server was also exercised
-for ticket authentication, idle launch, same-command replay and projection readback;
-that proves the adapter protocol, not a production fix or inference run. Activation
-still needs an isolated end-to-end notification with the intended environment and
-credentials. Follow PostHog synthetic-validation guidance before any ingestion test.
+Tests use private SQLite databases, synthetic PostHog data, loopback HTTP and a
+minimal RFC6455/Effect peer. An isolated T3 server also verified ticket auth,
+idle launch, exact replay and projection readback. Follow PostHog
+synthetic-validation guidance before any ingestion test.
 
 ## Issue lifecycle
 
