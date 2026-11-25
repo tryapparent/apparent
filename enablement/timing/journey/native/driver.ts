@@ -307,6 +307,7 @@ while (performance.now() < deadline) {
                 )
             : undefined,
           probes.includes("ink") ? (qmp) => nativeInk(label, qmp) : undefined,
+          probes.includes("picker-skipped") ? "skipped" : undefined,
         );
       }
       await sleep(250, undefined, { signal: abort.signal });

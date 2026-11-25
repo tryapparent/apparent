@@ -1,10 +1,13 @@
 # Native recording performance probe
 
+Use [hosted Record performance](hosted/README.md) for new scores and the hill-climb ledger.
+[Local replay](local/README.md) and the native Clanker lane provide diagnostics and acceptance.
+
 ## Compare Start or Stop
 
-Record's focused benchmark measures one user wait at a time. Run the control
-and candidate AppImages in control, candidate, candidate, control order on the
-same quiet Clanker host. Keep the guest template, payload, model, settings,
+Use the native benchmark for physical acceptance. Run the control and candidate
+AppImages in control, candidate, candidate, control order on the same quiet
+Clanker host. Retain the results as diagnostic evidence. Keep the guest template, payload, model, settings,
 and input cadence identical. Keep each run in its own private directory.
 
 - For Start, set `APPARENT_BENCH_SURFACE=1` and `APPARENT_BENCH_MEDIA=1` for

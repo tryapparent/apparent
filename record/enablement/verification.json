@@ -42,6 +42,68 @@
       ]
     },
     {
+      "id": "local-recording-pill-startup",
+      "description": "Score recording state to independently visible and actionable Electron controls on Xvfb.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Begin a recording with the source picker skipped. The local fixture submits the recording state at the Electron parent boundary.",
+      "prerequisites": [
+        "A verified unpacked Linux AppImage or a pinned Desktop frontend build with the Electron pill host and renderer.",
+        "Node 22, Xvfb, FFmpeg with X11 capture, xdotool and the repository Bend2 toolchain on a quiet host."
+      ],
+      "runner": {
+        "path": "record/enablement/performance/local/startup.ts",
+        "instructions": "record/enablement/performance/local/README.md"
+      },
+      "expectedEvidence": [
+        "Cold and warm raw latency, same-build repeat gap, observer overhead, normalized score and machine-readable traces.",
+        "Verified pixels and matching Finish action, with resource guard results."
+      ],
+      "limits": [
+        "The capture state and window admission use local fixtures. Physical input, consent, native compositor admission and first media require the native Start benchmark."
+      ]
+    },
+    {
+      "id": "local-recording-stop-replay",
+      "description": "Score production replay finalization and verify the saved bundle on an isolated Wayland clipboard.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Finish a screen recording and copy the saved bundle. The local runner supplies the existing synthetic threshold-27 native take at the replay boundary.",
+      "prerequisites": [
+        "Verified unpacked Linux AppImage, retained native threshold-27 report and its artifacts, with the default whole-file route and pinned English Parakeet model.",
+        "Node 22, Xvfb, Weston X11 backend, GNU time, FFmpeg and Bend2 on a quiet host."
+      ],
+      "runner": {
+        "path": "record/enablement/performance/local/stop.ts",
+        "instructions": "record/enablement/performance/local/README.md#replay-the-native-stop-fixture-without-a-vm"
+      },
+      "expectedEvidence": [
+        "Exact new bundle reference read through the packaged Wayland clipboard client, verified transcript and ink, and decoded output tracks.",
+        "Raw replay and finalizer timing, same-build repeat and probe overhead, normalized score, and CPU, RAM, storage and transcript guards.",
+        "An instrumented build retains cutoff-relative spans, observed parallel work, and unattributed time in the owned replay receipt."
+      ],
+      "limits": [
+        "Replay supplies prior frames and narration. The native lane qualifies the physical Finish shortcut, real capture teardown, Desktop completion worker and finalization-window resource usage."
+      ]
+    },
+    {
+      "id": "record-hosted-performance",
+      "description": "Run calibrated Start and Stop comparisons on standard GitHub-hosted Ubuntu.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Dispatch the public repository's manual hosted benchmark gateway for record-start or record-stop with full immutable revisions.",
+      "prerequisites": [
+        "Standard ubuntu-24.04 runner, Node 22.23.0, and a private artifact directory. Each Record adapter installs its own operating system dependencies."
+      ],
+      "runner": {
+        "path": "record/enablement/performance/hosted/start.ts",
+        "instructions": "record/enablement/performance/hosted/README.md"
+      },
+      "expectedEvidence": [
+        "Verified media or pixel and clipboard endpoints, same-build noise, matched control and candidate records, host PSI and CPU steal, and a qualified hosted receipt."
+      ],
+      "limits": [
+        "The hosted Start score covers the Electron pill and the hosted Stop score covers packaged replay finalization. Native physical input and real capture require separate acceptance."
+      ]
+    },
+    {
       "id": "focused-record-benchmark",
       "description": "Compare verified recording startup or Stop-to-clipboard on two builds.",
       "platforms": ["linux-hyprland"],

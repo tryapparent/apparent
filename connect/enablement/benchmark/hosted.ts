@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { hostname } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { quietPreflight, readHostedCpu } from "./hosted/cpu.ts";
+import { quietPreflight, readHostedCpu, waitForQuiet } from "./hosted/cpu.ts";
 import { hash } from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
 
@@ -118,7 +118,7 @@ async function main(args: string[]) {
   const controlSha = revision(control);
   const candidateSha = revision(candidate);
   const calibrationOnly = controlSha === candidateSha;
-  const scratch = await mkdtemp(join(temp, "connect-benchmark-"));
+  const scratch = await mkdtemp("/tmp/apparent-dev-cw-");
   assert.ok(scratch !== evidence && !scratch.startsWith(evidence + sep));
   const samples = join(scratch, "samples");
   await mkdir(samples, { mode: 0o700 });
@@ -129,7 +129,7 @@ async function main(args: string[]) {
     platform: "github-hosted ubuntu-24.04 x64",
     image,
     topology: cpu.topology,
-    cpuQuota: cpu.cpuQuota,
+    cpuQuota: cpu.cpuQuota.limits,
   });
   const environment = {
     controlSha,
@@ -142,9 +142,34 @@ async function main(args: string[]) {
     writeFile(join(evidence, name), JSON.stringify(value, null, 2) + "\n", {
       mode: 0o600,
     });
+  const preflight = (name: string) =>
+    waitForQuiet(
+      () => quietPreflight(cpu.cpus),
+      (windows) =>
+        record(name, { qualified: windows.at(-1)?.qualified, windows }),
+    );
   await record("connect-environment.json", environment);
 
   try {
+    const ffmpeg = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
+    if (
+      (ffmpeg.error as NodeJS.ErrnoException | undefined)?.code === "ENOENT"
+    ) {
+      run(control, join(evidence, "ffmpeg-apt-update.log"), "sudo", [
+        "apt-get",
+        "update",
+      ]);
+      run(control, join(evidence, "ffmpeg-install.log"), "sudo", [
+        "apt-get",
+        "install",
+        "-y",
+        "--no-install-recommends",
+        "ffmpeg",
+      ]);
+    } else {
+      if (ffmpeg.error) throw ffmpeg.error;
+      assert.equal(ffmpeg.status, 0, "FFmpeg version probe failed");
+    }
     const encoders = execFileSync("ffmpeg", ["-hide_banner", "-encoders"], {
       encoding: "utf8",
     });
@@ -202,10 +227,8 @@ async function main(args: string[]) {
       chromium: await hash(chrome),
     });
 
-    const preflight = await quietPreflight(cpu.cpus);
-    await record("calibration-preflight.json", preflight);
     assert.ok(
-      preflight.qualified,
+      await preflight("calibration-preflight.json"),
       "Hosted calibration failed the quiet CPU/I/O/steal preflight",
     );
     const baseline = await benchmark(
@@ -229,10 +252,8 @@ async function main(args: string[]) {
     );
     if (calibrationOnly) return;
 
-    const comparePreflight = await quietPreflight(cpu.cpus);
-    await record("comparison-preflight.json", comparePreflight);
     assert.ok(
-      comparePreflight.qualified,
+      await preflight("comparison-preflight.json"),
       "Hosted comparison failed the quiet CPU/I/O/steal preflight",
     );
     const comparison = await benchmark(

@@ -66,20 +66,18 @@ The reviewed workflow calls the owner entrypoint with three absolute paths:
 node connect/enablement/benchmark/hosted.ts "$control_tree" "$candidate_tree" "$evidence"
 ```
 
-The adapter builds each tree's Worker from its service lockfile, stages its
-migrations and recipient assets, and installs Chromium from the control
-tree's locked Playwright package before sampling. It requires Node 22.23.0,
-GNU time, taskset and FFmpeg with libx264. No Rust client build is needed.
-The gateway uploads the synthetic evidence directory on failure as well as
-success. `calibration.json` and `comparison.json` index the packaged
-`watch-score.json` receipts, resource logs and cold/warm waterfalls. The
-synthetic media fixture and build caches remain on the runner.
+Setup builds both Workers and stages migrations and recipient assets from
+locked service inputs. It installs Chromium from locked Playwright and
+Ubuntu FFmpeg when absent. Sampling requires Node 22.23.0, GNU time,
+taskset and libx264. The workflow uploads synthetic receipts, resource
+logs and waterfalls even on failure. `calibration.json` and
+`comparison.json` index the receipts. Fixture media and caches stay local.
 
 Both phases run serially in the same job with the same Chromium executable.
 The sampler selects all CPUs in the Linux process affinity and checks that
-each visible SMT sibling is included. A five-second preflight and the
-per-sample guard use the guest's per-CPU `/proc/stat` to account for outside
-CPU activity, I/O wait and steal at the existing 5% limits. I/O PSI is recorded
+each visible SMT sibling is included. Preflight waits up to twelve
+five-second windows for quiet. Preflight and per-sample guards use guest
+`/proc/stat` for outside CPU, I/O wait and steal at the 5% limits. I/O PSI is recorded
 as diagnostic context. The runner reports its visible virtual topology and
 does not certify the cloud host's physical cores. Receipt compatibility uses
 the runner image, visible CPU profile, quota, and browser/tool revisions.

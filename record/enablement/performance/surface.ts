@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdir, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 
 import { installObservers } from "../../../shared/enablement/performance/electron-observer.ts";
@@ -7,6 +14,7 @@ import { measureInteractions } from "./interactions.ts";
 
 export async function surfaceRecipe(options: {
   detail: boolean;
+  startupLog?: () => Promise<string>;
   appDir: string;
   out: string;
   scratch: string;
@@ -36,6 +44,10 @@ export async function surfaceRecipe(options: {
   await pause(16000);
   for (const label of ["shortcut-first", "shortcut-repeat"]) {
     await configFor(true);
+    const logOffset = (await options.startupLog?.())?.length;
+    const bootMs = async () =>
+      1000 * Number((await readFile("/proc/uptime", "utf8")).split(" ")[0]);
+    const started = logOffset === undefined ? undefined : await bootMs();
     await put("shortcut-request", label);
     const active = await options.active();
     options.own(active.id);
@@ -50,6 +62,31 @@ export async function surfaceRecipe(options: {
     const saved = JSON.parse(stopped);
     assert(saved.capture_id === active.id && saved.status === "saved");
     await put(label + "-stop.json", stopped);
+    if (
+      started !== undefined &&
+      logOffset !== undefined &&
+      options.startupLog
+    ) {
+      const stoppedAt = await bootMs();
+      const log = (await options.startupLog()).slice(logOffset);
+      const collected = [
+        ...log.matchAll(/recording startup stages: (\[[^\n]*\])/g),
+      ].map(([, stages]) => JSON.parse(stages));
+      const marks = Object.fromEntries(
+        [...log.matchAll(/^START_METRIC (\w+)=([\d.]+)$/gm)].map(
+          ([, name, ms]) => [name, Number(ms)],
+        ),
+      );
+      await put(
+        label + "-startup.json",
+        JSON.stringify({
+          captureId: active.id,
+          appRelativeSpans: collected.at(-1) ?? [],
+          desktopMarksMs: marks,
+          resourceWindow: { started, stoppedAt },
+        }),
+      );
+    }
     options.own(undefined);
     await unlink(join(options.out, "shortcut-request"));
     if (options.detail && label === "shortcut-repeat") {

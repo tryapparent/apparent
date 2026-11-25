@@ -3,7 +3,7 @@ import { rename, writeFile } from "node:fs/promises";
 export function recorderFixtureConfig(
   config: string,
   source: string,
-  measurePicker: boolean,
+  measurePicker: boolean | undefined,
 ) {
   return async (speech: boolean, streaming = false) => {
     const pending = config + ".benchmark";
@@ -15,9 +15,15 @@ export function recorderFixtureConfig(
         autoPasteDraft: false,
         errorReporting: false,
         microphoneEnabled: speech,
+        ...(measurePicker === false && {
+          recordingPerformanceGeneration: "isolated-record-startup",
+        }),
         experiments: {
           localStreamingTranscription: streaming,
-          ...(measurePicker && { chooseScreenEachTime: true }),
+          ...(measurePicker !== undefined && {
+            chooseScreenEachTime: measurePicker,
+          }),
+          ...(measurePicker === false && { recordingPerformance: true }),
         },
         microphone: {
           id: "pulse:" + source,
