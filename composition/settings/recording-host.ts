@@ -127,7 +127,6 @@ function isChange(change: unknown): change is RecordingChange {
   const { key, value } = change as { key: unknown; value: unknown };
   switch (key) {
     case "lowerPlayback":
-    case "videoExport":
       return typeof value === "boolean";
     case "playbackLevel":
       return (

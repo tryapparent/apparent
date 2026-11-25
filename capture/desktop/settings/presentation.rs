@@ -317,7 +317,7 @@ mod capability_tests {
             (r#"{"action":"labs-preference","request":1,"setting":"t3","enabled":true}"#, vec![]),
             (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
             (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
-            (r#"{"action":"recording-preference","request":1,"key":"videoExport","value":true}"#, vec![Pane::Recording]),
+            (r#"{"action":"recording-preference","request":1,"key":"transcriber","value":"hex"}"#, vec![Pane::Recording]),
             (r#"{"action":"recording-preference","request":1,"key":"playbackLevel","value":101}"#, vec![]),
             (r#"{"action":"recording-preference","request":1,"key":"launchAtLogin","value":true}"#, vec![]),
             (r#"{"action":"recording-meter","visible":true}"#, vec![Pane::Recording]),
@@ -333,7 +333,7 @@ mod capability_tests {
             (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents]),
             (r#"{"action":"agents-preference","request":6,"setting":"video","enabled":true}"#, vec![]),
         ] {
-            let action: Action = serde_json::from_str(wire).expect(wire);
+            let action: Action = serde_json::from_str(wire).unwrap();
             for pane in panes { assert_eq!(admits(pane, &action), owners.contains(&pane), "{wire}: {pane:?}"); }
         }
     }

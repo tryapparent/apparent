@@ -72,6 +72,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     for (const change of [
       { key: "lowerPlayback", value: true },
       { key: "playbackLevel", value: 35 },
+      { key: "videoExport", value: false },
     ]) {
       await assert.rejects(
         page.evaluate(
@@ -82,7 +83,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
       );
       assert.equal(actions.some((action) => action.key === change.key), false);
     }
-    const video = page.getByRole("switch", { name: "Video export" });
+    const exportSection = page.getByRole("region", { name: "Export", exact: true });
+    const exportGuide = exportSection.getByText(
+      "To save your latest capture as an MP4, choose Export Last Capture as Video… from the Apparent menu.",
+      { exact: true },
+    );
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
       for (const colorScheme of ["light", "dark"] as const) {
@@ -98,27 +103,13 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ),
           true,
         );
-        if (proof) {
-          await screenshot(`recording-${width}-${colorScheme}`);
-          await video.focus();
-          await screenshot(`export-focus-${width}-${colorScheme}`);
-          await input.focus();
-        }
+        await screenshot(`recording-${width}-${colorScheme}`);
+        await exportGuide.scrollIntoViewIfNeeded();
+        await expect(exportGuide).toBeInViewport({ ratio: 1 });
+        await expect(exportSection.getByRole("switch")).toHaveCount(0);
+        await screenshot(`video-export-${width}-${colorScheme}`);
       }
     }
-    fixture.refuse = true;
-    await video.press("Space");
-    const error = page.getByRole("alertdialog", {
-      name: "Couldn’t confirm the recording preference",
-    });
-    await expect(error).toBeVisible();
-    await expect(video).not.toBeChecked();
-    fixture.refuse = false;
-    await error.getByRole("button", { name: "Try again" }).press("Enter");
-    await expect(error).not.toBeVisible();
-    await expect(video).toBeChecked();
-    await expect(video).toBeFocused();
-
     fixture.mac();
     await expect(
       page.getByRole("combobox", { name: "Language" }),
@@ -129,6 +120,19 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(volumeSection).toBeVisible();
     await expect(volumeSwitch).toBeChecked();
     await expect(volumeSlider).toBeEnabled();
+    fixture.refuse = true;
+    await volumeSwitch.press("Space");
+    const error = page.getByRole("alertdialog", {
+      name: "Couldn’t confirm the recording preference",
+    });
+    await expect(error).toBeVisible();
+    await expect(volumeSwitch).toBeChecked();
+    fixture.refuse = false;
+    await error.getByRole("button", { name: "Try again" }).press("Enter");
+    await expect(error).not.toBeVisible();
+    await expect(volumeSwitch).not.toBeChecked();
+    await expect(volumeSwitch).toBeFocused();
+
     fixture.hex();
     const language = page.getByRole("textbox", { name: "Hex language" });
     const apply = page.getByRole("button", { name: "Apply", exact: true });
@@ -192,8 +196,8 @@ test("staged Recording opens directly, receives native facts and saves only on i
       await page.evaluate(async () => {
         try {
           await Reflect.get(window, "apparentRecording").save({
-            key: "videoExport",
-            value: false,
+            key: "transcriber",
+            value: "hex",
           });
           return false;
         } catch {
@@ -204,7 +208,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     );
     await navigate("Recording");
     assert.equal(page.url(), startUrl);
-    await expect(video).toBeChecked();
+    await expect(exportGuide).toBeVisible();
 
     for (const width of [720, 640])
       for (const theme of ["light", "dark"] as const) {
@@ -297,7 +301,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ["Recording", "Transcription after recording", "transcription"],
           ["Labs", "Live local transcription", "transcription-live"],
           ["Recording", "Notes", "notes"],
-          ["Recording", "Export", "video-export"],
           ["Labs", "Public sharing links", "public-links"],
           ["Labs", "Auto paste", "auto-paste-unavailable"],
         ]) {

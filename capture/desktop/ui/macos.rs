@@ -397,17 +397,12 @@ objc2::define_class!(
             if let Some(item) = menu.itemWithTag(RECORD_MENU_TAG) {
                 item.setTitle(&NSString::from_str(&record_menu_title()));
             }
-            if let Some(item) = menu.itemWithTag(EXPORT_VIDEO_MENU_TAG) {
-                item.setHidden(!crate::shared::handoff::video_export());
-            }
         }
     }
 );
 
 /// Tag on the status menu's inbox rows, so each open can replace them.
 const INBOX_MENU_TAG: isize = 0x5c4a;
-/// Tag on **Export Last Capture as Video…**, shown only with `"videoExport": true`.
-const EXPORT_VIDEO_MENU_TAG: isize = 0x5c4e;
 /// Tag on **Record Screen**, whose title carries the record shortcut.
 const RECORD_MENU_TAG: isize = 0x5c4d;
 const MICROPHONE_MENU_TAG: isize = 0x5c50;
@@ -616,10 +611,6 @@ pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receive
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     add("Open Latest Capture", sel!(openLatest:));
     add("Export Last Capture as Video…", sel!(exportVideo:));
-    if let Some(item) = menu.itemAtIndex(menu.numberOfItems() - 1) {
-        item.setTag(EXPORT_VIDEO_MENU_TAG);
-        item.setHidden(!crate::shared::handoff::video_export());
-    }
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     add("Settings…", sel!(openSettings:));
     if let Some(item) = menu.itemAtIndex(menu.numberOfItems() - 1) {

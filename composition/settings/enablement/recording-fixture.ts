@@ -122,7 +122,6 @@ export function recordingFixture(send: (message: object) => void) {
     },
     speech: { state: "ready", progress: 1 },
     playback: null,
-    videoExport: false,
     mediaWarnings: [],
   };
   const state = structuredClone(linuxState);
@@ -136,9 +135,7 @@ export function recordingFixture(send: (message: object) => void) {
       send({ type: "recording-state", state });
     },
     linux() {
-      Object.assign(state, structuredClone(linuxState), {
-        videoExport: state.videoExport,
-      });
+      Object.assign(state, structuredClone(linuxState));
       fixture.show();
     },
     mac() {
@@ -226,8 +223,12 @@ export function recordingFixture(send: (message: object) => void) {
         });
       }
       if (action.action === "recording-preference") {
-        if (!fixture.refuse && action.key === "videoExport") {
-          state.videoExport = Boolean(action.value);
+        if (
+          !fixture.refuse &&
+          action.key === "lowerPlayback" &&
+          state.playback
+        ) {
+          state.playback.enabled = Boolean(action.value);
           fixture.show();
         }
         send({

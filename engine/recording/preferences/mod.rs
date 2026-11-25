@@ -22,7 +22,6 @@ pub(crate) fn save(
                 | "recording.hexModel"
                 | "recording.hexLanguage"
                 | "recording.appleLocale"
-                | "recording.videoExport"
                 | "recording.lowerPlayback"
                 | "recording.playbackLevel"
         ),

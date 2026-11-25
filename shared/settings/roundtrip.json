@@ -15,7 +15,6 @@
   "recording.appleLocale": "en-US",
   "recording.lowerPlayback": true,
   "recording.playbackLevel": 35,
-  "recording.videoExport": false,
   "storage.mediaDays": 7,
   "storage.capturesDir": "/tmp/apparent-settings-fixture",
   "storage.bundleDays": null,
