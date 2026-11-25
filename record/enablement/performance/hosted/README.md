@@ -47,9 +47,15 @@ the comparison and raw attempts, including the millis needed by the existing
 Local and old Clanker timings are diagnostic history.
 
 Start reads and records digests for the staged Electron executable, pill host
-and renderer entry before timing. It waits for quiet CPU and I/O after staging.
-Cold attempts start a new process with a fresh, isolated profile after these
-checks. Disk caches may contain the staged files. Profiles live outside the
+and renderer entry before timing. After quiet CPU and I/O preflight, it
+launches each build once on private Xvfb and verifies its painted controls
+and Finish command. This preparation uses the ordinary Electron flags and
+allows up to ten seconds to observe the frame. Its timing is diagnostic only.
+The measured batch starts after a separate quiet CPU and I/O preflight.
+Each timed cold attempt starts a new process with a fresh, isolated profile
+and uses the existing six-second observation limit. The operating system
+may cache runtime and graphics files from preparation. Physical first-use
+acceptance uses the separate native fixture. Profiles live outside the
 uploaded evidence.
 
 If Start fails before creating a comparison, it keeps the fixture's IPC and

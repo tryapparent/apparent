@@ -83,8 +83,12 @@ export function locate(input: string) {
 
 export type Setup = ReturnType<typeof locate>;
 
-async function until<T>(read: () => T | undefined, label: string) {
-  const deadline = performance.now() + 6000;
+async function until<T>(
+  read: () => T | undefined,
+  label: string,
+  limitMs = 6000,
+) {
+  const deadline = performance.now() + limitMs;
   while (performance.now() < deadline) {
     const result = read();
     if (result !== undefined) return result;
@@ -163,23 +167,28 @@ async function visibleFrame(
   display: ReturnType<typeof watchDisplay>,
   after: number,
   requireTransition: boolean,
+  limitMs?: number,
 ) {
-  return until(() => {
-    const frames = display.frames;
-    const index = frames.findIndex(
-      ({ at, marker }, i) =>
-        i > 0 &&
-        at >= after &&
-        marker &&
-        frames[i + 1]?.marker &&
-        (!requireTransition || frames[i - 1].marker === null),
-    );
-    if (index < 0) return undefined;
-    return {
-      frame: frames[index],
-      gap: frames[index].at - frames[index - 1].at,
-    };
-  }, "painted recording marker");
+  return until(
+    () => {
+      const frames = display.frames;
+      const index = frames.findIndex(
+        ({ at, marker }, i) =>
+          i > 0 &&
+          at >= after &&
+          marker &&
+          frames[i + 1]?.marker &&
+          (!requireTransition || frames[i - 1].marker === null),
+      );
+      if (index < 0) return undefined;
+      return {
+        frame: frames[index],
+        gap: frames[index].at - frames[index - 1].at,
+      };
+    },
+    "painted recording marker",
+    limitMs,
+  );
 }
 
 function launch(setup: Setup, directory: string, diagnostic: boolean) {
@@ -305,7 +314,7 @@ export async function attempt(
   mode: "cold" | "warm",
   directory: string,
   display?: ReturnType<typeof watchDisplay>,
-  diagnostic = false,
+  probe: "score" | "diagnostic" | "prepare" = "score",
 ) {
   mkdirSync(directory, { mode: 0o700 });
   if (display)
@@ -320,7 +329,7 @@ export async function attempt(
   try {
     writeFileSync(join(profile, "config.json"), "{}", { mode: 0o600 });
     spawned = performance.now();
-    const runtime = launch(setup, profile, diagnostic);
+    const runtime = launch(setup, profile, probe === "diagnostic");
     launched = runtime;
     if (mode === "warm") {
       sendState(runtime, 1, "hidden");
@@ -333,6 +342,7 @@ export async function attempt(
     const start = mode === "cold" ? spawned : performance.now();
     const sent = performance.now();
     sendState(runtime, revision, "recording");
+    const observationLimitMs = probe === "prepare" ? 10_000 : 6000;
     const acknowledgement = () =>
       until(
         () =>
@@ -340,11 +350,12 @@ export async function attempt(
             ({ value }) => value.revision === revision && value.frame,
           ),
         "revision-specific frame acknowledgement",
+        observationLimitMs,
       );
     const [observed, ack] = await (async () => {
       if (display)
         return Promise.all([
-          visibleFrame(display, sent, true),
+          visibleFrame(display, sent, true, observationLimitMs),
           acknowledgement(),
         ]);
       const acknowledged = await acknowledgement();
@@ -421,7 +432,8 @@ export async function attempt(
       JSON.stringify({
         id,
         mode,
-        diagnostic,
+        diagnostic: probe !== "score",
+        probe,
         reason: error instanceof Error ? error.message : String(error),
         replyTimeline: (launched?.replies ?? []).map(({ value, at }) => ({
           elapsedMs: at - spawned,

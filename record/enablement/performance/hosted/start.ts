@@ -57,8 +57,22 @@ const candidate = job.calibrationOnly
   : await build(job.candidate, job.revisions.candidate, "candidate");
 const runner = fileURLToPath(new URL("../local/startup.ts", import.meta.url));
 
+function prepare(output: string, desktop: string) {
+  const before = hostCounters();
+  try {
+    command(process.execPath, [runner, "--prepare", desktop, output], {
+      env: job.env,
+    });
+  } finally {
+    receipt(output + "-runner.json", { before, after: hostCounters() });
+  }
+}
+
 async function run(phase: "baseline" | "comparison", other?: string) {
   const output = join(job.evidence, phase);
+  await waitForQuietStart(AbortSignal.timeout(46_000), ["cpu", "io"]);
+  prepare(output + "-prepare-control", control);
+  if (other) prepare(output + "-prepare-candidate", other);
   const quiet = await waitForQuietStart(AbortSignal.timeout(46_000), [
     "cpu",
     "io",

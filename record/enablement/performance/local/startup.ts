@@ -78,19 +78,24 @@ async function measure(setup: Setup, output: string) {
 }
 
 const args = process.argv.slice(2);
+const childModes = [
+  "--xvfb-child",
+  "--diagnostic-xvfb-child",
+  "--prepare-xvfb-child",
+];
 function requireIsolatedDisplay(authority: string) {
   assert.match(process.env.DISPLAY ?? "", /^:\d+$/);
   assert.ok(authority);
   assert.equal(process.env.XAUTHORITY, authority);
 }
 
-if (args[0] !== "--xvfb-child" && args[0] !== "--diagnostic-xvfb-child") {
-  const diagnostic = args[0] === "--diagnostic";
-  const inputs = diagnostic ? args.slice(1) : args;
+if (!childModes.includes(args[0])) {
+  const unscored = args[0] === "--diagnostic" || args[0] === "--prepare";
+  const inputs = unscored ? args.slice(1) : args;
   const [control, output, candidate] = inputs;
   assert.ok(
-    control && output && inputs.length <= (diagnostic ? 2 : 3),
-    "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD] or startup.ts --diagnostic BUILD NEW_RESULTS",
+    control && output && inputs.length <= (unscored ? 2 : 3),
+    "Usage: startup.ts CONTROL_BUILD NEW_RESULTS [CANDIDATE_BUILD] or startup.ts --diagnostic|--prepare BUILD NEW_RESULTS",
   );
   mkdirSync(output, { mode: 0o700 });
   const privateDisplay = mkdtempSync(join(tmpdir(), "apparent-dev-xvfb-"));
@@ -106,7 +111,7 @@ if (args[0] !== "--xvfb-child" && args[0] !== "--diagnostic-xvfb-child") {
         `-screen 0 ${width}x320x24 -nolisten tcp`,
         process.execPath,
         process.argv[1],
-        diagnostic ? "--diagnostic-xvfb-child" : "--xvfb-child",
+        unscored ? args[0] + "-xvfb-child" : "--xvfb-child",
         authority,
         ...[control, output, ...(candidate ? [candidate] : [])].map((path) =>
           resolve(path),
@@ -126,22 +131,38 @@ if (args[0] !== "--xvfb-child" && args[0] !== "--diagnostic-xvfb-child") {
   } finally {
     rmSync(privateDisplay, { recursive: true, force: true });
   }
-} else if (args[0] === "--diagnostic-xvfb-child") {
+} else if (args[0] !== "--xvfb-child") {
   const [, authority, control, output] = args;
   requireIsolatedDisplay(authority);
   const setup = locate(control);
   const display = watchDisplay();
+  const probe = args[0] === "--prepare-xvfb-child" ? "prepare" : "diagnostic";
   try {
-    const { id, visible } = await attempt(
+    const { id, rawMs, inputToAckMs, visible, spans } = await attempt(
       setup,
       "cold",
       join(output, "cold"),
       display,
-      true,
+      probe,
     );
     writeFileSync(
-      join(output, "diagnostic.json"),
-      JSON.stringify({ diagnosticOnly: true, id, visible }, null, 2),
+      join(
+        output,
+        probe === "prepare" ? "preparation.json" : "diagnostic.json",
+      ),
+      JSON.stringify(
+        {
+          diagnosticOnly: true,
+          probe,
+          id,
+          rawMs,
+          inputToAckMs,
+          visible,
+          spans,
+        },
+        null,
+        2,
+      ),
       { mode: 0o600 },
     );
   } finally {
