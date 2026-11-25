@@ -15,7 +15,7 @@ import {
 import type { JourneyContract } from "./watch-ledger.ts";
 import {
   hash,
-  maxExternalPercent,
+  quietResources,
   mean,
   read,
   runMs,
@@ -105,7 +105,15 @@ export async function benchmark(
     );
   }
   const replay = (tree: string, traced: boolean) =>
-    sample(tree, result, chrome, cpuSpec, traced, hosted?.cgroup);
+    sample(
+      tree,
+      result,
+      chrome,
+      cpuSpec,
+      traced,
+      hosted?.cgroup,
+      Boolean(hosted),
+    );
   const first = await replay(controlTree, !baseline);
   const measuredTree = baseline ? controlTree : candidateTree;
   const candidate = await replay(measuredTree, true);
@@ -147,11 +155,7 @@ export async function benchmark(
     waits,
     guards.map((guard) => guard.limit),
   );
-  const quiet = samples.every(
-    ({ resource }) =>
-      resource.externalCpuPercent <= maxExternalPercent &&
-      resource.peakHostWaitPercent <= maxExternalPercent,
-  );
+  const quiet = samples.every(({ resource }) => quietResources(resource));
   const valid = quiet;
   const qualified = valid && (baseline || comparison.permitted.every(Boolean));
   const baselineMs = mean(waits[0].slice(1, 3));
