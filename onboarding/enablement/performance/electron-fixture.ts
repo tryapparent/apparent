@@ -40,7 +40,12 @@ export async function buildIdentity(
       "./performance/electron-fixture.ts",
       "./performance/whiteboard.ts",
       ...(process.env.APPARENT_ONBOARDING_HOSTED_SCOPE
-        ? ["./performance/hosted-contention.ts"]
+        ? [
+            "./performance/hosted.ts",
+            "./performance/hosted-contention.ts",
+            "./performance/hosted/placement.ts",
+            "./performance/hosted/injection.ts",
+          ]
         : []),
       "../../shared/enablement/performance/electron-observer.ts",
       "../../shared/enablement/performance/measurement.ts",
