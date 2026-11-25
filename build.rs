@@ -57,6 +57,16 @@ fn main() {
         // cargo binaries and tests resolve the staged libraries beside themselves.
         // linuxdeploy rewrites this to the AppImage's usr/lib when packaging.
         println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+        if std::env::var("PROFILE").as_deref() == Ok("release")
+            && std::env::var("TARGET").as_deref() == Ok("x86_64-unknown-linux-gnu")
+            && std::env::var("HOST") == std::env::var("TARGET")
+            && Command::new("getconf")
+                .arg("GNU_LIBC_VERSION")
+                .output()
+                .is_ok_and(|output| output.status.success() && output.stdout == b"glibc 2.39\n")
+        {
+            println!("cargo:rustc-link-arg-bin=apparent=-Wl,-z,pack-relative-relocs");
+        }
     }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
