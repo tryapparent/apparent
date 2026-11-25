@@ -35,6 +35,7 @@
       "expectedEvidence": [
         "Worker spans retain the same trace and their actual parents and overlap, with no spans from unrelated threads or disabled collection.",
         "A real synthetic bundle build emits selection, crop, render, write, validation and durability spans.",
+        "The whole-file English replay nests WAV preparation, model load, session creation, and recognition plus transcript assembly under the same transcription span. With the probe disabled, no benchmark span line is emitted.",
         "The OTLP payload preserves nested IDs and exposes only bounded operation names, timestamps and a dropped-span count."
       ],
       "limits": [

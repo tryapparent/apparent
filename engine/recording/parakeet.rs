@@ -3,9 +3,28 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use transcribe_cpp::{DeviceType, Model, RunOptions, Session, SessionOptions, TimestampKind};
 
+use crate::recording_trace::{self, Operation};
 use crate::shared::model::{TranscriptData, TranscriptSegment, WordTiming};
 
 use super::{KHZ, init_backends, installed_models, model_name};
+
+pub(super) fn read_whole_file_audio(audio: &Path) -> Result<(Vec<u8>, Vec<f32>)> {
+    let _span = recording_trace::span(Operation::PrepareSpeechAudio);
+    let wav = std::fs::read(audio).with_context(|| format!("Could not read {}", audio.display()))?;
+    let samples = crate::capture::engine::runtime::audio::audio::decode_wav_16k(&wav)?;
+    Ok((wav, samples))
+}
+
+pub(super) fn open_whole_file_session(path: &Path) -> Result<(Model, Session)> {
+    let model = {
+        let _span = recording_trace::span(Operation::LoadSpeechModel);
+        init_backends()?;
+        Model::load(path).with_context(|| format!("Could not load {}", path.display()))?
+    };
+    let _span = recording_trace::span(Operation::OpenSpeechSession);
+    let session = model.session()?;
+    Ok((model, session))
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(in crate::capture::engine::runtime::audio::transcription) enum RecognitionPhase {
