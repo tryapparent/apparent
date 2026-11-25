@@ -1,8 +1,8 @@
 import Base
 
-def can_toggle(supported: Bool, saved: Bool) -> Bool:
-  match supported:
+def can_toggle(known: Bool, busy: Bool) -> Bool:
+  match busy:
     case True{}:
-      True{}
+      False{}
     case False{}:
-      saved
+      known

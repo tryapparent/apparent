@@ -26,7 +26,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const field=setting==='wisprFlow'?'wisprSaved':setting?`${setting}Saved`:'saved';
    saved[field]=message.enabled;
   }
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',autoPasteSupported:true,wisprSupported:process.platform==='darwin'}})+'\n');
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -40,7 +40,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(page).toHaveTitle('Apparent Settings — Labs');
   await expect(page.getByRole('switch', {name:'Silent prompts'})).toHaveCount(0);
   assert.equal(await page.evaluate(() => 'apparentLipPrompt' in window), false);
-  assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Storage','Permissions','Agents','Labs','About']);
+  assert.deepEqual(await page.locator('.settings-navigation-wide button').allTextContents(),['General','Recording','Handoff','Storage','Permissions','Agents','Labs','About']);
   await expect(page.getByRole("switch",{name:"Skip screen selection"})).toHaveCount(0);
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(page.getByText('Compact recording prompts',{exact:true})).toHaveCount(0);
@@ -94,13 +94,8 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await expect(performance).not.toBeChecked();
   await page.reload();
   await expect(performance).not.toBeChecked();
-  const autoPaste=page.getByRole('switch',{name:'Auto paste',exact:true});
-  await expect(autoPaste).toBeChecked();
-  await autoPaste.focus();
-  await page.keyboard.press('Space');
-  await expect(autoPaste).not.toBeChecked();
-  await page.reload();
-  await enableAndReload(autoPaste);
+  await expect(page.getByRole('switch',{name:'Auto paste',exact:true})).toHaveCount(0);
+  await assert.rejects(()=>page.evaluate(()=>window.apparentHandoff.save(false)));
   await expect(page.getByRole('switch',{name:'Double-tap Shift for notes'})).toHaveCount(0);
   const wispr=page.getByRole('switch',{name:'Dictation app conflicts',exact:true});
   await expect(wispr).toHaveAttribute('aria-checked','false');
@@ -133,7 +128,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width,height:530,deviceScaleFactor:1,mobile:false});
    await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});
    assert.equal(await page.locator('h1').evaluate(e=>getComputedStyle(e).fontSize),'48px');
-   assert.equal(await page.locator('#auto-paste-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
+   assert.equal(await page.locator('#local-stream-label').evaluate(e=>getComputedStyle(e).fontSize),'18px');
    assert.equal(await sharing.locator('.apparent-switch-thumb').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(255, 255, 255)');
    assert.equal(await toggle.locator('.apparent-switch-track').evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(122, 88, 199)');
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
@@ -148,7 +143,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['speaking-style-help','agent-context-limits','local-stream-ready','auto-paste-help','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','agent-context-limits','local-stream-ready','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
     if(['agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
@@ -157,7 +152,6 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   }
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
   const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking]];
-  recoveries.push(['autoPaste',autoPaste]);
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);
   for(const [setting,control] of recoveries){
@@ -176,10 +170,6 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   await toggle.click();await expect(toggle).toHaveAttribute('aria-checked','false');
   await expect(sharing).toHaveAttribute('aria-checked','true');
   await sharing.click();await expect(sharing).toHaveAttribute('aria-checked','false');
-  if(process.platform==='linux'){
-   await expect(autoPaste).toHaveAttribute('aria-checked','true');
-   await autoPaste.click();await expect(autoPaste).toHaveAttribute('aria-checked','false');
-  }
   application.stdin.write(JSON.stringify({type:'labs-state',facts:{error:'config_read_failed'}})+'\n');
   await expect(page.getByRole('alertdialog')).toContainText('Unable to read preference');await expect(toggle).toBeDisabled();
   await page.keyboard.press('Escape');await expect(page.getByRole('alertdialog')).not.toBeVisible();

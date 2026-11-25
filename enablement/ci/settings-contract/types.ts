@@ -14,5 +14,9 @@ export function renderPreferenceIds(
           : kind;
     return `  ${JSON.stringify(id)}: ${type}${nullable ? " | null" : ""};`;
   });
-  return `export type PreferenceValues = {\n${fields.join("\n")}\n};\n\nexport type RegisteredPreferenceId = keyof PreferenceValues;\n`;
+  const locations = preferences.flatMap(({ id, pane }) =>
+    pane ? [`  ${JSON.stringify(id)}: ${JSON.stringify(pane)},`] : [],
+  );
+  const mapping = locations.length ? `{\n${locations.join("\n")}\n}` : "{}";
+  return `export type PreferenceValues = {\n${fields.join("\n")}\n};\n\nexport type RegisteredPreferenceId = keyof PreferenceValues;\n\nexport const preferenceLocations = ${mapping} as const;\n`;
 }

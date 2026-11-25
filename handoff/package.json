@@ -7,6 +7,7 @@
     "./destinations": "./pure/destinations.ts",
     "./picker": "./renderer/picker.tsx",
     "./auto-paste": "./settings/auto-paste.tsx",
+    "./auto-paste-host": "./settings/auto-paste-host.ts",
     "./enablement/receiver": "./enablement/performance/receiver.ts",
     "./enablement/benchmark": "./enablement/performance/run.ts"
   },
