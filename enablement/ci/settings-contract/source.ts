@@ -158,7 +158,9 @@ function containingFunction(node: TreeNode) {
 }
 
 function guardedPaths(preferences: readonly Preference[]) {
-  const known = new Set(preferences.map(({ id }) => id));
+  const known = new Map(
+    preferences.map(({ id, pane }) => [id, pane ?? id.split(".")[0]]),
+  );
   const aliases = new Map(
     preferences.flatMap(({ id, legacy }) =>
       legacy ? [[legacy.path, id] as const] : [],
@@ -236,7 +238,7 @@ export async function sourceChecker(
       const checkId = (node: TreeNode, id: string, pane?: string) => {
         if (!known.has(id))
           failures.add(`${location(node)}: unknown Settings preference ${id}`);
-        else if (pane && !id.startsWith(pane + "."))
+        else if (pane && known.get(id) !== pane)
           failures.add(`${location(node)}: ${id} cannot bind in ${pane}`);
       };
       if (path === "capture/desktop/settings/labs/mod.rs") {
@@ -289,13 +291,7 @@ export async function sourceChecker(
             failures.add(
               `${location(call)}: cannot declare a ${first} binding in ${expectedPane}`,
             );
-          if (
-            first &&
-            second &&
-            args[2] &&
-            known.has(second) &&
-            second.startsWith(first + ".")
-          ) {
+          if (first && second && args[2] && known.get(second) === first) {
             onBinding?.(second);
           }
         } else if (preferenceCalls.has(name)) {

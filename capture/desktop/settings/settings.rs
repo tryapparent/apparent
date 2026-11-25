@@ -25,17 +25,7 @@ pub(super) fn open_startup_settings_for_quit() {
 
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum Pane {
-    General,
-    Recording,
-    Storage,
-    Permissions,
-    Agents,
-    Labs,
-    About,
-}
+include!("../../../engine/native/desktop/settings_action.rs");
 
 /// The capture-reading skill source is `capture/agent/skills/apparent/SKILL.md`.
 pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent";
@@ -257,60 +247,6 @@ fn shortcut_view(
 
 // MARK: The window's logic
 
-/// What the window can ask for.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-#[serde(tag = "action", rename_all = "kebab-case")]
-pub enum Action {
-    Navigate { pane: Pane },
-    AgentsPreference { request: u32, enabled: Option<bool>, #[serde(default)] setting: Option<String> },
-    AgentsConnection { request: u32, connection: Option<super::agents::Connection>, #[serde(default)] disconnect: Option<String> },
-    LabsPreference { request: u32, enabled: Option<bool>, setting: Option<String>, wardrobe: Option<super::super::frog_wardrobe::Request> },
-    RecordingPreference { request: u32, key: String, value: serde_json::Value },
-    RecordingMeter { visible: bool },
-    PermissionAction { request: u32, intent: PermissionIntent },
-    Set {
-        key: String,
-        value: serde_json::Value,
-    },
-    /// The recorder for `kind` was clicked.
-    RecordShortcut {
-        kind: ShortcutKind,
-    },
-    /// A combination was pressed while recording.
-    Shortcut {
-        kind: ShortcutKind,
-        #[serde(flatten)]
-        pressed: Pressed,
-    },
-    /// Esc, a click elsewhere, or the window losing focus.
-    CancelShortcut,
-    ResetShortcut {
-        kind: ShortcutKind,
-    },
-    /// The × beside the paste shortcut, or Delete while it records: no shortcut at all.
-    ClearShortcut {
-        kind: ShortcutKind,
-    },
-    /// A permission row's button.
-    Grant {
-        permission: Permission,
-    },
-    /// Reopen Apparent so a Screen Recording grant takes.
-    Reopen,
-    CheckForUpdates,
-    DismissUpdateCheck,
-    UpdateNow,
-    UpdateLater,
-    /// "Show Welcome Tour" on About.
-    Tour,
-    /// Link `apparent` into a folder on PATH, or remove that link.
-    InstallCli,
-    UninstallCli,
-    ConnectHosted,
-    ManageSharedLinks,
-    Close,
-}
-
 /// What the app does with an action.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
@@ -469,6 +405,7 @@ impl Panel {
                     Effect::None
                 }
             }
+            Action::HandoffAutoPaste { .. } => Effect::None,
             Action::Navigate { .. } | Action::AgentsPreference { .. } | Action::LabsPreference { .. } | Action::AgentsConnection { .. } => Effect::None, // Session owns presentation routing.
             Action::CheckForUpdates => {
                 if cfg!(target_os = "linux") && self.update_check.checking {
@@ -919,6 +856,12 @@ impl Session {
                 }
                 Effect::None
             }
+            Event::Action(Action::HandoffAutoPaste { request, enabled }) => {
+                if self.pane == Some(Pane::Handoff) {
+                    self.send(&handoff_auto_paste(&host.config_path(), request, enabled));
+                }
+                Effect::None
+            }
             Event::Action(Action::LabsPreference { request, enabled, setting, wardrobe }) => {
                 if self.pane == Some(Pane::Labs) {
                     let path = host.config_path();
@@ -1074,6 +1017,10 @@ impl Session {
         if self.pane == Some(Pane::Labs) {
             let message = serde_json::json!({"type":"labs-state","facts":super::labs::facts(&host.config_path())});
             self.send_state(message);
+        }
+        if self.pane == Some(Pane::Handoff) {
+            let state = handoff_auto_paste_state(&host.config_path()).ok();
+            self.send_state(serde_json::json!({"type":"handoff-auto-paste-state","enabled":state}));
         }
         if self.pane == Some(Pane::About) {
             self.send_state(self.panel.about_state(&host.config_path()));

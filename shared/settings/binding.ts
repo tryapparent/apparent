@@ -1,11 +1,17 @@
-import type { RegisteredPreferenceId } from "./preference-ids.ts";
+import {
+  preferenceLocations,
+  type RegisteredPreferenceId,
+} from "./preference-ids.ts";
 
-type PaneOf<Id extends string> = Id extends `${infer Pane}.${string}`
-  ? Pane
-  : never;
+type PaneOf<Id extends string> = Id extends keyof typeof preferenceLocations
+  ? (typeof preferenceLocations)[Id]
+  : Id extends `${infer Pane}.${string}`
+    ? Pane
+    : never;
 export type PreferencePane = PaneOf<RegisteredPreferenceId>;
-export type PreferenceId<Pane extends PreferencePane = PreferencePane> =
-  Extract<RegisteredPreferenceId, `${Pane}.${string}`>;
+export type PreferenceId<Pane extends PreferencePane = PreferencePane> = {
+  [Id in RegisteredPreferenceId]: PaneOf<Id> extends Pane ? Id : never;
+}[RegisteredPreferenceId];
 
 export function bindPreference<
   Pane extends PreferencePane,
@@ -16,7 +22,8 @@ export function bindPreference<
   id: PreferenceId<NoInfer<Pane>>,
   change: (...args: Args) => Result,
 ): (...args: Args) => Result {
-  if (!id.startsWith(`${pane}.`))
-    throw Error(`Invalid Settings binding: ${id}`);
+  const location =
+    (preferenceLocations as Record<string, string>)[id] ?? id.split(".")[0];
+  if (location !== pane) throw Error(`Invalid Settings binding: ${id}`);
   return change;
 }

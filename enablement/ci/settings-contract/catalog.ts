@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 export const panes = [
   "general",
   "recording",
+  "handoff",
   "storage",
   "permissions",
   "agents",
@@ -24,6 +25,7 @@ const platforms = new Set(["macos", "linux", "wayland"]);
 const kinds = ["boolean", "string", "integer", "number", "object"] as const;
 const fields = new Set([
   "id",
+  "pane",
   "label",
   "kind",
   "default",
@@ -41,6 +43,7 @@ type Kind = (typeof kinds)[number];
 
 export type Preference = {
   id: string;
+  pane?: (typeof panes)[number];
   label: string;
   kind: Kind;
   default: unknown;
@@ -83,6 +86,7 @@ function preference(value: unknown, location: string): Preference {
   if (!object(value)) throw Error(`${location}: expected a preference object`);
   const {
     id,
+    pane,
     label,
     kind,
     apply,
@@ -103,6 +107,10 @@ function preference(value: unknown, location: string): Preference {
       /^[a-z]+\.[a-z][A-Za-z0-9]*$/.test(id) &&
       panes.some((pane) => id.startsWith(pane + ".")),
     "invalid preference ID or pane",
+  );
+  check(
+    pane === undefined || panes.includes(pane as (typeof panes)[number]),
+    "invalid presentation pane",
   );
   check(
     typeof label === "string" && label.trim() === label && label.length,
@@ -209,9 +217,9 @@ export function validateCatalog(
   for (const { id, legacy } of preferences) {
     if (legacy) claim(legacy.path, id);
   }
-  const order = (id: string) =>
-    panes.findIndex((pane) => id.startsWith(`${pane}.`));
-  return preferences.sort((left, right) => order(left.id) - order(right.id));
+  const order = ({ id, pane }: Preference) =>
+    panes.findIndex((name) => name === (pane ?? id.split(".")[0]));
+  return preferences.sort((left, right) => order(left) - order(right));
 }
 
 export function loadCatalog(root: string, allowEmpty = false): Preference[] {

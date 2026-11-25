@@ -206,7 +206,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     assert.equal(page.url(), startUrl);
     await expect(video).toBeChecked();
 
-    for (const width of [720, 640])
+    for (const width of [740, 640])
       for (const theme of ["light", "dark"] as const) {
         const variant = `${width}-${theme}`;
         await setVariant(width, theme);
@@ -299,7 +299,6 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ["Recording", "Notes", "notes"],
           ["Recording", "Export", "video-export"],
           ["Labs", "Public sharing links", "public-links"],
-          ["Labs", "Auto paste", "auto-paste-unavailable"],
         ]) {
           if (pane !== "Recording") await navigate(pane);
           const target = page
@@ -319,51 +318,34 @@ test("staged Recording opens directly, receives native facts and saves only on i
               page.getByText(/live preview of your English speech/),
             ).toBeInViewport();
           }
-          if (heading === "Auto paste") {
-            await expect(
-              page.getByRole("switch", { name: heading }),
-            ).toBeDisabled();
-            await expect(
-              page.getByText("Auto paste is unavailable on this platform.", { exact: false }),
-            ).toBeVisible();
-            await expect(
-              page.getByText(
-                /Keep the same draft field focused.*You decide when to send/,
-              ),
-            ).toBeVisible();
-          }
           await screenshot(`${name}-${variant}`);
           if (pane !== "Recording") await navigate("Recording");
-          if (heading === "Auto paste") {
-            fixture.autoPasteSaved = true;
-            await navigate("Labs");
-            const autoPaste = page.getByRole("switch", { name: heading });
-            await expect(autoPaste).toBeChecked();
-            await expect(autoPaste).toBeEnabled();
-            await expect(autoPaste).toHaveAccessibleDescription(
-              /use Paste on the saved recording/,
-            );
-            await screenshot(`auto-paste-unavailable-saved-${variant}`);
-            await autoPaste.press("Space");
-            await expect(autoPaste).not.toBeChecked();
-            await expect(autoPaste).toBeDisabled();
-            await navigate("Recording");
-
-            fixture.autoPasteSupported = true;
-            await navigate("Labs");
-            await expect(autoPaste).toBeEnabled();
-            await autoPaste.press("Space");
-            await expect(autoPaste).toBeChecked();
-            await expect(autoPaste).toHaveAccessibleDescription(
-              /Keep the same draft field focused.*You decide when to send/,
-            );
-            await screenshot(`auto-paste-supported-${variant}`);
-            await autoPaste.press("Space");
-            await expect(autoPaste).not.toBeChecked();
-            fixture.autoPasteSupported = false;
-            await navigate("Recording");
-          }
         }
+        await navigate("Handoff");
+        const autoPaste = page.getByRole("switch", { name: "Auto paste" });
+        await expect(autoPaste).toBeChecked();
+        await expect(autoPaste).toBeEnabled();
+        await expect(autoPaste).toHaveAccessibleDescription(/You decide when to send/);
+        await screenshot(`handoff-${variant}`);
+        await autoPaste.press("Space");
+        await expect(autoPaste).not.toBeChecked();
+        await expect(autoPaste).toBeFocused();
+        await navigate("Recording");
+        await navigate("Handoff");
+        await expect(autoPaste).not.toBeChecked();
+        fixture.refuse = true;
+        await autoPaste.press("Space");
+        const retry = page.getByRole("button", { name: "Refresh preference" });
+        await expect(page.getByRole("alert")).toContainText("Couldn’t confirm");
+        await expect(retry).toBeFocused();
+        await screenshot(`handoff-refused-${variant}`);
+        fixture.refuse = false;
+        await retry.press("Enter");
+        await expect(autoPaste).toBeEnabled();
+        await expect(autoPaste).toBeFocused();
+        await autoPaste.press("Space");
+        await expect(autoPaste).toBeChecked();
+        await navigate("Recording");
       }
     await navigate("Agents");
     await expect(page.getByRole("heading", { name: "Send recordings to T3 Code" })).toBeVisible();

@@ -131,6 +131,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             || matches!(action, Action::Set { key, value }
                 if matches!(key.as_str(), "launchAtLogin" | "errorReporting") && value.is_boolean()))
         || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video") | Some("t3"))))
+        || pane == Pane::Handoff && matches!(action, Action::HandoffAutoPaste { request, .. } if *request > 0)
         || pane == Pane::Labs && matches!(action, Action::LabsPreference { setting, .. } if super::labs::key(setting.as_deref()).is_some())
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
@@ -152,7 +153,7 @@ pub(super) fn open(pane: Pane, events: Arc<dyn Fn(Event) + Send + Sync>) -> anyh
         if let Some(stdout) = stdout {
             for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
                 if let Ok(action) = serde_json::from_str::<Action>(&line)
-                    && [Pane::General, Pane::Recording, Pane::Permissions, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
+                    && [Pane::General, Pane::Recording, Pane::Handoff, Pane::Permissions, Pane::Storage, Pane::Agents, Pane::Labs, Pane::About]
                         .into_iter().any(|pane| admits(pane, &action))
                 {
                     events(Event::Action(action));
@@ -309,32 +310,5 @@ pub(super) fn retire(transport: Transport) {
 #[cfg(test)]
 mod capability_tests {
     use super::*;
-    #[test]
-    fn pane_actions_keep_their_owner_after_general_labs_integration() {
-        let panes = [Pane::General, Pane::Recording, Pane::Storage, Pane::Permissions, Pane::Agents, Pane::Labs, Pane::About];
-        for (wire, owners) in [
-            (r#"{"action":"check-for-updates"}"#, vec![Pane::About]),
-            (r#"{"action":"labs-preference","request":1,"setting":"t3","enabled":true}"#, vec![]),
-            (r#"{"action":"set","key":"launchAtLogin","value":true}"#, vec![Pane::General]),
-            (r#"{"action":"set","key":"playbackLevel","value":101}"#, vec![]),
-            (r#"{"action":"recording-preference","request":1,"key":"videoExport","value":true}"#, vec![Pane::Recording]),
-            (r#"{"action":"recording-preference","request":1,"key":"playbackLevel","value":101}"#, vec![]),
-            (r#"{"action":"recording-preference","request":1,"key":"launchAtLogin","value":true}"#, vec![]),
-            (r#"{"action":"recording-meter","visible":true}"#, vec![Pane::Recording]),
-            (r#"{"action":"permission-action","request":1,"intent":{"kind":"recheck"}}"#, vec![Pane::Permissions]),
-            (r#"{"action":"agents-preference","request":1,"setting":"autoPaste","enabled":true}"#, vec![]),
-            (r#"{"action":"agents-preference","request":2,"setting":"sharing","enabled":true}"#, vec![]),
-            (r#"{"action":"labs-preference","request":1,"setting":"streaming","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"labs-preference","request":2,"setting":"autoPaste","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"labs-preference","request":3,"setting":"sharing","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"labs-preference","request":4,"setting":"wisprFlow","enabled":true}"#, vec![Pane::Labs]),
-            (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Agents]),
-            (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Agents]),
-            (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents]),
-            (r#"{"action":"agents-preference","request":6,"enabled":true}"#, vec![Pane::Agents]),
-        ] {
-            let action: Action = serde_json::from_str(wire).expect(wire);
-            for pane in panes { assert_eq!(admits(pane, &action), owners.contains(&pane), "{wire}: {pane:?}"); }
-        }
-    }
+    include!("../../../engine/native/desktop/settings_admission_test.rs");
 }
