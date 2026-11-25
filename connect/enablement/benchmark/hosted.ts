@@ -15,6 +15,7 @@ import { hostname } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { quietPreflight, readHostedCpu, waitForQuiet } from "./hosted/cpu.ts";
+import { withRunnerActors } from "./hosted/runner-actors.ts";
 import { hash, sample } from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
 
@@ -244,13 +245,11 @@ async function main(args: string[]) {
           ["control", control],
           ["candidate", candidate],
         ]) {
-      const staged = await sample(
-        tree,
-        samples,
-        chrome,
-        cpu.cpuSpec,
-        false,
+      const staged = await withRunnerActors(
         accounting.cgroup,
+        () =>
+          sample(tree, samples, chrome, cpu.cpuSpec, false, accounting.cgroup),
+        (report) => record(`prestage-actors-${label}.json`, report),
       );
       await record(`prestage-${label}.json`, { scored: false, ...staged });
     }
