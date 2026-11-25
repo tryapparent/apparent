@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./surface": "./renderer/pill-view.tsx",
-    "./view": "./renderer/view.ts"
+    "./view": "./renderer/view.ts",
+    "./platform": "./host/platform.cts"
   },
   "peerDependencies": {
     "@apparent/ui": "*",

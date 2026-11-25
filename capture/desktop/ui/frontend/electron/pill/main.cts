@@ -5,8 +5,8 @@ const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const protocol=require('./protocol.cjs');
 const geometry=require('./geometry.cjs');
-if(!['linux','darwin'].includes(process.platform))process.exit(1);
-if(process.platform==='darwin')app.setActivationPolicy('accessory');
+const host=require('./t3.cjs');
+host.prepareApp(app);
 const hyprland=process.platform==='linux' && (Boolean(process.env.HYPRLAND_INSTANCE_SIGNATURE) || (process.env.XDG_CURRENT_DESKTOP||'').toLowerCase().split(':').includes('hyprland'));
 app.setName('Apparent recording controls');
 app.setPath('userData',protocol.profile(app.getPath('appData')));
@@ -37,7 +37,7 @@ function focusPicker(focused){
       emit({releaseFocus:admittedWindowId});
   }
 }
-const destinations=require('./t3.cjs').createController(()=>{if(!staging&&!publishingState&&loaded&&window&&!window.isDestroyed()){
+const destinations=host.createController(()=>{if(!staging&&!publishingState&&loaded&&window&&!window.isDestroyed()){
   const view=destinations.view();
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);

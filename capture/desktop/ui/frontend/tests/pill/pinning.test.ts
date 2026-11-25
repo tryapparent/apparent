@@ -67,7 +67,7 @@ function host(platform = 'linux', nativeWindowAccepted = true) {
     require: (name: string) => name === 'electron' ? electron
       : name === './protocol.cjs' ? require('./protocol.cts')
       : name === './geometry.cjs' ? require('./geometry.cts')
-      : name === './t3.cjs' ? {createController: () => ({view: () => null})}
+      : name === './t3.cjs' ? {prepareApp() {}, createController: () => ({view: () => null})}
       : name === './native/window.node' ? {preventActivation: (id: number) => {
         nativeAdmissions.push(id);
         if (!nativeWindowAccepted) throw Error('Synthetic native window refusal');
