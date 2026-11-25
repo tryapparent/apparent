@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { test } from "node:test"
+import "./test-github-stars-browser.mjs"
 
 // Check the actual prerendered page, not an unused navigation component.
 test("homepage header links to the repository with an honest star-count fallback", () => {

@@ -1,6 +1,7 @@
 @font-face {
   font-family: "Host Grotesk";
-  src: url("/HostGrotesk-Variable.ttf") format("truetype");
+  src: url("/brand/assets/fonts/studies/HostGrotesk-Variable.woff2") format("woff2");
+  font-weight: 100 900;
   font-display: swap;
 }
 
