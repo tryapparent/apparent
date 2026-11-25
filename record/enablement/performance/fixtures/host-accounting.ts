@@ -50,6 +50,13 @@ function usage(path: string) {
   };
 }
 
+export function driverCpuSnapshot() {
+  const { membership, hierarchy } = accountingHierarchy();
+  return hierarchy.length
+    ? { membership, usageUs: usage(hierarchy[0])("usage_usec") }
+    : null;
+}
+
 type Sample = {
   atMs: number;
   guestBeforeUs: number;

@@ -10,7 +10,10 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { hostedAccountingPolicy } from "../fixtures/host-accounting.ts";
+import {
+  driverCpuSnapshot,
+  hostedAccountingPolicy,
+} from "../fixtures/host-accounting.ts";
 import { waitForQuietStart } from "../fixtures/host-pressure.ts";
 import {
   apt,
@@ -182,6 +185,7 @@ async function run(label: string, other?: string) {
   const evidence = join(job.evidence, label);
   const before = hostCounters();
   const ticks = cpuSample();
+  const driverBefore = driverCpuSnapshot();
   try {
     runInMeasurementScope(
       runner,
@@ -194,15 +198,30 @@ async function run(label: string, other?: string) {
         ...(other ? [other] : []),
       ],
       { ...job.env, APPARENT_STOP_BENCH_SPANS: "1" },
+      join(job.evidence, label + "-benchmark.log"),
     );
   } finally {
     receipt(join(job.evidence, label + "-host.json"), {
       before,
       after: hostCounters(),
       stealPercent: stealSince(ticks, cpuSample()),
+      driverBefore,
+      driverAfter: driverCpuSnapshot(),
     });
     retain(output, evidence);
     retainWaterfall(evidence);
+    const path = join(evidence, "comparison.json");
+    if (existsSync(path)) {
+      const result = json(path);
+      console.log(
+        JSON.stringify({
+          phase: label,
+          timing: result.timing,
+          guards: result.guards,
+          receipt: path,
+        }),
+      );
+    }
   }
   assert.ok(json(join(job.evidence, label + "-host.json")).stealPercent <= 5);
   const report = json(join(output, "comparison.json"));

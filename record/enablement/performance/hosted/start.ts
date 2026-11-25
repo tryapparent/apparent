@@ -8,7 +8,10 @@ import {
   waitForQuietStart,
 } from "../fixtures/host-pressure.ts";
 import { locate } from "../local/attempt.ts";
-import { hostedAccountingPolicy } from "../fixtures/host-accounting.ts";
+import {
+  driverCpuSnapshot,
+  hostedAccountingPolicy,
+} from "../fixtures/host-accounting.ts";
 import {
   apt,
   command,
@@ -122,12 +125,14 @@ async function run(phase: "baseline" | "comparison", other?: string) {
   receipt(join(job.evidence, phase + "-quiet.json"), { windows: quiet });
   const host = hostCounters();
   const before = cpuSample();
+  const driverBefore = driverCpuSnapshot();
   let failure: unknown;
   try {
     runInMeasurementScope(
       runner,
       [control, output, ...(other ? [other] : [])],
       job.env,
+      join(job.evidence, phase + "-benchmark.log"),
     );
   } catch (error) {
     failure = error;
@@ -137,11 +142,23 @@ async function run(phase: "baseline" | "comparison", other?: string) {
       after: cpuSample(),
       host,
       hostAfter: hostCounters(),
+      driverBefore,
+      driverAfter: driverCpuSnapshot(),
     });
   }
   const comparison = join(output, "comparison.json");
   const result = existsSync(comparison) ? json(comparison) : undefined;
-  if (result) startWaterfall(join(output, "waterfall.html"), result);
+  if (result) {
+    startWaterfall(join(output, "waterfall.html"), result);
+    console.log(
+      JSON.stringify({
+        phase,
+        timing: result.timing,
+        guards: result.guards,
+        receipt: comparison,
+      }),
+    );
+  }
   if (failure) {
     if (phase === "baseline" && !result) {
       try {
