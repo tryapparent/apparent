@@ -657,7 +657,7 @@ impl ksni::Tray for ApparentTray {
         items.push(self.item("Open Latest Capture", MenuAction::OpenLatest));
         items.push(
             ksni::menu::StandardItem {
-                label: "Export Last Capture as Video…".into(),
+                label: "Export Latest Video…".into(),
                 enabled: !super::super::EXPORTING.load(Ordering::Acquire),
                 activate: Box::new(|tray: &mut Self| {
                     let _ = tray.actions.try_send(MenuAction::ExportVideo);
@@ -902,7 +902,7 @@ mod export_menu_tests {
                 "status must be visible without hovering: {status}"
             );
             assert!(tray.menu().iter().any(|item| matches!(item,
-                ksni::MenuItem::Standard(item) if item.label == "Export Last Capture as Video…"
+                ksni::MenuItem::Standard(item) if item.label == "Export Latest Video…"
             )));
         }
     }
