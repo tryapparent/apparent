@@ -176,6 +176,10 @@ impl Session {
         let pin_admission = Arc::new(Mutex::new(super::pin::Admission::default()));
         #[cfg(target_os = "linux")]
         let read_admission = pin_admission.clone();
+        #[cfg(target_os = "linux")]
+        let focus_request = Arc::new(AtomicU32::new(0));
+        #[cfg(target_os = "linux")]
+        let requested_focus = focus_request.clone();
         let pin_context = Arc::new(Mutex::new(None::<String>));
         #[cfg(target_os = "linux")]
         let pin_request = pin_needed.clone();
@@ -201,6 +205,7 @@ impl Session {
                     #[cfg(target_os = "linux")]
                     if let Some(id) = value.get("releaseFocus").and_then(|v| v.as_u64()) {
                         let current = identified.load(Ordering::Acquire);
+                        if id == u64::from(current) { requested_focus.store(0, Ordering::Release); }
                         if current != 0 && id == u64::from(current)
                             && crate::capture::desktop::linux::hyprland::running()
                             && let Err(error) = crate::capture::desktop::linux::hyprland::release_pill_focus(current, child_pid)
@@ -263,6 +268,8 @@ impl Session {
                         if previous != 0 && previous != id {
                             read_admission.lock().unwrap().replace_window();
                         }
+                        #[cfg(target_os = "linux")]
+                        requested_focus.store(if value["keyboardMode"].as_bool() == Some(true) { id } else { 0 }, Ordering::Release);
                         identified.store(id, Ordering::Release);
                         #[cfg(target_os = "linux")]
                         if crate::capture::desktop::linux::hyprland::running() && !motion_rules.contains(&id) {
@@ -354,12 +361,8 @@ impl Session {
             let activated = session.activated.clone();
             let admission = session.pin_admission.clone();
             std::thread::spawn(move || {
-                // Compositor requests can block; neither GUI ticks nor the state
-                // writer may wait for them. Coalesce remap/drag notifications.
                 while alive.load(Ordering::Acquire) {
                     std::thread::sleep(Duration::from_millis(120));
-                    // Preserve an early/coalesced request until main acknowledges
-                    // activation. A hidden surface cannot satisfy native admission.
                     if !activated.load(Ordering::Acquire)
                         || !pin_request.swap(false, Ordering::AcqRel)
                     {
@@ -374,9 +377,9 @@ impl Session {
                         && crate::capture::ui_process::owns(child_pid as i32);
                     let error = super::pin::reconcile(&admission, epoch, current, || {
                         anyhow::ensure!(xid != 0, "Recording pill has no native window identity");
-                        crate::capture::desktop::linux::hyprland::pin_pill_for_process(xid, child_pid, || {
-                            current() && admission.lock().unwrap().current(epoch)
-                        })
+                        crate::capture::desktop::linux::hyprland::pin_pill_for_process(xid, child_pid,
+                            || focus_request.compare_exchange(xid, 0, Ordering::AcqRel, Ordering::Acquire).is_ok(),
+                            || current() && admission.lock().unwrap().current(epoch))
                     }, || std::thread::sleep(Duration::from_millis(120)));
                     if let Some(error) = error {
                         crate::capture::engine::runtime::apparent_log(format!(
@@ -513,9 +516,6 @@ impl Session {
         let mut admitted = vec![];
         let before = self.view.revision;
         while let Ok((received, command)) = self.actions.try_recv() {
-            // A drag changes only this owned window. Rust rechecks the current
-            // capture's revision/policy before the native adapter reads the OS
-            // button state and geometry. Main supplies the OS press point.
             #[cfg(target_os = "linux")]
             if command.action == "drag" {
                 if let (Some(id), Some(point)) = (
@@ -595,8 +595,6 @@ mod native_tests {
         let mut hidden = view.clone();
         hidden.presentation.phase = "hidden".into();
         session.update(hidden, 1, Default::default());
-        // Model a show/resize notification already in flight when Cancel hides
-        // the surface. The real worker, child and compositor handle the request.
         session.pin.store(true, Ordering::Release);
         std::thread::sleep(Duration::from_millis(1800));
         assert!(session.healthy());
@@ -604,7 +602,7 @@ mod native_tests {
         std::thread::sleep(Duration::from_millis(600));
         assert!(session.healthy());
         crate::capture::desktop::linux::hyprland::pin_pill_for_process(
-            session.window_number().unwrap(), session.child_pid, || true,
+            session.window_number().unwrap(), session.child_pid, || false, || true,
         ).expect("next capture must map the same owned Electron child");
     }
 }

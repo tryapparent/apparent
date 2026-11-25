@@ -531,16 +531,7 @@ pub fn release_pill_focus(xid: u32, pid: u32) -> Result<()> {
     }
 }
 
-pub fn pin_pill_for_process(xid: u32, pid: u32, still_current: impl FnOnce() -> bool) -> Result<()> {
-    if let Some(command) = pill_pin_command(&request("j/clients")?, pid, xid, syntax()?)? {
-        // Discovery/syntax RPCs may have waited while the child was retired.
-        // Recheck its caller-owned lifetime immediately before any mutation.
-        if still_current() {
-            run(&command)?;
-        }
-    }
-    Ok(())
-}
+include!("../../../../engine/native/desktop/pill_focus.rs");
 
 pub fn pill_title(xid: u32) -> String {
     format!("Apparent Recording Controls {xid:x}")
