@@ -48,7 +48,7 @@ def execute(executable: str, args: list[str], *, cwd: Path | None = None,
             timeout: float = 150, limit: int = 2 * 1024 * 1024) -> str:
     status_read, status_write = os.pipe()
     try:
-        child = subprocess.Popen([sys.executable, "-c", _SUPERVISOR, str(status_write), executable, *args], stdin=subprocess.DEVNULL,
+        child = subprocess.Popen([sys.executable, "-S", "-c", _SUPERVISOR, str(status_write), executable, *args], stdin=subprocess.DEVNULL,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  cwd=cwd, start_new_session=True, pass_fds=(status_write,),
                                  env={key: os.environ[key] for key in _CLI_ENVIRONMENT if key in os.environ})
