@@ -1,5 +1,3 @@
-import "../../timing/journey/profile/coverage.test.ts";
-import "../../timing/journey/profile/measurements.test.ts";
 import { assemble } from "../../timing/journey/assemble.ts";
 import assert from "node:assert/strict";
 import { join } from "node:path";

@@ -25,6 +25,7 @@ node enablement/timing/journey/run.ts contract
 node enablement/timing/journey/run.ts audit /absolute/path/run.json
 node enablement/timing/journey/run.ts evaluate /absolute/path/ledger.json /absolute/path/trace_processor
 node enablement/ci/bend/check.ts
+node --test enablement/timing/journey/profile/*.test.ts
 ```
 
 The contract command prints the SHA-256 to embed in each receipt. Set `runner` to the same frozen environment and scenario manifest digest for every matched result. Use a fresh `runId` for each execution. A run receipt has these fields.
