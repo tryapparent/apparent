@@ -41,7 +41,7 @@ or introducing another completion surface. The existing UI receives only the che
 outer result. Publication checks structure and sample extents for MP4/MOV; native
 capture and playback verification remain separate requirements.
 
-Clipboard handoffs put access instructions first and the duration header with timestamped words/marks last, so the end of a paste identifies the request. A retained Connect job supplies fetch/inspect commands without sender-local paths or repeated login instructions; otherwise a shell-quoted local inspect command and local image/crop guidance remain. Both include a one-line CLI installation link and preserve the video-proof opt-out. Notes, capture warnings and semantic timeline entries remain in the prompt. `summary.md` and `apparent inspect` retain the full archived format. The shared Rust formatter serves existing copy/paste callers; no UI routing or capture consent changes. See [Connect client](../../../connect/docs/hosted-client.md).
+Clipboard handoffs put access instructions first and the duration header with timestamped words/marks last, so the end of a paste identifies the request. A retained Connect job supplies fetch/inspect commands without sender-local paths or repeated login instructions; otherwise a shell-quoted local inspect command and local image/crop guidance remain. Both include a one-line CLI installation link and ask for video proof of complex visible changes. Notes, capture warnings and semantic timeline entries remain in the prompt. `summary.md` and `apparent inspect` retain the full archived format. The shared Rust formatter serves existing copy/paste callers; no UI routing or capture consent changes. See [Connect client](../../../connect/docs/hosted-client.md).
 
 ## Transcription (`capture/engine/runtime/audio/transcription/transcribe.rs`, `shared/hex.rs`, `capture/engine/runtime/audio/transcription/command_transcriber.rs`)
 
@@ -265,9 +265,12 @@ The default-available `apparent issue` command is documented in
 explicit CLI issue preview/submission path, never changes capture output, and
 never automatically attaches or submits a bundle.
 
-## Experiment `agentDemoVideo` (`shared/handoff/mod.rs`, `capture/desktop/settings/settings.rs`)
+## Video proof in visual handoffs
 
-On by default; set `"experiments": {"agentDemoVideo": false}` or switch it off in Settings › Agents to disable it. With it on, copies and manual or guarded draft pastes ask the agent to use the repository's `make-it-apparent` skill for a short video of a complex visible change, inspect the finished recording, and embed or link a playable file where the viewer can access it. A local path alone only works on a shared filesystem. The agent names the exact build/OS and what the video does not verify; if the skill, recording surface or delivery is unavailable, it reports the blocker rather than calling the walkthrough done. This does not change the saved `summary.md` or the capture; automatic OpenCode delivery has been removed. A config edit applies on the next copy/paste without a restart.
+Visual handoff prompts ask the agent to use the repository's `make-it-apparent`
+skill for complex visible changes, share a verified recording the viewer can
+access, or explain what prevented recording. The saved `summary.md` and
+transcript-only handoffs keep their own formats.
 
 ## Experiment `copyCaptureId` (`capture/desktop/mod.rs`)
 

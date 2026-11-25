@@ -28,7 +28,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
       if(action.pane==='about')send({type:'about-state',version:'shell-test',updates:false,linux:true,mainUpdates:false,updateChannel:'stable',updateCheck:{checking:false,result:null}});
     }
     if(action.action==='labs-preference'){if(holdLabs)heldLabs=action;else send({type:'labs-result',request:action.request,facts:{saved:false,sharingSaved:false,autoPasteSaved:false,autoPasteSupported:process.platform==='linux',wisprSaved:false,wisprSupported:process.platform==='darwin'}});}
-    if(action.action==='agents-preference')send({type:'agents-result',request:action.request,facts:{saved:true,sharingSaved:false,t3Saved:false,autoPasteSaved:false,autoPasteSupported:process.platform==='linux',wisprSaved:false,wisprSupported:process.platform==='darwin'}});
+    if(action.action==='agents-preference')send({type:'agents-result',request:action.request,facts:{t3Saved:false,t3Configured:false}});
   });
   let browser:Awaited<ReturnType<typeof chromium.connectOverCDP>>|undefined;
   try {
@@ -60,7 +60,7 @@ test('Settings changes adopted panes in one live document and enforces the curre
         assert.equal(await page.evaluate(()=>Reflect.get(window,'shellIdentity')),'same document');
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
         assert.equal(await page.evaluate(async(current)=>{
-          const calls:Record<string,()=>Promise<unknown>>={General:()=>window.apparentGeneral.act({action:'set',key:'errorReporting',value:false}),Labs:()=>window.apparentLabs.save(false,'sharing'),Agents:()=>window.apparentAgents.save(false),About:()=>window.apparentAbout.act({action:'tour'}),Storage:()=>window.apparent!.resetCaptureLocation()};
+          const calls:Record<string,()=>Promise<unknown>>={General:()=>window.apparentGeneral.act({action:'set',key:'errorReporting',value:false}),Labs:()=>window.apparentLabs.save(false,'sharing'),Agents:()=>window.apparentAgents.saveT3(false),About:()=>window.apparentAbout.act({action:'tour'}),Storage:()=>window.apparent!.resetCaptureLocation()};
           for(const [owner,call] of Object.entries(calls)){if(owner===current)continue;try{await call();return false;}catch{}}
           return true;
         },pane),true,'inactive pane mutations are rejected');

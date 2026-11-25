@@ -29,7 +29,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',autoPasteSupported:true,wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
-  try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{saved:null,t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
+  try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
  });
  try{
   const url=await new Promise<string>((resolve,reject)=>{
@@ -125,7 +125,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   } else await expect(frog).toHaveCount(0);
 
   assert.equal(await page.evaluate(async()=>{
-   for(const call of [()=>window.apparentAgents.save(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
+   for(const call of [()=>window.apparentAgents.saveT3(true),()=>window.apparentAgents.copySkill(),()=>window.apparent.resetCaptureLocation(),()=>window.apparentLabs.save('true' as unknown as boolean),()=>window.apparentLabs.save(true,'t3' as 'sharing')]){
     try{await call();return false;}catch{}
    }return true;
   }),true,'Labs cannot mutate another pane or send invalid preferences');

@@ -22,14 +22,14 @@ test('Agents pairs multiple computers without exposing credentials, changing sen
    else computers=computers.filter(c=>c.origin!==action.disconnect);
   }
   if(action.action==='agents-preference'&&action.setting==='t3'&&typeof action.enabled==='boolean')sending=action.enabled;
-  if(['agents-preference','agents-connection'].includes(action.action))void app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),{type:'agents-result',request:action.request,facts:{saved:null,t3Saved:sending,t3Configured:computers.length>0,...computers[0]?{t3Origin:computers[0].origin}:{},t3Connections:computers.map(({origin,expiresAt})=>({origin,expiresAt})),autoPasteSupported:true}});
+  if(['agents-preference','agents-connection'].includes(action.action))void app.evaluate((_electron,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),{type:'agents-result',request:action.request,facts:{t3Saved:sending,t3Configured:computers.length>0,...computers[0]?{t3Origin:computers[0].origin}:{},t3Connections:computers.map(({origin,expiresAt})=>({origin,expiresAt})),autoPasteSupported:true}});
  }catch{}}});
  const page=await app.firstWindow(),session=await page.context().newCDPSession(page);
  const resize=async(width:number)=>{await session.send('Emulation.setDeviceMetricsOverride',{width,height:600,deviceScaleFactor:1,mobile:false});await page.evaluate(()=>document.fonts.ready);};
  const shot=async(name:string)=>{if(proof)await page.screenshot({path:path.join(proof,name+'.png')});};
  const toggle=page.getByRole('switch',{name:'Send recordings to T3 Code'});
  await expect(toggle).toBeEnabled();await expect(page.getByRole('heading',{name:'Agents',exact:true})).toBeVisible();
- await expect(page.getByRole('switch',{name:'Ask for video proof'})).toHaveCount(1);
+ await expect(page.getByRole('switch',{name:'Ask for video proof'})).toHaveCount(0);
  await expect(page.getByRole('heading',{name:'Computers'})).toHaveCount(0);
  await toggle.press('Space');
  await expect(toggle).toBeChecked();
@@ -121,7 +121,7 @@ test('switching panes cancels a queued T3 connection before the private native w
  t.after(async()=>{await app.close().catch(()=>{});await fs.rm(home,{recursive:true,force:true});});
  let buffer='',hold=true,held:number|undefined,writes=0,preferenceWrites=0;
  const send=(value:object)=>app.evaluate((_e,value)=>process.stdin.emit('data',JSON.stringify(value)+'\n'),value);
- const reply=(request:number)=>send({type:'agents-result',request,facts:{saved:null,t3Saved:true,t3Configured:writes>0,autoPasteSupported:true}});
+ const reply=(request:number)=>send({type:'agents-result',request,facts:{t3Saved:true,t3Configured:writes>0,autoPasteSupported:true}});
  app.process().stdout!.on('data',chunk=>{buffer+=String(chunk);let end:number;while((end=buffer.indexOf('\n'))>=0){const line=buffer.slice(0,end);buffer=buffer.slice(end+1);try{
   const action=JSON.parse(line);
   if(action.action==='agents-preference'){if(typeof action.enabled==='boolean')preferenceWrites++;if(hold)held=action.request;else void reply(action.request);}
@@ -154,18 +154,13 @@ test('switching panes cancels a queued T3 connection before the private native w
  held=undefined;hold=true;
  await send({type:'show',pane:'agents'});await expect(page).toHaveTitle('Apparent Settings — Agents');
  await expect.poll(()=>Boolean(held)).toBe(true);
- for (const id of ['#agent-video-control', '#agent-t3-control']) {
-  const toggle = page.locator(id);
-  await expect(toggle).toBeAttached();
-  await expect(toggle).toBeHidden();
- }
+ const toggle = page.locator('#agent-t3-control');
+ await expect(toggle).toBeDisabled();
+ await expect(page.getByRole('switch', {name: 'Ask for video proof'})).toHaveCount(0);
  hold=false;await reply(held!);
- for (const name of ['Ask for video proof', 'Send recordings to T3 Code']) {
-  const toggle = page.getByRole('switch', {name});
-  await expect(toggle).toBeChecked();
-  await expect(toggle).toBeEnabled();
-  await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transition-duration', '0s');
- }
+ await expect(toggle).toBeChecked();
+ await expect(toggle).toBeEnabled();
+ await expect(toggle.locator('.apparent-switch-thumb')).toHaveCSS('transition-duration', '0s');
  await expect(page.getByRole('alertdialog')).toHaveCount(0);
  p.renew();await page.getByRole('button',{name:'Pair with a link',exact:true}).click();
  await app.evaluate(({clipboard},link)=>clipboard.writeText(link),p.link);

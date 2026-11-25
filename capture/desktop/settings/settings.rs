@@ -47,7 +47,6 @@ pub struct View {
     pub hosted: Option<crate::connect::hosted::AccountView>,
     pub login: LoginView,
     pub error_reporting: bool,
-    pub agent_demo_video: bool,
     pub shortcuts: Vec<ShortcutView>,
     pub microphone: MicrophoneView,
     pub transcriber: TranscriberView,
@@ -563,11 +562,6 @@ impl Panel {
                     crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
                 }
             }
-            ("agentDemoVideo", serde_json::Value::Bool(on)) => {
-                if let Err(error) = crate::shared::handoff::write_preference(&path, "agents.agentDemoVideo", Some((*on).into())) {
-                    crate::capture::engine::runtime::apparent_log(format!("Saving {key} failed: {error:#}"));
-                }
-            }
             ("launchAtLogin", serde_json::Value::Bool(on)) => {
                 if let Err(error) = super::save_launch_at_login(&path, *on, |wanted| host.set_login_item(wanted)) {
                     crate::capture::engine::runtime::apparent_log(format!("Launch at login: {error:#}"));
@@ -637,7 +631,6 @@ impl Panel {
                 needs_approval: login == LoginItem::NeedsApproval,
             },
             error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&host.config_path()),
-            agent_demo_video: crate::shared::handoff::experiment_preference_in(&config, "agents.agentDemoVideo"),
             shortcuts: ShortcutKind::ALL
                 .into_iter()
                 .map(|kind| {

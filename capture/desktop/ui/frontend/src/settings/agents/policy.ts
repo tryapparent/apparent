@@ -1,45 +1,45 @@
-// Desktop owns the Agents preference workflow. Native only reads/writes the
-// persisted experiment through the shared config transaction.
 import type {T3Connection} from '../../../electron/settings/t3.ts';
 export const skillCommand = 'bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent';
 export type T3ConnectionResult = {facts:PreferenceFacts;reason?:never}|{reason:'cancelled'|'unavailable'|'unconfirmed';facts?:never};
-export type PreferenceFacts = { saved: boolean | null; sharingSaved?:boolean|null;t3Saved?:boolean|null;t3Configured?:boolean;t3Origin?:string;t3ExpiresAt?:number;t3Connections?:{origin:string;expiresAt:number}[];autoPasteSaved?:boolean|null;autoPasteSupported?:boolean;wisprSaved?:boolean|null;wisprSupported?:boolean;error?: never } | { error: 'config_read_failed' | 'config_write_failed'; saved?: never;sharingSaved?:never;t3Saved?:never;t3Configured?:never;t3Origin?:never;t3ExpiresAt?:never;t3Connections?:never;autoPasteSaved?:never;autoPasteSupported?:never;wisprSaved?:never;wisprSupported?:never };
-export function preferenceEnabled(facts: PreferenceFacts): boolean | undefined {
-  return facts.error ? undefined : facts.saved ?? true;
-}
+export type PreferenceFacts =
+  | {t3Saved: boolean | null; t3Configured?: boolean; t3Origin?: string; t3ExpiresAt?: number; t3Connections?: {origin: string; expiresAt: number}[]}
+  | {error: 'config_read_failed' | 'config_write_failed'};
 export function preferenceFacts(value: unknown): PreferenceFacts {
   if (!value || typeof value !== 'object') throw Error('Invalid Agents preference');
   const facts = value as Record<string, unknown>;
   if (facts.error === 'config_read_failed' || facts.error === 'config_write_failed') return {error: facts.error};
-  if (facts.saved === null || typeof facts.saved === 'boolean') {
-    if(facts.t3Saved!==undefined&&facts.t3Saved!==null&&typeof facts.t3Saved!=='boolean'||facts.t3Configured!==undefined&&typeof facts.t3Configured!=='boolean')throw Error('Invalid T3 preference');
-    let origin:string|undefined;
-    if(typeof facts.t3Origin==='string'&&facts.t3Origin.length<=2048)try{
-      const url=new URL(facts.t3Origin);
-      if(url.origin===facts.t3Origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol))origin=url.origin;
-    }catch{/* Do not expose malformed private config as page text. */}
-    const expiry=typeof facts.t3ExpiresAt==='number'&&Number.isFinite(facts.t3ExpiresAt)?facts.t3ExpiresAt:undefined;
-    if(facts.sharingSaved!==undefined&&facts.sharingSaved!==null&&typeof facts.sharingSaved!=='boolean')throw Error('Invalid sharing preference');
-    const connections=Array.isArray(facts.t3Connections)?facts.t3Connections.slice(0,32).flatMap(value=>{
-      if(!value||typeof value!=='object')return [];
-      const row=value as Record<string,unknown>;
-      try{const u=new URL(String(row.origin));if(u.origin!==row.origin||u.username||u.password||!['http:','https:'].includes(u.protocol)||typeof row.expiresAt!=='number'||!Number.isFinite(row.expiresAt))return [];return [{origin:u.origin,expiresAt:row.expiresAt}];}catch{return [];}
-    }):undefined;
-    return {...connections?{t3Connections:connections}:{},...facts.sharingSaved===undefined?{}:{sharingSaved:facts.sharingSaved as boolean|null},...facts.wisprSaved===undefined?{}:{wisprSaved:facts.wisprSaved as boolean|null},...facts.wisprSupported===undefined?{}:{wisprSupported:facts.wisprSupported as boolean},...facts.autoPasteSaved===undefined?{}:{autoPasteSaved:facts.autoPasteSaved as boolean|null},...facts.autoPasteSupported===undefined?{}:{autoPasteSupported:facts.autoPasteSupported as boolean},saved:facts.saved,...facts.t3Saved===undefined?{}:{t3Saved:facts.t3Saved as boolean|null},...facts.t3Configured===undefined?{}:{t3Configured:facts.t3Configured as boolean},...origin?{t3Origin:origin}:{},...expiry===undefined?{}:{t3ExpiresAt:expiry}};
+  if (facts.t3Saved !== null && typeof facts.t3Saved !== 'boolean' ||
+      facts.t3Configured !== undefined && typeof facts.t3Configured !== 'boolean') {
+    throw Error('Invalid T3 preference');
   }
-  throw Error('Invalid Agents preference');
+  let origin:string|undefined;
+  if(typeof facts.t3Origin==='string'&&facts.t3Origin.length<=2048)try{
+    const url=new URL(facts.t3Origin);
+    if(url.origin===facts.t3Origin&&!url.username&&!url.password&&['http:','https:'].includes(url.protocol))origin=url.origin;
+  }catch{/* Do not expose malformed private config as page text. */}
+  const expiry=typeof facts.t3ExpiresAt==='number'&&Number.isFinite(facts.t3ExpiresAt)?facts.t3ExpiresAt:undefined;
+  const connections=Array.isArray(facts.t3Connections)?facts.t3Connections.slice(0,32).flatMap(value=>{
+    if(!value||typeof value!=='object')return [];
+    const row=value as Record<string,unknown>;
+    try{const u=new URL(String(row.origin));if(u.origin!==row.origin||u.username||u.password||!['http:','https:'].includes(u.protocol)||typeof row.expiresAt!=='number'||!Number.isFinite(row.expiresAt))return [];return [{origin:u.origin,expiresAt:row.expiresAt}];}catch{return [];}
+  }):undefined;
+  return {
+    t3Saved: facts.t3Saved,
+    ...(facts.t3Configured === undefined ? {} : {t3Configured: facts.t3Configured}),
+    ...(origin ? {t3Origin: origin} : {}),
+    ...(expiry === undefined ? {} : {t3ExpiresAt: expiry}),
+    ...(connections ? {t3Connections: connections} : {}),
+  };
 }
 
-// Private parent-pipe requests have bounded IDs/deadlines. A timeout has an
-// uncertain outcome: read again rather than claiming a saved value.
 export class AgentsPreferences {
   private next = 0;
   private pending = new Map<number, {resolve: (facts: PreferenceFacts) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout>}>();
   private send: (message: object) => void;
   constructor(send: (message: object) => void) { this.send = send; }
-  request(enabled?: unknown,setting:'video'|'t3'='video'): Promise<PreferenceFacts> {
+  request(enabled?: unknown): Promise<PreferenceFacts> {
     if (enabled !== undefined && typeof enabled !== 'boolean') return Promise.reject(Error('Invalid preference'));
-    return this.issue({action:'agents-preference',...(enabled===undefined?{}:{enabled}),...(setting==='t3'?{setting:'t3'}:{})});
+    return this.issue({action:'agents-preference',...(enabled===undefined?{}:{enabled, setting:'t3'})});
   }
   storeConnection(connection:T3Connection|null,disconnect?:string):Promise<PreferenceFacts> {
     return this.issue({action:'agents-connection',connection,...disconnect?{disconnect}:{}});

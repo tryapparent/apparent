@@ -16,7 +16,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
   const fixture = recordingFixture(send);
   const actions: Record<string, unknown>[] = [];
   let heldT3: unknown;
-  const disconnected = { saved: null, t3Saved: false, t3Configured: false };
+  const disconnected = { t3Saved: false, t3Configured: false };
   let t3Facts: typeof disconnected & {
     t3Connections?: { origin: string; expiresAt: number }[];
   } = disconnected;

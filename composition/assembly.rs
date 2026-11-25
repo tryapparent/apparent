@@ -320,11 +320,12 @@ pub(crate) mod frame_labels {
         assert!(bundle.keyframes.iter().all(|frame| frame.display_time.is_some()));
         let pointer = "apparent inspect 0123456789abcdef0123456789abcdef\n";
         for hosted in [Some(pointer), None] {
-            let prompt = crate::shared::handoff::clipboard_summary_with_access(&bundle, &path, false, hosted);
+            let prompt = crate::shared::handoff::clipboard_summary_with_access(&bundle, &path, hosted);
             assert!(prompt.find("When I click").unwrap() < prompt.find("apparent inspect").unwrap());
             assert!(prompt.contains("Inspect relevant frames before edits.\n"));
             assert!(prompt.contains("Install if missing: https://github.com/tryapparent/apparent\n"));
             assert_eq!(prompt.contains("apparent connect alternatives"), hosted.is_none());
+            assert!(prompt.ends_with("For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n"));
             assert!(!prompt.contains("#agents") && !prompt.contains("\n\n") && !prompt.contains("[apparent "));
         }
         }

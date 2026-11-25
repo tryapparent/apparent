@@ -130,7 +130,7 @@ pub(super) fn admits(pane: Pane, action: &Action) -> bool {
             matches!(action, Action::RecordShortcut { .. } | Action::Shortcut { .. } | Action::CancelShortcut | Action::ResetShortcut { .. } | Action::ClearShortcut { .. })
             || matches!(action, Action::Set { key, value }
                 if matches!(key.as_str(), "launchAtLogin" | "errorReporting") && value.is_boolean()))
-        || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("video") | Some("t3"))))
+        || pane == Pane::Agents && (matches!(action, Action::AgentsConnection { .. }) || matches!(action, Action::AgentsPreference { setting, .. } if matches!(setting.as_deref(), None | Some("t3"))))
         || pane == Pane::Labs && matches!(action, Action::LabsPreference { setting, .. } if super::labs::key(setting.as_deref()).is_some())
         || pane == Pane::About && (matches!(action, Action::CheckForUpdates | Action::DismissUpdateCheck | Action::UpdateNow | Action::UpdateLater | Action::Tour)
             || matches!(action, Action::Set { key, value } if key == "updateChannel" && matches!(value.as_str(), Some("stable" | "main"))))
@@ -331,7 +331,7 @@ mod capability_tests {
             (r#"{"action":"agents-connection","request":4,"connection":null}"#, vec![Pane::Agents]),
             (r#"{"action":"agents-preference","request":3,"setting":"t3","enabled":true}"#, vec![Pane::Agents]),
             (r#"{"action":"agents-preference","request":5}"#, vec![Pane::Agents]),
-            (r#"{"action":"agents-preference","request":6,"enabled":true}"#, vec![Pane::Agents]),
+            (r#"{"action":"agents-preference","request":6,"setting":"video","enabled":true}"#, vec![]),
         ] {
             let action: Action = serde_json::from_str(wire).expect(wire);
             for pane in panes { assert_eq!(admits(pane, &action), owners.contains(&pane), "{wire}: {pane:?}"); }

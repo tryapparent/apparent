@@ -15,7 +15,7 @@ deadline.unref();
 const home = await fs.mkdtemp(path.join(os.tmpdir(), 'agents-native-'));
 const frontend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const application = spawn(createRequire(import.meta.url)('electron') as string,
-  ['--no-sandbox', frontend, '--settings-storage', '--settings-agents', '--settings-parent', '--remote-debugging-port=0'],
+  ['--no-sandbox', frontend, '--settings-storage', '--settings-agents', '--settings-parent', '--ozone-platform=x11', '--remote-debugging-port=0'],
   {env: {...process.env, ELECTRON_RUN_AS_NODE: '', HOME: home, XDG_CONFIG_HOME: path.join(home, 'config'), XDG_CACHE_HOME: path.join(home, 'cache')}, stdio: 'pipe'});
 const parent = createInterface({input: process.stdin});
 parent.on('line', line => application.stdin.write(line + '\n'));
@@ -37,19 +37,19 @@ try {
   const page = browser.contexts()[0].pages()[0];
 
   await expect(page.locator('.agent-command')).toHaveText(process.argv[3]);
-  const toggle = page.getByRole('switch', {name: 'Ask for video proof'});
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
-  await expect(page.getByRole('switch',{name:'Send recordings to T3 Code'})).not.toBeChecked();
-  for (const on of [false, true]) {
+  await expect(page.getByText('Ask for video proof', {exact: true})).toHaveCount(0);
+  const toggle = page.getByRole('switch', {name: 'Send recordings to T3 Code'});
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  for (const on of [true, false]) {
     await expect(toggle).toBeEnabled();
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', String(on));
     const saved = JSON.parse(await fs.readFile(process.argv[2], 'utf8'));
-    assert.equal(saved.agents.agentDemoVideo, on);
+    assert.equal(saved.agents.t3DestinationPicker, on);
     assert.equal(saved.secret, 'private');
   }
   await page.reload();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
 } finally {
   // Closing through CDP emits an ordinary close action; only preference actions
   // are part of this test's parent relay contract.

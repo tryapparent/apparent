@@ -322,7 +322,6 @@ fn offer_image_handoff(
     offer_text(summary)
 }
 
-const AGENT_DEMO_VIDEO: &str = "agentDemoVideo";
 const DEMO_VIDEO_REQUEST: &str = "Use make-it-apparent for complex visible changes; share verified video proof or explain the blocker.";
 const CLI_INSTALL: &str =
     "If apparent is unavailable, install it: https://github.com/tryapparent/apparent#agents";
@@ -339,13 +338,12 @@ pub(crate) fn clipboard_payload(bundle: &ApparentBundle, directory: &Path) -> (S
     let hosted = crate::connect::hosted::handoff_pointer(directory);
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let hosted: Option<String> = None;
-    (clipboard_summary_with_access(bundle, directory, experiment(AGENT_DEMO_VIDEO), hosted.as_deref()), true)
+    (clipboard_summary_with_access(bundle, directory, hosted.as_deref()), true)
 }
 
 pub(crate) fn clipboard_summary_with_access(
     bundle: &ApparentBundle,
     directory: &Path,
-    request_video: bool,
     hosted: Option<&str>,
 ) -> String {
     let pointer = hosted.map(str::to_owned).unwrap_or_else(|| {
@@ -366,9 +364,7 @@ pub(crate) fn clipboard_summary_with_access(
                 out += &format!("Full frames: {}/\n", crop.full_frames);
             }
         }
-        if request_video {
-            out += "For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n";
-        }
+        out += "For complex visible changes, use make-it-apparent. Share verified video or explain the blocker.\n";
         return out;
     }
     let mut out = pointer;
@@ -382,10 +378,8 @@ pub(crate) fn clipboard_summary_with_access(
             out += &format!(" Uncropped images are in {}/.", crop.full_frames);
         }
     }
-    if request_video {
-        out.push(' ');
-        out += DEMO_VIDEO_REQUEST;
-    }
+    out.push(' ');
+    out += DEMO_VIDEO_REQUEST;
     out += "\n\n";
     out += &crate::capture::engine::sketch::clipboard_markdown(
         bundle,
@@ -970,7 +964,7 @@ pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
         .copied()
         .unwrap_or(matches!(
             name,
-            AGENT_DEMO_VIDEO | "copyCaptureId" | "connectSettings" | "nativeLaunch"
+            "copyCaptureId" | "connectSettings" | "nativeLaunch"
                 | "movableRecordingControls" | "exportNarration" | "onboardingFirstCapture" | "hostedEncryption"
                 | "autoPasteDraft"
         ))

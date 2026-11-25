@@ -298,23 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn agent_demo_video_switch_round_trips_without_losing_config() {
-        let dir = TempDir::new("agent-demo-video");
-        let mut host = fake(&dir);
-        let mut panel = Panel::default();
-        assert!(panel.view(&host).agent_demo_video, "missing config defaults on");
-        std::fs::write(&host.path, r#"{"ingestToken":"private","experiments":{"other":true}}"#).unwrap();
-        assert!(panel.view(&host).agent_demo_video, "missing flag defaults on");
-        panel.on(Action::Set { key: "agentDemoVideo".into(), value: true.into() }, &mut host);
-        assert!(panel.view(&host).agent_demo_video);
-        assert_eq!(read_json(&host.path)["experiments"]["other"], true);
-        assert_eq!(read_json(&host.path)["ingestToken"], "private");
-        panel.on(Action::Set { key: "agentDemoVideo".into(), value: false.into() }, &mut host);
-        assert!(!panel.view(&host).agent_demo_video);
-        assert_eq!(read_json(&host.path)["agents"]["agentDemoVideo"], false);
-    }
-
-    #[test]
     fn error_reporting_switch_round_trips_without_losing_config() {
         let dir = TempDir::new("error-reporting");
         let mut host = fake(&dir);

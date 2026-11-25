@@ -284,9 +284,9 @@ app.whenReady().then(() => {
     open: url => shell.openExternal(url), copy: text => clipboard.writeText(text),
   });
   ipcMain.handle('apparent:agents-preference', (event, ...args) => {
-    validate(event, []);
-    if (pane !== 'agents' || args.length > 1 || args.length === 1 && typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
-    return preferenceRequest(...args);
+    validate(event, args);
+    if (pane !== 'agents') throw new Error('Forbidden Agents preference');
+    return preferenceRequest();
   });
   ipcMain.handle('apparent:labs-preference', (event, ...args) => {
     validate(event, []);
@@ -296,7 +296,7 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:agents-t3-preference', (event, ...args) => {
     validate(event, []);
     if (pane !== 'agents' || args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Forbidden Agents preference');
-    return preferenceRequest(args[0], 't3');
+    return preferenceRequest(args[0]);
   });
   ipcMain.handle('apparent:agents-copy-skill', (event, ...args) => {
     validate(event, args);
