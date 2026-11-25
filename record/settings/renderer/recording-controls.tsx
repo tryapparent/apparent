@@ -312,20 +312,16 @@ function MacVolume({
   );
 }
 
-const playbackChoices = [0, 10, 20, 35, 50, 75, 100];
-
 export function RecordingControls({
   state,
   bridge,
   pending,
   save,
-  openGuide,
 }: {
   state: RecordingState;
   bridge: RecordingBridge;
   pending: RecordingChange | undefined;
   save: (change: RecordingChange) => void;
-  openGuide: () => void;
 }) {
   const { microphone, transcriber, speech } = state;
   const mac = state.platform === "macos";
@@ -361,13 +357,6 @@ export function RecordingControls({
   const disabled = !!pending;
   const chosenModel =
     transcriber.models.find((model) => model.chosen)?.id ?? "";
-  const playback = state.playbackLevel;
-  const levels = [...new Set([...playbackChoices, playback])]
-    .sort((a, b) => a - b)
-    .map((level) => ({ id: String(level), title: `${level}%`, enabled: true }));
-  const levelDisabled =
-    disabled ||
-    !policy.volume_level_enabled(state.playbackAvailable, state.lowerPlayback);
   return (
     <>
       <Group title="Microphone">
@@ -490,68 +479,38 @@ export function RecordingControls({
           </p>
         ))}
       </Group>
-      <Group title="Other-app volume">
-        <p className="recording-note">
-          Temporarily lower other apps’ playback volume while recording.
-        </p>
-        {!mac && (
-          <>
-            <p className="recording-note">
-              On Linux, install audio support and enable the experiment first.
-              Apparent doesn’t measure the resulting volume.
-            </p>
-            <Button
-              variant="link"
-              className="recording-guide"
-              onClick={openGuide}
-            >
-              Set up and test volume lowering
-            </Button>
-          </>
-        )}
-        <div className="recording-group">
-          <Toggle
-            label="Lower volume while recording"
-            checked={state.lowerPlayback}
-            disabled={
-              disabled ||
-              !policy.volume_switch_enabled(
-                state.playbackAvailable,
-                state.lowerPlayback,
-              )
-            }
-            busy={pending?.key === "lowerPlayback"}
-            onChange={bindPreference(
-              "recording",
-              "recording.lowerPlayback",
-              (value) => save({ key: "lowerPlayback", value }),
-            )}
-          />
-          {mac ? (
+      {mac && state.playback && (
+        <Group title="Other-app volume">
+          <p className="recording-note">
+            Temporarily lower other apps’ playback volume while recording.
+          </p>
+          <div className="recording-group">
+            <Toggle
+              label="Lower volume while recording"
+              checked={state.playback.enabled}
+              disabled={disabled}
+              busy={pending?.key === "lowerPlayback"}
+              onChange={bindPreference(
+                "recording",
+                "recording.lowerPlayback",
+                (value) => save({ key: "lowerPlayback", value }),
+              )}
+            />
             <MacVolume
-              value={playback}
-              disabled={levelDisabled}
+              value={state.playback.level}
+              disabled={policy.volume_level_disabled(
+                disabled,
+                state.playback.enabled,
+              )}
               save={bindPreference(
                 "recording",
                 "recording.playbackLevel",
                 (value) => save({ key: "playbackLevel", value }),
               )}
             />
-          ) : (
-            <Options
-              label="Lower to"
-              options={levels}
-              value={String(playback)}
-              disabled={levelDisabled}
-              onChange={bindPreference(
-                "recording",
-                "recording.playbackLevel",
-                (value) => save({ key: "playbackLevel", value: Number(value) }),
-              )}
-            />
-          )}
-        </div>
-      </Group>
+          </div>
+        </Group>
+      )}
       <Group title="Notes" sectionId="recording-notes">
         <p className="recording-note">
           During a screen recording, tap Shift twice quickly over the recording

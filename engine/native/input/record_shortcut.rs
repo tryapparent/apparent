@@ -90,6 +90,7 @@ impl ApparentCoordinator {
             if !self.ready_to_record(picker) { return; }
             #[cfg(target_os = "linux")]
             if self.arm_push_to_talk() { return; }
+            #[cfg(target_os = "macos")]
             if !picker { self.begin_playback(); }
             self.hold_mods = crate::capture::engine::runtime::modifier_flags();
             self.telemetry.take_escape();
@@ -137,7 +138,6 @@ impl ApparentCoordinator {
         match hold.action(input_available && held == Some(true), cancelled) {
             HoldAction::Wait => self.shortcut.hold = Some(hold),
             HoldAction::Tap => {
-                if !display_selection::requested() { self.begin_playback(); }
                 self.apply_shortcut(Action::RecordScreen, cx);
             }
             HoldAction::Start => {
