@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { hostname } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import { quietPreflight, readHostedCpu } from "./hosted/cpu.ts";
+import { quietPreflight, readHostedCpu, waitForQuiet } from "./hosted/cpu.ts";
 import { hash } from "./watch-sample.ts";
 import { benchmark } from "./watch-score.ts";
 
@@ -142,6 +142,12 @@ async function main(args: string[]) {
     writeFile(join(evidence, name), JSON.stringify(value, null, 2) + "\n", {
       mode: 0o600,
     });
+  const preflight = (name: string) =>
+    waitForQuiet(
+      () => quietPreflight(cpu.cpus),
+      (windows) =>
+        record(name, { qualified: windows.at(-1)?.qualified, windows }),
+    );
   await record("connect-environment.json", environment);
 
   try {
@@ -221,10 +227,8 @@ async function main(args: string[]) {
       chromium: await hash(chrome),
     });
 
-    const preflight = await quietPreflight(cpu.cpus);
-    await record("calibration-preflight.json", preflight);
     assert.ok(
-      preflight.qualified,
+      await preflight("calibration-preflight.json"),
       "Hosted calibration failed the quiet CPU/I/O/steal preflight",
     );
     const baseline = await benchmark(
@@ -248,10 +252,8 @@ async function main(args: string[]) {
     );
     if (calibrationOnly) return;
 
-    const comparePreflight = await quietPreflight(cpu.cpus);
-    await record("comparison-preflight.json", comparePreflight);
     assert.ok(
-      comparePreflight.qualified,
+      await preflight("comparison-preflight.json"),
       "Hosted comparison failed the quiet CPU/I/O/steal preflight",
     );
     const comparison = await benchmark(

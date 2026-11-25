@@ -75,9 +75,9 @@ logs and waterfalls even on failure. `calibration.json` and
 
 Both phases run serially in the same job with the same Chromium executable.
 The sampler selects all CPUs in the Linux process affinity and checks that
-each visible SMT sibling is included. A five-second preflight and the
-per-sample guard use the guest's per-CPU `/proc/stat` to account for outside
-CPU activity, I/O wait and steal at the existing 5% limits. I/O PSI is recorded
+each visible SMT sibling is included. Preflight waits up to twelve
+five-second windows for quiet. Preflight and per-sample guards use guest
+`/proc/stat` for outside CPU, I/O wait and steal at the 5% limits. I/O PSI is recorded
 as diagnostic context. The runner reports its visible virtual topology and
 does not certify the cloud host's physical cores. Receipt compatibility uses
 the runner image, visible CPU profile, quota, and browser/tool revisions.

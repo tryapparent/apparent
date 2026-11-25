@@ -63,3 +63,22 @@ export async function quietPreflight(cpus: number[]) {
     after,
   };
 }
+
+type QuietWindow = Pick<
+  Awaited<ReturnType<typeof quietPreflight>>,
+  "qualified" | "externalCpuPercent" | "peakHostWaitPercent"
+>;
+
+export async function waitForQuiet<T extends QuietWindow>(
+  sample: () => Promise<T>,
+  record: (windows: T[]) => Promise<void>,
+) {
+  const windows: T[] = [];
+  for (let index = 0; index < 12; index++) {
+    const window = await sample();
+    windows.push(window);
+    await record(windows);
+    if (window.qualified) return true;
+  }
+  return false;
+}
