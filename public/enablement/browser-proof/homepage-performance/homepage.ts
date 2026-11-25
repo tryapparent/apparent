@@ -11,6 +11,7 @@ import {
   evaluateInterference,
   hostedInterference,
   hostedSampler,
+  idleIoPreflight,
 } from "./hosted-guard/interference.ts";
 import {
   idlePreflight,
@@ -358,6 +359,7 @@ async function attempt(
     }, id);
   }
   const idle = values["idle-preflight"] ? await idlePreflight() : undefined;
+  const ioPreflight = sampleHosted ? await idleIoPreflight() : undefined;
   const observerStart = diagnostic ? await pressureSample() : undefined;
   const tracePath = join(output, id + ".chrome.json");
   const stopTrace = detailed ? await startTrace(browserCDP) : null;
@@ -508,6 +510,7 @@ async function attempt(
       pageTiming,
       cpuPressurePercent,
       ...(interference && { interference }),
+      ...(ioPreflight && { ioPreflight }),
       chromiumCpuMs: (resourceEnd.cpuSeconds - resourceStart.cpuSeconds) * 1000,
       sampledChromiumPssKiB: resourceEnd.pssKiB,
       hostCommandMs: end - start,

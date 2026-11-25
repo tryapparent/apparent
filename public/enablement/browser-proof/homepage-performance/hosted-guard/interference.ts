@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { setTimeout } from "node:timers/promises";
 
-export const hostedInterference = "guest-cgroup-v2";
+export const hostedInterference = "guest-cgroup-v3";
 const cgroupRoot = "/sys/fs/cgroup";
+const guestIoPath = "/proc/pressure/io";
+const ioAllowanceFraction = 0.02;
 const pressureTotal = (path: string) => {
   const total = Number(
     readFileSync(path, "utf8").match(/^some .*total=(\d+)/m)?.[1],
@@ -11,6 +14,25 @@ const pressureTotal = (path: string) => {
   assert(Number.isSafeInteger(total));
   return total;
 };
+
+export async function idleIoPreflight() {
+  const sample = () => ({
+    atMs: performance.now(),
+    pressureUs: pressureTotal(guestIoPath),
+  });
+  const samples = [sample()];
+  let consecutive = 0;
+  for (let i = 0; i < 6 && consecutive < 2; i++) {
+    await setTimeout(100);
+    const before = samples.at(-1)!;
+    const after = sample();
+    samples.push(after);
+    const allowedUs = (after.atMs - before.atMs) * 1000 * ioAllowanceFraction;
+    consecutive =
+      after.pressureUs - before.pressureUs <= allowedUs ? consecutive + 1 : 0;
+  }
+  return { quiet: consecutive === 2, samples };
+}
 function cpuStat(path: string) {
   return Object.fromEntries(
     readFileSync(join(path, "cpu.stat"), "utf8")
@@ -58,7 +80,7 @@ export function hostedSampler(scope: string) {
     );
     const own = cpuStat(scope);
     const root = cpuStat(cgroupRoot);
-    const guestIoUs = pressureTotal("/proc/pressure/io");
+    const guestIoUs = pressureTotal(guestIoPath);
     const ownIoUs = pressureTotal(join(scope, "io.pressure"));
     const end = performance.now();
     const logicalCpus = [...stat.matchAll(/^cpu\d+ /gm)].length;
@@ -125,7 +147,7 @@ export function evaluateInterference(before: Sample, after: Sample) {
   const guestIoUs = delta("guestIoUs");
   const benchmarkIoUs = delta("ownIoUs");
   const unrelatedIoLowerBoundUs = Math.max(0, guestIoUs - benchmarkIoUs);
-  const ioAllowanceUs = durationUs * 0.02 + readSkewUs;
+  const ioAllowanceUs = durationUs * ioAllowanceFraction + readSkewUs;
   const observedStealTicks = delta("stealTicks");
   const throttleUs = delta("scopeThrottledUs") + delta("rootThrottledUs");
   const throttleEvents =

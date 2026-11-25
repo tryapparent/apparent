@@ -372,43 +372,12 @@ async function execute() {
   env.APPARENT_PUBLIC_GUEST_CLOCK_TICKS = run("guest-clock-ticks", "getconf", [
     "CLK_TCK",
   ]).trim();
-  if (!b) {
-    json("post-build-idle", await idlePreflight());
-    const proof = run("guest-interference-proof", process.execPath, [
-      fileURLToPath(new URL("hosted-guard/proof.ts", import.meta.url)),
-      "prove",
-      scope,
-    ]);
-    json("guest-interference-proof", JSON.parse(proof));
-    const options = [
-      "--pressure-diagnostic",
-      "--mode",
-      "calibrate",
-      "--runs",
-      "1",
-      "--max-blocks",
-      "1",
-    ];
-    replay("pressure-a-first", a, options, true);
-    const preflight = [...options, "--idle-preflight"];
-    replay("pressure-b-first", a, preflight, true);
-    replay("pressure-b-repeat", a, preflight, true);
-    replay("pressure-a-repeat", a, options, true);
-  }
+  if (!b) json("post-build-idle", await idlePreflight());
   const quiet = ["--mode", "quiet", "--runs", "5", "--max-blocks", "25"];
   const controlOne = replay("noise-first", a, quiet);
   const controlTwo = replay("noise-second", a, quiet);
   const controls = [controlOne.receipt, controlTwo.receipt];
   const trace = ["--mode", "trace", "--runs", "1", "--max-blocks", "8"];
-  replay("control-overhead", a, [
-    "--mode",
-    "calibrate",
-    "--runs",
-    "2",
-    "--max-blocks",
-    "10",
-  ]);
-
   let experiments: {
     hypothesis: string;
     effort: never[];
@@ -442,6 +411,38 @@ async function execute() {
         qualityEvidence: desktop.receipt,
       },
     ];
+  }
+
+  replay("control-overhead", a, [
+    "--mode",
+    "calibrate",
+    "--runs",
+    "2",
+    "--max-blocks",
+    "10",
+  ]);
+
+  if (!b) {
+    const proof = run("guest-interference-proof", process.execPath, [
+      fileURLToPath(new URL("hosted-guard/proof.ts", import.meta.url)),
+      "prove",
+      scope,
+    ]);
+    json("guest-interference-proof", JSON.parse(proof));
+    const options = [
+      "--pressure-diagnostic",
+      "--mode",
+      "calibrate",
+      "--runs",
+      "1",
+      "--max-blocks",
+      "1",
+    ];
+    replay("pressure-a-first", a, options, true);
+    const preflight = [...options, "--idle-preflight"];
+    replay("pressure-b-first", a, preflight, true);
+    replay("pressure-b-repeat", a, preflight, true);
+    replay("pressure-a-repeat", a, options, true);
   }
 
   json("comparison-ledger", {
