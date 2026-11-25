@@ -139,7 +139,7 @@ pub fn resolve_bundle_dir(path_or_id: &Path) -> Result<PathBuf> {
             path = PathBuf::from(".");
         }
     }
-    if !path.exists() && path.components().count() == 1 {
+    if path.components().count() == 1 && !path.exists() {
         path = default_captures_dir().join(&path);
         if path.extension().is_none() {
             path.set_extension("apparent");
