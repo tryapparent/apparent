@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Matched } from "../../../shared/enablement/performance/comparison.ts";
 import { readCpuUsage } from "./hosted/quota.ts";
 import { runReplayUnit } from "./hosted/replay-unit.ts";
@@ -145,7 +145,9 @@ export async function sample(
     traced ? "watch-traced" : "watch-untraced",
   ];
   const cwd = join(tree, "connect/service");
-  const unit = hostedCgroup ? runReplayUnit(args, cwd, result) : undefined;
+  const unit = hostedCgroup
+    ? runReplayUnit(args, cwd, result, dirname(log))
+    : undefined;
   const replayPath =
     unit?.replayPath ??
     execFileSync("taskset", args, {

@@ -29,6 +29,8 @@ test("the hosted artifact retains receipts and waterfalls and excludes scratch m
     "baseline-a/recipient-b/fixture.mp4",
     "baseline-a/recipient-b/frame.png",
     "baseline-a/sample-c/resources.txt",
+    "baseline-a/sample-c/replay-unit.json",
+    "baseline-a/sample-c/replay-unit.log",
     "unrelated.log",
   ]) {
     await writeFile(join(input, name), "synthetic fixture");
@@ -43,6 +45,8 @@ test("the hosted artifact retains receipts and waterfalls and excludes scratch m
     "baseline-a/recipient-b/warm.json",
     "baseline-a/recipient-b/watch-replay.json",
     "baseline-a/sample-c",
+    "baseline-a/sample-c/replay-unit.json",
+    "baseline-a/sample-c/replay-unit.log",
     "baseline-a/sample-c/resources.txt",
     "baseline-a/watch-score.json",
   ]);
