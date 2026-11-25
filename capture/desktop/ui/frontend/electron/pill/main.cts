@@ -319,7 +319,7 @@ app.whenReady().then(()=>{
           }catch{fail('native_window_setup_failed');return;}
         }
         if(process.platform==='linux')window.setTitle('Apparent Recording Controls '+windowId.toString(16));
-        admittedWindowId=windowId;readySent=true;emit({ready:true,windowId});
+        admittedWindowId=windowId;readySent=true;emit({ready:true,windowId,keyboardMode});
       }
       visibility();
       reportFrame();
@@ -345,8 +345,6 @@ app.whenReady().then(()=>{
     if(!loaded || window.isDestroyed())return;
     const point=screen.getCursorScreenPoint(),bounds=window.getBounds();
     const inside=window.isVisible() && (inputRegions?geometry.containsRegions({x:point.x-bounds.x,y:point.y-bounds.y},inputRegions):geometry.contains(point,{...bounds,width:visibleWidth||bounds.width}));
-    // A focused XWayland app can sit above the visually pinned pill in X11's
-    // input stack. Raise this exact child surface without taking focus.
     if(process.platform==='linux' && inside && (!hovered || Date.now()-lastRaise>250)){
       window.moveTop();lastRaise=Date.now();
     }

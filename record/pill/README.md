@@ -68,6 +68,8 @@ and before activation. Hyprland pins the exact child by process and XID-specific
 title, and prepares its scoped motion rule before mapping. The parent ignores
 hidden geometry for admission and retires and restarts Electron if compositor
 admission fails, even when the child reports a visible window.
+On Lua Hyprland, the native adapter also focuses the admitted keyboard picker
+once when it maps. Subsequent geometry updates preserve the user's focus.
 
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
