@@ -11,7 +11,9 @@ const instrumented=await build({stdin:{resolveDir:process.cwd(),contents:`
   let calls=0;
   const BUCKET=new Proxy(env.BUCKET,{get(target,key){const value=target[key];return typeof value==='function'?async(...args)=>{
    if(['put','get','head','list'].includes(key)){calls++;if(request.headers.has('X-Hold-R2')){await env.DB.prepare('UPDATE test_barrier SET entered=1').run();while(!(await env.DB.prepare('SELECT released FROM test_barrier').first()).released)await new Promise(r=>setTimeout(r,5));}}
-   return value.apply(target,args);
+   const result=await value.apply(target,args);
+   if(key==='get'&&request.headers.has('X-Observe-Metadata'))await env.DB.prepare('UPDATE test_barrier SET metadata_read=1').run();
+   return result;
   }:value;}});
   const DB=request.headers.has('X-Hold-Manifest')?{prepare(sql){const statement=env.DB.prepare(sql);if(!sql.startsWith('SELECT path,size,sha256,object_key FROM files'))return statement;return {bind(...args){const bound=statement.bind(...args);return {async all(){const result=await bound.all();await env.DB.prepare('UPDATE test_barrier SET entered=1').run();while(!(await env.DB.prepare('SELECT released FROM test_barrier').first()).released)await new Promise(r=>setTimeout(r,5));return result;}}}};}}:env.DB;
   const response=await worker.fetch(request,{...env,DB,BUCKET});response.headers.set('X-Metered',String(calls));return response;
@@ -21,7 +23,7 @@ async function setup(metadata=false){
  const f=await fixture({SHARING_ENABLED:'true'},{scriptPath:undefined,script:instrumented.outputFiles[0].text,instances:true});
  try {
   await f.db.exec((await readFile('.generated/migrations/0003.sql','utf8')).replaceAll('\n',' '));
-  await f.db.exec('CREATE TABLE test_barrier(released INTEGER,entered INTEGER); INSERT INTO test_barrier VALUES(0,0)');
+  await f.db.exec('CREATE TABLE test_barrier(released INTEGER,entered INTEGER,metadata_read INTEGER); INSERT INTO test_barrier VALUES(0,0,0)');
   const a=await f.identity('race'),p='/v1/captures/'+id(171),asset=metadata?'apparent.json':'summary.md',text=metadata?JSON.stringify({transcript:{text:'hello'}}):'hello';
   assert.equal((await f.call(p,{token:a.token,method:'POST',body:{files:[file(asset,text)]}})).status,200);
   assert.equal((await f.call(p+'/files/'+asset,{token:a.token,method:'PUT',raw:text})).status,200);
@@ -40,6 +42,28 @@ async function setup(metadata=false){
 }
 async function entered(f){for(let n=0;n<200;n++){if((await f.db.prepare('SELECT entered FROM test_barrier').first()).entered)return;await delay(5);}assert.fail('bounded barrier not reached');}
 const release=f=>f.db.exec('UPDATE test_barrier SET released=1');
+
+test('ready HTML reads metadata independently of the file list and still rechecks access',async()=>{
+ const f=await setup(true);let pending;
+ try {
+  const head=await f.call(f.path,{method:'HEAD'});
+  assert.equal(head.status,200);
+  assert.equal(head.headers.get('X-Metered'),'0');
+  pending=f.call(f.path,{headers:{'X-Hold-Manifest':'1','X-Observe-Metadata':'1'}});
+  await entered(f);
+  let seen=false;
+  for(let n=0;n<200&&!seen;n++) {
+   seen=(await f.db.prepare('SELECT metadata_read FROM test_barrier').first()).metadata_read===1;
+   if(!seen)await delay(5);
+  }
+  assert.ok(seen,'metadata GET completes while the file list is held');
+  assert.equal((await f.call('/v1/shares/'+f.management,{token:f.a.token,method:'DELETE'})).status,200);
+  await release(f);
+  const response=await pending;
+  assert.ok([409,410].includes(response.status));
+  assert.ok(!(await response.text()).includes('hello'));
+ }finally{await release(f);if(pending)await pending;await f.close();}
+});
 
 for(const [suffix,header] of [['/files/summary.md','X-Hold-R2'],['/thumbnail.png','X-Hold-R2'],['','X-Hold-R2'],['/manifest.json','X-Hold-Manifest']])test('revocation wins a blocked public read '+(suffix||'HTML'),async()=>{
  const f=await setup(suffix==='');let pending;

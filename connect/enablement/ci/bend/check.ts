@@ -47,6 +47,18 @@ await bendScratch(async (scratch) => {
       directory,
     );
     assert.deepEqual(JSON.parse(style), [12, 1024, true, false, false, false]);
+    const sharePreview = run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import policy from "./share-preview.mjs";
+      const flags = [false, true];
+      console.log(JSON.stringify(flags.flatMap(ready => flags.map(body => policy.metadata_limit(ready, body)))));`,
+      ],
+      directory,
+    );
+    assert.deepEqual(JSON.parse(sharePreview), [0, 0, 0, 1048576]);
     const list = run(
       process.execPath,
       [

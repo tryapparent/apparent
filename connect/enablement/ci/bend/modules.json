@@ -2,6 +2,7 @@
   "modules": [
     "service/src/captures/style-history.bend",
     "service/src/captures/recording-list.bend",
+    "service/src/shares/share-preview.bend",
     "service/src/reporting/activity-preference.bend",
     "service/src/support/report-policy.bend",
     "client/typescript/src/reader/reader-route.bend",

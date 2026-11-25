@@ -1,3 +1,4 @@
+import previewPolicy from '#bend/share-preview';
 import type {Env, ShareRow, ShareState, ShareModel, CaptureRow, FileRow} from './types.ts';
 import {random,hash,envelope,stmt,bearer,session,csrf,json,fail,body,isRecord,apiBase,supportCapture} from './common.ts';
 import {getObject} from './storage.ts';
@@ -78,9 +79,12 @@ export async function shareRoutes(request: Request,env: Env,url: URL,render: (mo
  if(!['GET','HEAD'].includes(request.method))fail('method_not_allowed',405);
  const [,secret,action,encoded]=publicMatch,row=await bySecret(env,secret),base=publicUrl(env,secret),status=state(row);
  if(!action) {
-  const model=await descriptor(env,row,base);
-  if(status==='ready'&&request.method!=='HEAD') {
-   const metadata=await evidenceText(env,row,'apparent.json',1048576,secret);
+  const limit=previewPolicy.metadata_limit(status==='ready',request.method==='GET');
+  const [model,metadata]=await Promise.all([
+   descriptor(env,row,base),
+   limit?evidenceText(env,row,'apparent.json',limit,secret):undefined,
+  ]);
+  if(metadata!==undefined) {
    // Reuse the existing bounded metadata read; never infer time from frame numbers.
    try {
     const parsed: unknown=JSON.parse(metadata);

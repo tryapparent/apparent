@@ -42,6 +42,12 @@
     "web",
     "service"
   ],
+  "connect/service/src/shares/share-preview.bend": [
+    "capture",
+    "client",
+    "web",
+    "service"
+  ],
   "connect/service/src/reporting/activity-preference.bend": [
     "capture",
     "client",

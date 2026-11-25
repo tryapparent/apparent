@@ -50,6 +50,10 @@
       "types": "./src/captures/style-history.d.mts",
       "default": "./dist/bend/style-history.mjs"
     },
+    "#bend/share-preview": {
+      "types": "./src/shares/share-preview.d.mts",
+      "default": "./dist/bend/share-preview.mjs"
+    },
     "#bend/report-policy": {
       "types": "./src/support/report-policy.d.mts",
       "default": "./dist/bend/report-policy.mjs"
