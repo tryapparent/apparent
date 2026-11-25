@@ -43,17 +43,44 @@ function processes(electron?: number) {
     size = own.size;
     for (const row of rows) if (own.has(row.parent)) own.add(row.pid);
   } while (own.size !== size);
-  return rows.filter((row) => own.has(row.pid) && row.name !== "ps");
+  return {
+    inside: rows.filter((row) => own.has(row.pid) && row.name !== "ps"),
+    other: rows.filter((row) => !own.has(row.pid) && row.name !== "ps"),
+  };
 }
 
-async function work(process: ReturnType<typeof processes>[number]) {
-  const root = "/proc/" + process.pid;
-  const stat = await optional(join(root, "stat"));
-  if (!stat) return { ...process, exited: true };
+type ProcessRow = ReturnType<typeof processes>["inside"][number];
+
+function cpuFields(stat: string) {
   const fields = stat
     .slice(stat.lastIndexOf(")") + 2)
     .trim()
     .split(/\s+/);
+  return {
+    startTicks: Number(fields[19]),
+    userTicks: Number(fields[11]),
+    systemTicks: Number(fields[12]),
+  };
+}
+
+async function outsideWork(row: ProcessRow, scope?: string) {
+  const root = "/proc/" + row.pid;
+  const [stat, membership] = await Promise.all([
+    optional(join(root, "stat")),
+    optional(join(root, "cgroup")),
+  ]);
+  if (!stat || !membership) return null;
+  const path = membership.match(/^0::(\/.*)$/m)?.[1];
+  if (!path || (scope && (path === scope || path.startsWith(scope + "/"))))
+    return null;
+  const cpu = cpuFields(stat);
+  return { ...row, ...cpu };
+}
+
+async function work(process: ProcessRow) {
+  const root = "/proc/" + process.pid;
+  const stat = await optional(join(root, "stat"));
+  if (!stat) return { ...process, exited: true };
   const tasks = await readdir(join(root, "task")).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code === "ENOENT" || error.code === "ESRCH") return [];
@@ -81,9 +108,7 @@ async function work(process: ReturnType<typeof processes>[number]) {
   };
   return {
     ...process,
-    startTicks: Number(fields[19]),
-    userTicks: Number(fields[11]),
-    systemTicks: Number(fields[12]),
+    ...cpuFields(stat),
     threads: tasks.length,
     readableSchedstats: readable,
     threadRuntimeNs: scheduling[0],
@@ -104,11 +129,20 @@ export async function schedulerDiagnostic() {
   async function snapshot(electron?: number) {
     const pressure = await pressureSample();
     const processWork = [];
-    for (const process of processes(electron))
-      processWork.push(await work(process));
+    const group = processes(electron);
+    for (const process of group.inside) processWork.push(await work(process));
+    const outside = (
+      await Promise.all(group.other.map((row) => outsideWork(row, cgroupPath)))
+    ).filter((row) => row !== null);
+    const guestCpuStat = (await optional("/proc/stat"))?.match(
+      /^cpu\s+(.+)$/m,
+    )?.[1];
+
     return {
       pressure,
       processWork,
+      outside,
+      guestCpuStat,
       observerCpu: process.cpuUsage(),
       observerContextSwitches: {
         voluntary: process.resourceUsage().voluntaryContextSwitches,
@@ -127,9 +161,33 @@ export async function schedulerDiagnostic() {
   let last: Awaited<ReturnType<typeof snapshot>> | undefined;
   async function mark(stage: string, electron?: number) {
     const point = await snapshot(electron);
+    const { outside, ...record } = point;
+    const previousOutside = new Map(
+      last?.outside.map((row) => [row.pid + ":" + row.startTicks, row]),
+    );
+    const outsideDeltas = outside
+      .flatMap((end) => {
+        const before = previousOutside.get(end.pid + ":" + end.startTicks);
+        if (!before) return [];
+        const userTicks = end.userTicks - before.userTicks;
+        const systemTicks = end.systemTicks - before.systemTicks;
+        return userTicks > 0 || systemTicks > 0
+          ? [{ pid: end.pid, name: end.name, userTicks, systemTicks }]
+          : [];
+      })
+      .sort(
+        (a, b) => b.userTicks + b.systemTicks - (a.userTicks + a.systemTicks),
+      );
     points.push({
       stage,
-      ...point,
+      ...record,
+      outsideDeltas,
+      outsideProcessCounts: {
+        observed: outside.length,
+        new: outside.filter(
+          (row) => !previousOutside.has(row.pid + ":" + row.startTicks),
+        ).length,
+      },
       sincePrevious: last && pressureDelta(last.pressure, point.pressure),
     });
     last = point;
