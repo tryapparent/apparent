@@ -7,10 +7,16 @@ import type { Matched } from "../../../shared/enablement/performance/comparison.
 import { readCpuUsage } from "./hosted/quota.ts";
 import { runReplayUnit } from "./hosted/replay-unit.ts";
 import type { watchAttempt } from "./watch.ts";
+import {
+  nativeFixtureSources,
+  type NativeBuild,
+  nativeWorkload,
+} from "./native/sender.ts";
 
 export type Replay = {
   revision: string;
   chromium: string;
+  workload?: string;
   attempts: Awaited<ReturnType<typeof watchAttempt>>[];
 };
 
@@ -104,14 +110,19 @@ export async function sample(
   traced: boolean,
   hostedCgroup?: string,
   enforceSubset = false,
+  native?: NativeBuild,
 ) {
   const cpus = await affinity(cpuSpec);
   const command = join(tree, self, "recipient.ts");
   const worker = join(tree, "connect/service/dist/worker.js");
   const workerHash = await hash(worker);
   const harness = await Promise.all(
-    runnerFiles.map((name) => hash(join(tree, self, name))),
+    [
+      ...runnerFiles.map((name) => self + name),
+      ...(native ? [self + "native/sender.ts", ...nativeFixtureSources] : []),
+    ].map((name) => hash(join(tree, name))),
   );
+  if (native) assert.equal(await hash(native.binary), native.hash);
   const revision = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: tree,
     encoding: "utf8",
@@ -149,6 +160,7 @@ export async function sample(
     result,
     chrome,
     traced ? "watch-traced" : "watch-untraced",
+    ...(native ? [native.binary] : []),
   ];
   const cwd = join(tree, "connect/service");
   const unit = hostedCgroup
@@ -185,6 +197,14 @@ export async function sample(
     ),
   );
   assert.deepEqual(fixture(replay)[0], fixture(replay)[1]);
+  assert.equal(replay.workload, native ? nativeWorkload : undefined);
+  for (const { proof } of replay.attempts) {
+    assert.equal(proof.nativeSender?.binarySha256, native?.hash);
+    assert.equal(
+      proof.nativeSender?.revocationVerified,
+      native ? true : undefined,
+    );
+  }
   const [user, system, peakProcessRssKiB] = (await readFile(log, "utf8"))
     .trim()
     .split(" ")
@@ -248,6 +268,7 @@ export type Benchmark = {
   mode: "baseline" | "compare";
   valid: boolean;
   qualified: boolean;
+  noiseSpeedIndex: number;
   runtime: {
     host: string;
     cpuSpec: string;

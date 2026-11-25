@@ -18,6 +18,17 @@ type Span = {
   state?: string;
 };
 
+export type NativeBuild = {
+  binary: string;
+  sha: string;
+  hash: string;
+  peakPuts: 1;
+};
+
+export const nativeFixtureSources = [
+  "connect/client/src/test_support/settings_tests.rs",
+];
+
 export const nativeWorkload = "default-public-copy-native-sender-v2";
 
 export function nativeSender(build: { binary: string; hash: string }) {

@@ -1018,22 +1018,7 @@ impl Client {
             ensure!(allowed(), cancelled());
             bail!(hosted_failure(SafeError::Offline, "Hosted transport input failed"));
         }
-        let deadline = Instant::now() + timeout + Duration::from_millis(250);
-        let status = loop {
-            #[cfg(any(test, feature = "test-support"))]
-            test_support::run_hook("transport_poll", body.unwrap_or(output));
-            let active = allowed();
-            if !active || Instant::now() > deadline {
-                let _ = child.kill();
-                let _ = child.wait();
-                ensure!(active && allowed(), cancelled());
-                bail!(hosted_failure(SafeError::Offline, "Hosted request timed out"));
-            }
-            if let Some(status) = child.try_wait()? {
-                break status;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        };
+        let status = file_transfer::wait_for_curl(&mut child, timeout, allowed, body.unwrap_or(output))?;
         let mut code = String::new();
         child
             .stdout

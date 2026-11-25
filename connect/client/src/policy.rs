@@ -470,3 +470,20 @@ impl Client {
             .as_str().map(str::to_owned).context("Invalid Connect alternatives")
     }
 }
+
+#[cfg(target_os = "linux")]
+pub(super) fn child_exit_fd(child: &std::process::Child) -> Option<File> {
+    use std::os::fd::FromRawFd;
+    let fd = unsafe { libc::syscall(libc::SYS_pidfd_open, child.id(), 0) };
+    (fd >= 0).then(|| unsafe { File::from_raw_fd(fd as i32) })
+}
+
+#[cfg(target_os = "linux")]
+pub(super) fn wait_readable(fd: &File) -> bool {
+    let mut exit = libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    (unsafe { libc::poll(&mut exit, 1, 20) }) >= 0
+}

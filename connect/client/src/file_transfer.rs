@@ -430,3 +430,36 @@ impl Client {
         Ok(())
     }
 }
+
+pub(super) fn wait_for_curl(
+    child: &mut std::process::Child,
+    timeout: Duration,
+    allowed: &dyn Fn() -> bool,
+    _path: &Path,
+) -> Result<std::process::ExitStatus> {
+    let deadline = Instant::now() + timeout + Duration::from_millis(250);
+    #[cfg(target_os = "linux")]
+    let pidfd = child_exit_fd(child);
+    loop {
+        #[cfg(any(test, feature = "test-support"))]
+        test_support::run_hook("transport_poll", _path);
+        let active = allowed();
+        if !active || Instant::now() > deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            ensure!(active && allowed(), cancelled());
+            bail!(hosted_failure(
+                SafeError::Offline,
+                "Hosted request timed out"
+            ));
+        }
+        if let Some(status) = child.try_wait()? {
+            return Ok(status);
+        }
+        #[cfg(target_os = "linux")]
+        if pidfd.as_ref().is_some_and(wait_readable) {
+            continue;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
