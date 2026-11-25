@@ -21,6 +21,27 @@
       ]
     },
     {
+      "id": "inspect-connect-directory-diagnostics",
+      "description": "Distinguish unsafe download destinations from unsafe local Connect reader storage during capture inspection.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Run apparent inspect <capture-id> from a directory that fails a Connect trust check.",
+      "prerequisites": [
+        "A native test build and a private temporary root for the synthetic filesystem fixtures."
+      ],
+      "runner": {
+        "path": "connect/hosted/hosted_tests.rs",
+        "instructions": "Run cargo test --locked --bin apparent hosted_inspect_. Set APPARENT_TEST_INSPECT_BINARY to an absolute candidate CLI path to exercise a built or packaged executable."
+      },
+      "expectedEvidence": [
+        "An unsafe download destination is named on the first error line, along with the permission failure and a private retry path.",
+        "An unsafe reader directory identifies local Connect reader storage and the permission failure.",
+        "Both failures omit absolute paths and leave no downloaded capture or staging directory. The loopback fixture also verifies successful inspection in private storage."
+      ],
+      "limits": [
+        "The scenarios use synthetic files and a loopback Connect service."
+      ]
+    },
+    {
       "id": "share-to-advancing-watch-frame",
       "description": "Measure synthetic Connect share activation through verified readiness and advancing recipient playback.",
       "platforms": ["linux"],
