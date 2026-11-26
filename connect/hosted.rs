@@ -321,6 +321,15 @@ pub fn fetch(args: FetchArgs) -> Result<()> {
     println!("{}", fetched.display());
     Ok(())
 }
+
+#[derive(clap::Args)]
+pub(crate) struct ReadSource {
+    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest")]
+    pub bundle: PathBuf,
+    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+    pub reader: Option<String>,
+}
+
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
 /// retain local inspection semantics; fetch never overwrites existing output.
 pub fn inspect_source(source: &Path, reader: Option<&str>) -> Result<PathBuf> {

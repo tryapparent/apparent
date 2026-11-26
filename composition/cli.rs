@@ -383,11 +383,8 @@ enum Command {
     },
     /// Fetch and inspect a Connect capture ID, or inspect a local bundle (or `latest`).
     Inspect {
-        /// Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or `latest`.
-        #[arg(default_value = "latest")]
-        bundle: PathBuf,
-        #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
-        reader: Option<String>,
+        #[command(flatten)]
+        source: hosted::ReadSource,
         /// Emit raw `apparent.json` instead of `summary.md` (with `--marks`, the marks as JSON).
         #[arg(long)]
         json: bool,
@@ -418,9 +415,8 @@ enum Command {
     /// Zoom into one moment: a dense contact sheet of frames around a time, a spoken phrase or a
     /// mark, with the bundle's ink and touches drawn in and each frame's time, plus what was said.
     Zoom {
-        /// Path to `.apparent` bundle directory or `latest`.
-        #[arg(default_value = "latest")]
-        bundle: PathBuf,
+        #[command(flatten)]
+        source: hosted::ReadSource,
         /// The moment: a time (`0:12`, `12.5`) or a phrase from the narration ("width changes").
         #[arg(long, required_unless_present = "mark", conflicts_with = "mark")]
         at: Option<String>,
@@ -1446,14 +1442,13 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::Inspect {
-            bundle,
-            reader,
+            source,
             json,
             marks,
             style_examples,
             experiments,
         } => {
-            super::transcript::inspect(bundle, reader, json, marks, style_examples, experiments)
+            super::transcript::inspect(source.bundle, source.reader, json, marks, style_examples, experiments)
         }
         Command::Clean {
             dry_run,
@@ -1562,7 +1557,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             Ok(())
         }
         Command::Zoom {
-            bundle,
+            source,
             at,
             mark,
             frame,
@@ -1570,8 +1565,9 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             frames,
             full,
         } => {
-            let (dir, loaded) = handoff::load_bundle(&bundle)?;
             ensure!(span.is_finite() && span > 0.0, "--span must be positive");
+            let bundle = hosted::inspect_source(&source.bundle, source.reader.as_deref())?;
+            let (dir, loaded) = handoff::load_bundle(&bundle)?;
             let focus = if let Some(query) = &mark {
                 let frame = super::frame_labels::resolve(&loaded.keyframes, frame.as_deref())?;
                 let entry =
