@@ -54,7 +54,8 @@ export function qualifyTranscript(options: {
     writeFileSync(join(input,'apparent.json'),JSON.stringify(manifest),{mode:0o600});
     const sourceFiles=['apparent.json','recording.mp4',...(savedCameraTranscript?[]:['audio.wav'])];
     const before=sourceFiles.map(file=>hash(join(input,file)));
-    execFileSync(binary,['reprocess',input,'--out',output,'--transcriber','command',...(route==='screen'?['--bench','1']:[])],
+    execFileSync(binary,['reprocess',input,'--out',output,'--transcriber','command',
+      ...(route==='phone'?['--experiment','agentContext']:[]),...(route==='screen'?['--bench','1']:[])],
       {timeout:90_000,stdio:'pipe',env:{...process.env,HOME:home,CFFIXED_USER_HOME:home,APPARENT_CONFIG:config,
         APPARENT_MODELS_DIR:join(home,'unused-models'),XDG_CONFIG_HOME:join(home,'config'),XDG_DATA_HOME:join(home,'data'),
         XDG_CACHE_HOME:join(home,'cache'),XDG_RUNTIME_DIR:runtimeDirectory,DISPLAY:'',WAYLAND_DISPLAY:'',
@@ -77,6 +78,9 @@ export function qualifyTranscript(options: {
     }
     assert.equal(said.filter(Boolean).join(' '),transcript.text,'words must appear once, in order, across real frames');
     const summary=readFileSync(join(output,'summary.md'),'utf8');
+    if(route==='phone') {
+      assert.match(summary,/0:01 ⚑\n  0:00 Said: “Make this smaller,”\n0:04 ⚑\n  0:03 Said: “and move”/);
+    }
     for(const text of said.filter(Boolean))assert(summary.includes(text));
     assert.deepEqual(sourceFiles.map(file=>hash(join(input,file))),before);
     rows.push({route,said,transcript:result.transcript,keyframes:result.keyframes,
