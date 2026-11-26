@@ -36,3 +36,66 @@ first half to Nemotron and checks the full timed Parakeet result after Stop.
 Set `APPARENT_STREAM_EXPECT_DEVICE=cpu` for CPU verification. The separate macOS
 `real_metal_nemotron_preview_and_parakeet_saved_transcript` fixture requires
 actual Metal execution.
+
+## OpenRouter BYOK experiment
+
+In the installed Settings → Labs pane on Linux or macOS, save an OpenRouter
+API key, select **MAI-Transcribe 2**, and enable **OpenRouter transcription**.
+At Stop, an ordinary Desktop screen recording with microphone audio attempts one
+file transcription using the current Labs preference. A failed request falls
+back to the usual transcriber and the recording can still be saved. Removing the
+key disables the experiment. An already submitted request may finish. There is
+no live streaming or Connect service involved.
+
+The key is stored in a separate owner-only `0600` file beside the active profile’s
+config. The Settings bridge returns only key presence, model and enabled state.
+The worker gets the WAV on private stdin. Requests use a fixed OpenRouter
+endpoint, refuse redirects, and have a 15-second deadline and 16 MiB input cap.
+
+For an attempted upload, `finish-trace.json` records
+`hostedTranscription` with the result category, input size and duration, HTTP
+status when available, request and worker elapsed times, provider-reported
+audio duration and request cost when returned, timed-word count when
+available, and local fallback elapsed time when used. Neither the key, audio,
+provider body nor transcript is written to the trace. Bundle transcript metadata
+identifies the model on successful hosted runs.
+
+The Record Bend check runs credential state and synthetic HTTP cases. The Labs
+Electron smoke covers the controls. A provider smoke uses a tester’s own key and
+non-sensitive narration, then checks the saved word timings and the finish trace.
+
+
+## Hosted speech from the CLI
+
+On the machine and account that runs Apparent, use `apparent openrouter-key`
+to check whether its active profile has a key. The CLI reads the same private
+file as Desktop Labs. To configure a headless profile, pipe the key from a
+secret manager to `apparent openrouter-key --stdin`. Use
+`apparent openrouter-key --remove` to remove it from that profile. Removing it
+also disables the Desktop transcription experiment.
+
+```sh
+apparent reprocess source.apparent --out hosted.apparent \
+  --openrouter-stt microsoft/mai-transcribe-2
+
+apparent export hosted.apparent --narration cues.json --out demo.mp4 \
+  --openrouter-tts speechify/simba-3.5 --openrouter-voice alec
+```
+
+The STT flag sends the desktop bundle WAV (up to 16 MiB) and requires a
+transcript with word timing for spoken content. The available models are
+`microsoft/mai-transcribe-2` and `openai/whisper-large-v3`. The TTS flags send
+each scripted cue to the chosen model and voice. The hosted narrator requires
+`ffmpeg` on PATH to convert OpenRouter's MP3 or WAV response to the export mixer’s
+mono 24 kHz PCM. Each cue must fit its existing slot. Use the complete Apparent
+installation, which includes the speech worker. A failed explicit cloud
+request returns an error. Ordinary CLI calls continue to use local speech,
+and Desktop's separate opt-in transcription experiment retains local fallback.
+
+For verification, use a synthetic desktop bundle with words in a known
+order and a short timed narration script. Save a test key, run both examples
+with the same profile, and inspect the new bundle for hosted provenance and
+word times and the MP4 for speech inside the cue windows. The source bundle
+must remain byte-identical. Remove the test key and repeat each hosted command
+to confirm it fails without producing a result. A synthetic HTTP fixture
+exercises shared authentication without sending or billing any request.

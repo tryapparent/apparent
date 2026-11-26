@@ -11,24 +11,23 @@ declare global {interface Window {apparentLabs: {
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
 const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
-export type LabsExperiment<Checked = boolean> = React.ComponentType<{
-  id: string; checked: Checked; disabled: boolean; saving: boolean;
+type LabsExperiment = React.ComponentType<{
+  id: string; checked: boolean; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
-export type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
+type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
+export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
-}) {
+} & {openRouterExperiment?: React.ComponentType}) {
   const [facts, setFacts] = useState<LabsFacts>();
   const [busy, setBusy] = useState(true), [error, setError] = useState('');
   const [setting, setSetting] = useState<Exclude<LabsSetting, 'frogWardrobe'>>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
-  const alive = useRef(true), pending = useRef(false);
-  const restoreFocus = useRef<string | null>(null);
+  const alive = useRef(true), pending = useRef(false), restoreFocus = useRef<string | null>(null);
   const wisprSupported = useRef(false);
   async function request(value?: boolean, setting: Exclude<LabsSetting, 'frogWardrobe'> = 'streaming') {
     if (pending.current) return;
@@ -77,6 +76,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
       <p id="local-stream-help">See a live preview of your English speech below the recording controls. The saved transcript is generated separately on this computer.</p>
       <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
+    {OpenRouter && <OpenRouter />}
     {SpeakingStyle && <SpeakingStyle id={controls.speakingStyle} checked={facts?.speakingStyleSaved === true}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'speakingStyle'}
       onCheckedChange={bindPreference('labs', 'labs.speakingStyle', value => void request(value, 'speakingStyle'))} />}

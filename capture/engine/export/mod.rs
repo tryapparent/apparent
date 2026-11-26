@@ -16,6 +16,7 @@
 pub mod camera;
 pub mod crop;
 pub mod ink;
+#[path = "../../../engine/native/export_narration.rs"]
 mod narration;
 pub(crate) mod quiet;
 #[cfg(target_os = "linux")]
@@ -40,6 +41,7 @@ pub enum AudioPolicy {
     Recorded,
     Silent,
     Narration(PathBuf),
+    HostedNarration { script: PathBuf, model: String, voice: String },
     /// Preserve the existing menu contract; it has no script/silence chooser yet.
     RecordedIfAvailable,
 }
@@ -254,31 +256,18 @@ pub fn export(
     };
 
     let out = options.out.clone().unwrap_or_else(|| default_output(dir));
-    if let AudioPolicy::Narration(script) = &options.audio {
-        if out.exists() {
-            ensure!(
-                std::fs::canonicalize(&out)? != std::fs::canonicalize(script)
-                    .with_context(|| format!("[NARRATION_SCRIPT] Read {}", script.display()))?,
-                "Export output cannot replace narration script"
-            );
-        }
-    }
-
     let wav = bundle
         .audio
         .as_ref()
         .map(|name| dir.join(name))
         .filter(|p| p.is_file());
-    let generated;
+    let generated = narration::render_policy(&options.audio, &out, probe.duration_ms)?;
     let embedded_audio_usable = probe.audio_tracks > 0;
-    let (audio, audio_start, audio_length) = if let AudioPolicy::Narration(script) = &options.audio {
-        generated = Some(narration::render(script, probe.duration_ms)?);
-        (Some(generated.as_ref().unwrap().path()), 0, probe.duration_ms)
+    let (audio, audio_start, audio_length) = if let Some(rendered) = &generated {
+        (Some(rendered.path()), 0, probe.duration_ms)
     } else if matches!(options.audio, AudioPolicy::Silent) {
-        generated = None;
         (None, 0, 0)
     } else {
-        generated = None;
         if matches!(bundle.source.as_deref(), Some("iphone" | crate::shared::model::IMPORTED_MOVIE_SOURCE)) && embedded_audio_usable {
             (Some(video.clone()), 0, probe.duration_ms)
         } else if let Some(wav) = wav.as_ref() {
