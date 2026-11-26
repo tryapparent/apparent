@@ -16,7 +16,8 @@ retain conservative selection. The pre-commit admission guards remain commit-onl
 Local Rust diagnostics consider full-range Rust source changes, Cargo manifests
 and locks, toolchain/config changes and declared native code-generation inputs.
 The pre-push hook uses the same integration range for locked offline Cargo checks on
-affected production targets. When rustc emits `dead_code` warnings, the same
+affected production targets. For native suites that need private scratch, the hook
+checks `TMPDIR` before Rust diagnostics. When rustc emits `dead_code` warnings, the same
 Cargo check on the main merge-base supplies the baseline. Warnings are compared
 by package, target, source, enclosing Rust items and diagnostic identity with
 occurrence counts.

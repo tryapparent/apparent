@@ -99,3 +99,6 @@ points. Allow Accessibility in Privacy & Security before recording.
    the new recording contains no `pinWindow` data. With the lab on, repeat
    against a window that supplies no accessibility tree. The recording and pin
    still finish.
+4. On macOS, repeat the enabled case in Safari with the Dock visible and
+   then with it hidden. Keep the cursor at the pin through the read. Expect
+   the same named control states in both handoffs.

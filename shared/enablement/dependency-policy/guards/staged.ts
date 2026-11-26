@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createHash } from "node:crypto";
 import {
   bendDirectory,
   bendOwners,
@@ -37,6 +38,17 @@ const rustHostPaths = [
   "engine/native/src/audio_macos/",
   "engine/wayland/",
 ];
+
+const issueMessageHooks = new Map([
+  [
+    ".githooks/prepare-commit-msg",
+    "8ff6358affbd8c8aba863d30e416c98ed9fe26a264e9e1dec99498fb4415a12f",
+  ],
+  [
+    ".githooks/commit-msg",
+    "d87a9ca2f3057a048dcd0029b3bdcd6be275503360e0b45f801acc76b3b36865",
+  ],
+]);
 
 export async function checkStaged(
   cwd: string,
@@ -203,7 +215,7 @@ export async function checkStaged(
           `${file}: new authored JavaScript is forbidden; use TypeScript`,
         );
       else if (
-        [
+        ([
           ".swift",
           ".sh",
           ".bash",
@@ -214,9 +226,14 @@ export async function checkStaged(
           ".cpp",
           ".cc",
         ].includes(ext) ||
-        (text.startsWith("#!") &&
-          !(python && file.startsWith("hermes/")) &&
-          ![".ts", ".tsx", ".mts", ".cts", ".py"].includes(ext))
+          (text.startsWith("#!") &&
+            !(python && file.startsWith("hermes/")) &&
+            ![".ts", ".tsx", ".mts", ".cts", ".py"].includes(ext))) &&
+        !(
+          meta.startsWith("100755 ") &&
+          issueMessageHooks.get(file) ===
+            createHash("sha256").update(text).digest("hex")
+        )
       )
         errors.push(
           `${file}: new native/shell executable requires an exact reviewed policy allowance; use TypeScript by default`,
