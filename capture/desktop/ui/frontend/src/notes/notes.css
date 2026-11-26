@@ -26,12 +26,12 @@ body:has(.capture-notes), body:has(.notes-unavailable) { background: transparent
 .note-popup footer button { border-radius: 20px; }
 .note-popup p, .note-list p { font-size: 12px; line-height: 1.4; }
 .note-popup [role=alert], .note-list [role=alert] { color: var(--color-foreground); }
-.note-list { max-height: 332px; padding: 12px; overflow-y: auto; }
+.note-list { padding: 12px; }
 .note-list header { display: flex; align-items: center; justify-content: space-between; }
 .note-list header strong { font-size: 14px; font-weight: 550; }
-.note-list article { display: flex; align-items: center; border-top: 1px solid var(--color-border); }
-.note-row { justify-content: flex-start; white-space: normal; padding: 10px 4px; height: auto; text-align: left; flex: 1; min-width: 0; }
-.note-row > span:nth-child(2) { overflow-wrap: anywhere; }
+.note-rows { max-height: min(276px, calc(100vh - 70px)); margin: 0; padding: 0; list-style: none; overflow-y: auto; }
+.note-rows:focus-visible { outline: 2px solid var(--color-ring); outline-offset: 1px; }
+.note-rows li { display: flex; align-items: baseline; gap: 8px; padding: 10px 4px; border-top: 1px solid var(--color-border); font-size: 14px; }
+.note-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .note-number { color: var(--color-muted-foreground); font-size: 11px; }
-.note-row small { color: var(--color-muted-foreground); font-size: 10px; }
 .notes-unavailable { font: 12px system-ui; padding: 12px; }

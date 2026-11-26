@@ -133,3 +133,8 @@
     animation:pill-content-in 160ms cubic-bezier(0.2,0,0,1) both;
   }
 }
+
+.pill[data-compact-completion=true] .pill-row { gap:2px;min-height:50px;padding:2px 3px; }
+.pill[data-compact-completion=true] .lead { padding:0; }
+.pill[data-compact-completion=true] .controls { gap:2px; }
+.pill[data-compact-completion=true] .indicator.completed { width:17px;height:17px; }

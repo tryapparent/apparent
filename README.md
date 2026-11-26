@@ -9,46 +9,44 @@ Show your agent what you mean with a quick screen recording, your voice, and a f
 
 [Download Apparent](https://github.com/tryapparent/apparent/releases) · [Agent quickstart](https://app.tryapparent.com/agents/) · [Docs](#find-your-way) · [MIT](LICENSE)
 
-## Show, then tell
+## Show a visual bug to Codex or Claude Code
 
-1. **Record** — press `⌥⇧S` on macOS or `Alt+Shift+S` on Linux.
+1. **Record your screen** — press `⌥⇧S` on macOS or `Alt+Shift+S` on Linux.
 2. **Make your point** — talk, click around, hold `Shift` to draw, or `Shift`-click to drop a pin.
-3. **Hand it off** — press the shortcut again to finish. If your agent composer stays focused, Apparent can paste an unsent draft. You can also paste from the clipboard.
+3. **Hand it off** — press the shortcut again, then review the unsent draft or paste from your clipboard.
 
-Your agent gets annotated keyframes, a timed transcript, and an interaction timeline
-in a `.apparent` bundle. It can read what you said, see where you pointed, and pull
-more frames when it needs a closer look.
+Your agent gets annotated frames, a timed transcript, and an interaction timeline
+in a local `.apparent` bundle. It can inspect more frames around the moment you describe.
 
-Less “the thing next to the other thing.” More “oh, *that*.”
+If a menu closes before you can point to the item, record the lead-up. In the
+[Rename-menu example](https://app.tryapparent.com/agents/#example), the frames show when it disappears.
 
 ## Get started
 
-**[Download a release for macOS or Linux](https://github.com/tryapparent/apparent/releases)**,
-launch Apparent, and follow the permission setup. Linux main builds are previews;
-choose the release for your platform. Ubuntu Desktop and Windows are unsupported.
+**[Download for macOS or Linux](https://github.com/tryapparent/apparent/releases)**,
+launch Apparent, and grant permissions. Linux main builds are previews.
+Ubuntu Desktop and Windows are unsupported.
 [Ubuntu support via a .deb](https://github.com/tryapparent/apparent/issues/1774) is deferred.
 
-Prefer to let your agent handle installation? Paste this into its chat:
+Paste into your agent for setup.
 
 ```markdown
 Install the Apparent desktop app from [Apparent releases](https://github.com/tryapparent/apparent/releases), then launch it.
 ```
 
-Need help getting set up? See the [recording guide](capture/desktop/docs/guides/recording.md)
-and [Linux setup](capture/desktop/docs/linux/linux.md).
+[Record and point](https://app.tryapparent.com/guides/record-screen-for-coding-agent/) · [Import an MP4 or MOV](https://app.tryapparent.com/guides/send-existing-screen-recording/) · [Show the right control](https://app.tryapparent.com/guides/show-coding-agent-right-ui-element/)
 
 ## Agents
 
-Install the optional capture-reading skill for Claude Code, Codex, OpenCode, and other agents:
+Install the optional reading skill for Codex, Claude Code, or OpenCode.
 
 ```sh
 bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent
 ```
 
-The skill teaches your agent to read captures and look closer with `apparent zoom`,
-`frames`, and `inspect`. [Install the CLI](capture/agent/docs/installation.md) on the
-agent's machine too; installing the skill alone doesn't install the app.
-Headless Linux agents can fetch and read captures without launching a desktop.
+The skill teaches `apparent inspect`, `zoom`, and `frames`.
+[Install the CLI separately](capture/agent/docs/installation.md).
+Headless Linux agents can fetch and read captures.
 
 ## Have your agent make a video
 

@@ -23,7 +23,7 @@ mod policy;
 use policy::*;
 mod encryption;
 mod foreground;
-use foreground::{canonical_query, validate_share_url};
+use foreground::{canonical_query, safe_shares_error, validate_share_url};
 mod activity;
 #[cfg(target_os = "linux")]
 pub use encryption::support::check_support_peer;
@@ -253,39 +253,42 @@ fn valid_id(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+
+fn capture_read_transport_error(
+    method: &str,
+    route: &str,
+    message: &str,
+    curl_result: Option<(Option<i32>, Option<u16>)>,
+    timeout: Duration,
+) -> anyhow::Error {
+    let mut message = message.to_owned();
+    if let ("GET", Some(capture)) = (method, route.strip_prefix("/v1/captures/")) {
+        let stage = match capture.split_once('/') {
+            None if valid_id(capture) => Some("manifest"),
+            Some((id, path)) if valid_id(id) && path.starts_with("files/") => Some("file"),
+            _ => None,
+        };
+        if let Some(stage) = stage {
+            let outcome = match curl_result {
+                Some((code, status)) => format!(
+                    "curl_exit={}, http_status={}",
+                    code.map_or_else(|| "unavailable".into(), |code| code.to_string()),
+                    status.map_or_else(|| "unavailable".into(), |status| status.to_string()),
+                ),
+                None => "client_deadline".into(),
+            };
+            message.push_str(&format!(
+                " [stage={stage}, {outcome}, request_timeout_ms={}]",
+                timeout.as_millis(),
+            ));
+        }
+    }
+    hosted_failure(SafeError::Offline, message)
+}
 fn hex_digest(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
-fn safe_shares_error(message: &str) -> &'static str {
-    if message.starts_with("auth_required:") {
-        return "auth_required";
-    }
-    if message.starts_with("Hosted API temporarily unavailable") {
-        return "temporarily_unavailable";
-    }
-    if message.starts_with("Hosted transport failed") {
-        return "transport_failed";
-    }
-    if message.starts_with("Hosted response exceeds limit") {
-        return "response_limit";
-    }
-    if message.starts_with("Invalid hosted JSON response") {
-        return "invalid_json";
-    }
-    for code in [
-        "file_too_large", "manifest_conflict", "beta_required", "slow_down",
-        "quota_exceeded", "unauthorized", "forbidden", "expired", "rejected",
-        "not_found", "conflict", "authorization_pending", "device_expired",
-        "device_rejected", "reauthorization_required",
-    ] {
-        if message.contains(code) {
-            return code;
-        }
-    }
-    "request_failed"
 }
 
 fn safe_shares_policy_message(message: &str) -> bool {
@@ -1027,7 +1030,9 @@ impl Client {
                 let _ = child.kill();
                 let _ = child.wait();
                 ensure!(active && allowed(), cancelled());
-                bail!(hosted_failure(SafeError::Offline, "Hosted request timed out"));
+                return Err(capture_read_transport_error(
+                    method, route, "Hosted request timed out", None, timeout,
+                ));
             }
             if let Some(status) = child.try_wait()? {
                 break status;
@@ -1042,23 +1047,15 @@ impl Client {
             .take(16)
             .read_to_string(&mut code)?;
         ensure!(allowed(), cancelled());
-        #[cfg(test)]
         if !status.success() {
-            // Numeric evidence only; config, paths, stderr and response text
-            // can carry credentials or user data and must not be printed.
-            eprintln!(
-                "hosted curl failure: exit={:?}; http={:?}; body_bytes={:?}; response_bytes={:?}",
-                status.code(),
-                code.trim().parse::<u16>().ok(),
-                body.and_then(|path| fs::metadata(path).ok())
-                    .map(|m| m.len()),
-                fs::metadata(output).ok().map(|m| m.len()),
-            );
+            return Err(capture_read_transport_error(
+                method,
+                route,
+                "Hosted transport failed (network, timeout or response limit)",
+                Some((status.code(), code.trim().parse().ok())),
+                timeout,
+            ));
         }
-        ensure!(
-            status.success(),
-            hosted_failure(SafeError::Offline, "Hosted transport failed (network, timeout or response limit)")
-        );
         ensure!(
             fs::metadata(output)?.len() <= limit,
             "Hosted response exceeds limit"

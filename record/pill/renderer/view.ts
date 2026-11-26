@@ -11,6 +11,7 @@ export type PillView = {
   draggable: boolean;
   inputWaveform: number[] | null;
   noteCount: number;
+  copyFailed?: boolean;
   shareIndicator?: import("../presentation").ShareIndicator;
   actions: {
     id: string;

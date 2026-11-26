@@ -1442,6 +1442,7 @@ pub fn hosted_fetch_connection_failures_discover_mcp_without_changing_access() {
     let credential = fs::read(f.client.state.join("read.credential")).unwrap();
     let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
     assert!(error.starts_with("Hosted transport failed"), "{error}");
+    assert!(error.contains("[stage=manifest, curl_exit=7, http_status=0,"), "{error}");
     assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
     assert!(error.contains("separate offline apparent-connect-mcp reader"), "{error}");
     assert!(!error.contains("synthetic-read-secret"), "{error}");
@@ -1837,55 +1838,23 @@ pub fn hosted_transport_network_timeout_and_cancellation() {
     let server = Server::new("slow");
     let stage = Scratch::new(&f.client.state).unwrap();
     let start = Instant::now();
-    assert!(
-        f.client
-            .raw_request(
-                &server.url,
-                Some("synthetic-secret"),
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("timeout"),
-                100,
-                Duration::from_millis(100),
-                &|| true
-            )
-            .is_err()
-    );
+    let capture = "a".repeat(32);
+    let secret = "synthetic-secret";
+    let error = f.client.raw_request(
+        &server.url, Some(secret), "GET", &format!("/v1/captures/{capture}/files/{secret}"),
+        None, &stage.0.join("timeout"), 100, Duration::from_millis(100), &|| true,
+    ).unwrap_err().to_string();
     assert!(start.elapsed() < Duration::from_secs(1));
-    assert!(
-        f.client
-            .request(
-                &server.url,
-                None,
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("cancelled"),
-                100,
-                Duration::from_secs(1),
-                &|| false
-            )
-            .is_err()
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    assert!(
-        f.client
-            .request(
-                &url,
-                None,
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("offline"),
-                100,
-                Duration::from_secs(1),
-                &|| true
-            )
-            .is_err()
-    );
+    assert!(error.contains("[stage=file, curl_exit=28, http_status=0, request_timeout_ms=100]"), "{error}");
+    for private in [server.url.as_str(), &capture, secret] {
+        assert!(!error.contains(private), "{error}");
+    }
+    let cancelled = stage.0.join("cancelled");
+    assert!(f.client.request(
+        &server.url, None, "GET", "/v1/account", None, &cancelled, 100,
+        Duration::from_secs(1), &|| false,
+    ).is_err());
+    assert!(!cancelled.exists());
 }
 #[cfg_attr(test, test)]
 pub fn hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work() {
