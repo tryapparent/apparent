@@ -31,8 +31,6 @@ struct SpeechChoice {
   #endif
 }
 
-/// Apple's speech assets are installed per app: `AssetInventory` reserves the locale for this
-/// bundle id (`dev.kitlangton.apparent.helper`) and downloads the model if the Mac doesn't have it.
 /// A fresh Mac has none, so Apparent installs it in the background at launch
 /// (`apparent-helper speech-model --install`) rather than in the middle of a capture. On macOS 15
 /// the same command checks for the Speech Recognition permission and the Dictation model instead.

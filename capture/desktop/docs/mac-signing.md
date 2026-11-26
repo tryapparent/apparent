@@ -8,7 +8,7 @@ publication does not prove that transition. User update steps are in
 [Releasing Apparent](release.md#updating-an-older-preview).
 
 It keeps `Apparent Preview.app`, bundle ID `dev.simonvanlaak.apparent.preview`, the existing
-preview Sparkle key/feed and version ordering. It does not change Kit's production app,
+preview Sparkle key/feed and version ordering. It does not change the upstream production app,
 register at login, install the CLI, enable silent updates or move to a stable channel.
 
 ## Credential setup and maintenance
@@ -18,7 +18,7 @@ register at login, install the CLI, enable silent updates or move to a stable ch
    Installer. On a trusted Mac, create the private key/CSR, issue the certificate through
    Apple's developer portal, install it, then export the certificate **and private key**
    from Keychain Access as a password-protected `.p12`. Back up the key securely. A `.cer`
-   download or Team ID alone is not enough. Do not use Kit's certificate or key.
+   download or Team ID alone is not enough. Do not use upstream signing credentials.
 2. Create a **team App Store Connect API key** with permission to notarize (Developer role
    or higher; creation may require Account Holder/Admin). Download its `.p8` once and retain
    its key ID and issuer ID. This workflow uses a team key, not an individual key, because
@@ -58,6 +58,14 @@ DMG. Signature, stapling and Gatekeeper checks must pass before publication. Mis
 credentials or rejection never fall back to ad-hoc signing when the switch is true.
 Checksums and Sparkle signatures are computed after stapling. The temporary keychain and
 `.p8` are deleted in an always-run cleanup step; neither is cached or uploaded as an artifact.
+
+## Local development installs
+
+`capture/desktop/scripts/packaging/install-app.sh` uses
+`APPARENT_APPLE_SIGNING_IDENTITY` when set and signs ad hoc otherwise. Its app ID
+is `dev.simonvanlaak.apparent`. An install replacing an older local build can
+require new macOS permission grants. The Nightly and Preview channels each
+keep their own existing app ID.
 
 ## Release verification
 

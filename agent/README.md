@@ -8,17 +8,17 @@ Install the [capture-reading skill](skills/apparent/SKILL.md) or the
 [video-proof skill](skills/make-it-apparent/SKILL.md) from `agent/skills/`.
 Older install URLs forward to these guides.
 
-## Check video-tracing availability
+## Trace a video workflow
 
-Check `apparent --version` and `apparent trace --help` before using a walkthrough that refers to experimental CLI tracing. If the installed CLI reports an unrecognized subcommand, keep the owned capture receipts and the driver's elapsed times in your private evidence directory. Inspect the saved local bundle using its exact path.
+Enable **CLI workflow tracing** in Settings → Labs, then use
+`apparent trace start` and pass the returned ID with `--trace` on the commands
+you want to time. Read their durations and outcomes with
+`apparent trace report TRACE_ID`. See the [workflow tracing guide](trace/README.md).
 
-```sh
-apparent inspect "$bundle"
-apparent frames "$bundle" --from 0 --to 2
-apparent zoom "$bundle" --at 0:01
-```
-
-For an existing local MP4 or MOV, use `apparent import "$movie" --out "$bundle"` first, with a new `.apparent` destination. These commands inspect recorded evidence. The private driver ledger records command timing and outcomes.
+On older builds, check `apparent trace --help` and keep your driver’s timings
+and capture receipts in a private evidence directory if needed. Use
+`apparent inspect "$bundle"`, `apparent frames "$bundle" --from 0 --to 2` or
+`apparent zoom "$bundle" --at 0:01` to inspect the saved bundle.
 
 ## Report feedback from the CLI
 

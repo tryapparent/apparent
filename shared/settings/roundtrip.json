@@ -27,6 +27,7 @@
   "labs.autoPasteDraft": false,
   "labs.agentContext": true,
   "labs.speakingStyle": true,
+  "labs.videoTracing": true,
   "labs.onboardingWisprFlow": true,
   "labs.dictationFrog": true,
   "labs.desktopFrog": true,

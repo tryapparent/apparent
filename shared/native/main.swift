@@ -29,7 +29,7 @@ final class MicMeter: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
   private var session: AVCaptureSession?
   private var output: AVCaptureAudioDataOutput?
   private var timer: Timer?
-  private let queue = DispatchQueue(label: "dev.kitlangton.apparent.helper.meter")
+  private let queue = DispatchQueue(label: "dev.simonvanlaak.apparent.helper.meter")
   private static let floor: Float = -50
   private static let release: Float = 0.035
 

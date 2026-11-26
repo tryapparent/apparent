@@ -22,6 +22,26 @@
       ]
     },
     {
+      "id": "desktop-frog-sandbox-diagnostic",
+      "description": "Recognize the fatal Chromium sandbox diagnostic when the Linux Desktop frog cannot start.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Open an adopted Desktop frog and inspect the Apparent log if its Electron child exits with no usable sandbox.",
+      "prerequisites": [
+        "The repository's normal native Cargo test prerequisites on Linux."
+      ],
+      "runner": {
+        "path": "engine/native/desktop/desktop_frog_peer.rs",
+        "instructions": "Run cargo test --locked frog_sandbox_tests from the repository root."
+      },
+      "expectedEvidence": [
+        "The observer recognizes a fatal sandbox message from a signaled child, including a marker split across reads.",
+        "Repeated markers produce one diagnostic, unrelated stderr is ignored, and a confirmed failure refuses another launch."
+      ],
+      "limits": [
+        "The subprocess is synthetic. Verify the installed launcher and its fixed diagnostic in a supported isolated Linux desktop."
+      ]
+    },
+    {
       "id": "macos-screen-recording-guide",
       "description": "Add the installed Nightly app to Screen & System Audio Recording from the compact permissions guide.",
       "platforms": ["macos"],

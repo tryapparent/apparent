@@ -20,7 +20,7 @@ only after all preceding gates succeed.
 Stable describes coordinated release publication. Bundle name, helper
 ID, preview build restrictions, preview key and existing preview feed remain
 unchanged so installed fork clients retain their update contract. This does not
-migrate Kit's original app or prove an update from an older installed preview.
+migrate the upstream app or prove an update from an older installed preview.
 
 The old `build-mac-preview.sh` is a compatibility entrypoint into the single TypeScript
 assembly implementation here. Manual preview keeps its own admission, version,

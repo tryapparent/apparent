@@ -2,7 +2,8 @@
   "modules": [
     "context/handoff-line.bend",
     "zoom/zoom-plan.bend",
-    "video/video-plan.bend"
+    "video/video-plan.bend",
+    "trace/admission.bend"
   ],
-  "inputs": ["context/", "zoom/", "enablement/ci/bend/", "video/"]
+  "inputs": ["context/", "zoom/", "enablement/ci/bend/", "video/", "trace/"]
 }

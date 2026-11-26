@@ -128,7 +128,7 @@ fn open_review_window(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App) 
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(16.0), px(16.0))),
             }),
-            app_id: Some("dev.kitlangton.apparent".into()),
+            app_id: Some("dev.simonvanlaak.apparent".into()),
             focus: true,
             show: true,
             kind: WindowKind::Normal,

@@ -42,6 +42,8 @@ fn main() {
     compile_embedded_policy("agent/context/build.ts", &[
         "agent/context", "agent/enablement/ci/bend",
     ], "agent-handoff-line.mjs");
+    println!("cargo:rerun-if-changed=agent/enablement/ci/bend/modules.json");
+    emit_native_policy("agent", "trace", "trace/admission.bend");
     compile_video_worker();
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
@@ -294,8 +296,8 @@ fn watch_desktop_tooling() {
         "capture/desktop/scripts/tests/test_preview_sparkle_setup.py",
         "capture/desktop/scripts/release/verify-preview-sparkle-key.swift",
         "capture/desktop/scripts/support/virtual-display.swift",
-        "composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json",
-        "composition/enablement/release/linux/dev.kitlangton.apparent.png",
+        "composition/enablement/release/linux/dev.simonvanlaak.apparent.desktop.json",
+        "composition/enablement/release/linux/dev.simonvanlaak.apparent.png",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }

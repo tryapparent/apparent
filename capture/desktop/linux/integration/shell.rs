@@ -164,7 +164,7 @@ pub fn notify(summary: &str, body: &str) {
             &(
                 "Apparent",
                 0_u32,
-                "dev.kitlangton.apparent",
+                "dev.simonvanlaak.apparent",
                 summary.as_str(),
                 body.as_str(),
                 Vec::<&str>::new(),
@@ -182,8 +182,8 @@ mod tests {
     #[test]
     fn trash_info_paths_are_percent_encoded() {
         assert_eq!(
-            percent_path(Path::new("/home/kit/a b#1.apparent")),
-            "/home/kit/a%20b%231.apparent"
+            percent_path(Path::new("/home/simon/a b#1.apparent")),
+            "/home/simon/a%20b%231.apparent"
         );
     }
 

@@ -268,7 +268,7 @@ impl InkOverlay {
                     is_resizable: false,
                     is_minimizable: false,
                     window_background: WindowBackgroundAppearance::Transparent,
-                    app_id: Some("dev.kitlangton.apparent".into()),
+                    app_id: Some("dev.simonvanlaak.apparent".into()),
                     ..Default::default()
                 },
                 move |_, cx| cx.new(|_| OverlayView::new(telemetry, view_placement)),

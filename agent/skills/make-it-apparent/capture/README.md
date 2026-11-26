@@ -2,7 +2,7 @@
 
 Use the installed **Apparent** on the host showing the result. Follow its
 `AGENTS.md` and capture safety rules. On development Macs, read
-`capture/engine/docs/capture.md`. Never wake, flash or record Kit's displays.
+`capture/engine/docs/capture.md`. Never wake, flash or record physical displays on shared Macs.
 For isolated Linux takes,
 [check KVM before preparation](../../../../capture/desktop/docs/native-testing.md#check-kvm-from-the-launch-session).
 Verify permissions and capabilities on the capture host.

@@ -65,31 +65,6 @@ fn updater_report_crosses_real_queue_and_http_transport_without_private_error_da
 }
 
 #[test]
-fn updater_projection_bounds_provenance_and_never_sends_arbitrary_release_or_domain_text() {
-    use updates::{Diagnose, Stage, Trigger};
-    let installed = ("private-channel-canary".into(), "private-fork-canary".into());
-    let mut attempt = updates::Attempt::default();
-    attempt.selected("main", Some(&installed));
-    attempt.candidate("private-channel-canary", "private-target-canary", Some(&installed), "private-compiled-canary");
-    let mut error = anyhow::anyhow!("private-error-canary");
-    for _ in 0..100 { error = Err::<(), _>(error).stage(Stage::Policy).unwrap_err(); }
-    let payload = Report::update(&updates::attempted(error, attempt), Trigger::User, std::panic::Location::caller(), Consent {generation: "private-consent-canary".into()}).payload("phc_synthetic").unwrap();
-    assert_eq!(payload["properties"]["updater"]["stages"].as_array().unwrap().len(), 8);
-    assert_eq!(payload["properties"]["updater"]["attempt"]["candidate_channel"], "unknown");
-    assert!(payload["properties"]["updater"]["attempt"]["candidate_id"].is_null());
-    assert!(!payload.to_string().contains("private-"));
-    for (domain, expected) in [("SUSparkleErrorDomain", "sparkle"), ("NSURLErrorDomain", "url_loading"), ("private-domain-canary", "other")] {
-        let mut report = Report::new(Failure::UpdateCheck, std::panic::Location::caller(), Consent {generation:"initial".into()});
-        report.updater = Some(updates::Diagnostics::sparkle(domain, -1009));
-        let payload = report.payload("phc_synthetic").unwrap();
-        assert_eq!(payload["properties"]["updater"]["sparkle_domain"], expected);
-        assert_eq!(payload["properties"]["updater"]["sparkle_code"], -1009);
-        assert_eq!(payload["properties"]["$exception_list"][0]["type"], "update_sparkle_failed");
-        assert!(!payload.to_string().contains("private-"));
-    }
-}
-
-#[test]
 fn finalization_audio_report_identifies_expired_writer_history_and_retains_saved_bytes() {
     use crate::capture::engine::runtime::{audio::persistence::{Lease, Samples, Writer}, recording::diagnostics::{Diagnose, Stage}};
     use std::sync::{Arc, Mutex};
@@ -654,3 +629,6 @@ fn real_panic_hook_flushes_sanitized_event_chains_hook_and_respects_optout() {
         }
     }
 }
+
+#[path = "../../../../engine/diagnostics/sparkle_reporting_tests.rs"]
+mod sparkle_reporting_tests;

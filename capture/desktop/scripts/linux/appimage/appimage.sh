@@ -54,7 +54,7 @@ done < "$out/nss-libraries"
 
 cd "$out"
 install -Dm755 "$root/capture/desktop/scripts/support/apparent-restore-clipboard.py" "$appdir/usr/bin/apparent-restore-clipboard.py"
-desktop_entry="$out/dev.kitlangton.apparent.desktop"
+desktop_entry="$out/dev.simonvanlaak.apparent.desktop"
 node --experimental-strip-types "$root/composition/enablement/release/linux/desktop-entry.ts" > "$desktop_entry"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --appdir "$appdir" \
@@ -66,7 +66,7 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --executable "$(command -v wl-copy)" \
   --executable "$(command -v wl-paste)" \
   --desktop-file "$desktop_entry" \
-  --icon-file "$root/composition/enablement/release/linux/dev.kitlangton.apparent.png" \
+  --icon-file "$root/composition/enablement/release/linux/dev.simonvanlaak.apparent.png" \
   --plugin gstreamer
 node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" check "$appdir/usr/lib"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage

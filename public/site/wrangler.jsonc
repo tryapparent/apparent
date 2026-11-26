@@ -10,7 +10,6 @@
     "run_worker_first": true
   },
   "routes": [
-    { "pattern": "app.tryapparent.com", "custom_domain": true },
-    { "pattern": "apparent.kitlangton.dev", "custom_domain": true }
+    { "pattern": "app.tryapparent.com", "custom_domain": true }
   ]
 }
