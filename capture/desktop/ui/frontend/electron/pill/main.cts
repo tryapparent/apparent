@@ -257,7 +257,7 @@ app.whenReady().then(()=>{
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
     try{
       const area=screen.getDisplayMatching(window.getBounds()).workArea;
-      const reserve=current.phase==='recording'?(current.noteCount===0?72:0):null;
+      const reserve=current.phase==='recording'?(!hyprland&&current.noteCount===0?72:0):null;
       const size=await geometry.measureContents(window.webContents,area.width,reserve);
       if(window!==measuredWindow||document!==documentGeneration||!loaded||revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
@@ -270,7 +270,6 @@ app.whenReady().then(()=>{
       if(nextLayoutKey!==layoutKey){layoutKey=nextLayoutKey;++layoutGeneration;}
       const measuredLayout=layoutGeneration, stale=()=>window!==measuredWindow||window.isDestroyed()||document!==documentGeneration||measuredLayout!==layoutGeneration||!loaded||revision!==current?.revision;
       const repaint=linux && visible && (resized||windowHeight!==height);
-      const paint=()=>measuredWindow.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
       if(repaint&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
       const phaseChanged=layoutPhase!==current.phase;
       const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
@@ -283,7 +282,8 @@ app.whenReady().then(()=>{
       if(linux){
         const paintBeforeShow=!visible&&!rendererReady;
         if(resized||paintBeforeShow)window.webContents.invalidate();
-        if(repaint||paintBeforeShow&&!shapePaint&&current.phase!=='recording')shapePaint=paint();
+        if(repaint||paintBeforeShow&&!shapePaint&&current.phase!=='recording')
+          shapePaint=measuredWindow.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
         const pendingPaint=shapePaint;
         if(pendingPaint)await pendingPaint;
         if(stale())return false;
