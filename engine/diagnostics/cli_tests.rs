@@ -231,3 +231,20 @@ fn export_cli_zooms_by_default_and_no_zoom_opts_out() {
         "retired flag must not appear in help: {help}"
     );
 }
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn trace_cli_uses_canonical_names_without_paths_and_rejects_app_launch() {
+    for args in [
+        ["apparent", "--trace", "example", "inspect", "/private/synthetic"],
+        ["apparent", "inspect", "/private/synthetic", "--trace", "example"],
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.trace.as_deref(), Some("example"));
+        assert_eq!(trace_cli::operation(cli.command.as_ref()), Some("inspect"));
+    }
+
+    let cli = Cli::try_parse_from(["apparent", "--trace", "example", "app"]).unwrap();
+    assert!(trace_cli::operation(cli.command.as_ref()).is_none());
+    assert!(run_cli(cli).unwrap_err().to_string().contains("does not support workflow tracing"));
+}

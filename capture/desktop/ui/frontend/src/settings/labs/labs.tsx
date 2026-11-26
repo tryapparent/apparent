@@ -10,15 +10,16 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(...command: [value: boolean, setting?: LabsSetting] | [value: undefined, setting: undefined, intent: unknown]): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', videoTracing: 'video-tracing-toggle', recordingPerformance: 'recording-performance-toggle'};
 type LabsExperiment = React.ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
 type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
+export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, videoTracingExperiment: VideoTracing, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
   speakingStyleExperiment?: LabsExperiment;
+  videoTracingExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
@@ -64,11 +65,15 @@ export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment:
   const on = facts && enabled(facts);
   const sharing = facts && sharingEnabled(facts);
   const wispr = facts && wisprEnabled(facts);
+  const switchProps = (name: Exclude<LabsSetting, 'frogWardrobe'>, saved: boolean | null | undefined) => ({
+    id: controls[name],
+    checked: saved === true,
+    disabled: busy || !facts || !!facts.error,
+    saving: busy && setting === name,
+  });
   return <section className="settings-labs" aria-label="Experimental features">
-    {AgentContext && <AgentContext id={controls.agentContext} checked={facts?.agentContextSaved === true}
-      access={facts?.agentContextAccess}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'agentContext'}
-      onCheckedChange={bindPreference('labs', 'labs.agentContext', value => void request(value, 'agentContext'))} />}
+    {AgentContext && <AgentContext {...switchProps('agentContext', facts?.agentContextSaved)}
+      access={facts?.agentContextAccess} onCheckedChange={bindPreference('labs', 'labs.agentContext', value => void request(value, 'agentContext'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}
@@ -77,12 +82,10 @@ export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment:
       <p id="local-stream-ready">Enabling downloads any missing speech models. Live text starts on the next recording after the models are ready.</p>
     </section>
     {OpenRouter && <OpenRouter />}
-    {SpeakingStyle && <SpeakingStyle id={controls.speakingStyle} checked={facts?.speakingStyleSaved === true}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'speakingStyle'}
-      onCheckedChange={bindPreference('labs', 'labs.speakingStyle', value => void request(value, 'speakingStyle'))} />}
-    {PushToTalk && <PushToTalk id={controls.pushToTalk} checked={facts?.pushToTalkSaved === true}
-      supported={facts?.pushToTalkSupported} disabled={busy || !facts || !!facts.error}
-      saving={busy && setting === 'pushToTalk'} onCheckedChange={bindPreference('labs', 'labs.pushToTalk', value => void request(value, 'pushToTalk'))} />}
+    {SpeakingStyle && <SpeakingStyle {...switchProps('speakingStyle', facts?.speakingStyleSaved)} onCheckedChange={bindPreference('labs', 'labs.speakingStyle', value => void request(value, 'speakingStyle'))} />}
+    {VideoTracing && <VideoTracing {...switchProps('videoTracing', facts?.videoTracingSaved)} onCheckedChange={bindPreference('labs', 'labs.videoTracing', value => void request(value, 'videoTracing'))} />}
+    {PushToTalk && <PushToTalk {...switchProps('pushToTalk', facts?.pushToTalkSaved)}
+      supported={facts?.pushToTalkSupported} onCheckedChange={bindPreference('labs', 'labs.pushToTalk', value => void request(value, 'pushToTalk'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}
@@ -96,12 +99,9 @@ export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment:
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={bindPreference('labs', 'labs.onboardingWisprFlow', value => void request(value, 'wisprFlow'))} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
-    {DesktopFrog && typeof facts?.desktopFrogSaved === 'boolean' && <DesktopFrog id={controls.desktopFrog} checked={facts?.desktopFrogSaved ?? false}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'desktopFrog'}
+    {DesktopFrog && typeof facts?.desktopFrogSaved === 'boolean' && <DesktopFrog {...switchProps('desktopFrog', facts?.desktopFrogSaved)}
       onCheckedChange={bindPreference('labs', 'labs.desktopFrog', value => void request(value, 'desktopFrog'))} />}
-    {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}
-      disabled={busy || !facts || !!facts.error} saving={busy && setting === 'dictationFrog'}
-      onCheckedChange={bindPreference('labs', 'labs.dictationFrog', value => void request(value, 'dictationFrog'))} />}
+    {FrogNudge && wisprSupported.current && <FrogNudge {...switchProps('dictationFrog', facts?.dictationFrogSaved)} onCheckedChange={bindPreference('labs', 'labs.dictationFrog', value => void request(value, 'dictationFrog'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row">
         <h2 className="settings-preference-label" id="recording-performance-label">Share performance metrics</h2>

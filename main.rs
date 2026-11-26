@@ -29,6 +29,9 @@ mod connect;
 mod shared;
 #[path = "engine/diagnostics/performance/spans.rs"]
 mod recording_trace;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "engine/diagnostics/workflow_trace.rs"]
+mod workflow_trace;
 
 fn main() -> anyhow::Result<()> {
     crate::shared::handoff::pen::refresh();
