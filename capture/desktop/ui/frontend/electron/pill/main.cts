@@ -23,9 +23,15 @@ function reconcileKeyboardWindow(view){
   const next=!!view;
   if(!linux||next===keyboardMode||!createWindow||!next&&destinations.loadingPickerPreferences())return false;
   keyboardMode=next;
+  keyboardCapture='';readySent=false;
+  if(hyprland){
+    if(!next&&pickerFocused)focusPicker(false);
+    window.setFocusable(next);
+    return false;
+  }
   const bounds=window.getBounds();retiredWindows.push(window);
-  loaded=false;rendererReady=false;readySent=false;activated=false;admittedWindowId=null;
-  renderDeadline=Date.now()+5000;keyboardCapture='';pickerFocused=false;
+  loaded=false;rendererReady=false;activated=false;admittedWindowId=null;
+  renderDeadline=Date.now()+5000;pickerFocused=false;
   createWindow(next,bounds);return true;
 }
 function focusPicker(focused){
@@ -42,10 +48,9 @@ const destinations=require('./t3.cjs').createController(()=>{if(!staging&&!publi
   if(reconcileKeyboardWindow(view))return;
   if(!view&&pickerFocused)focusPicker(false);
   window.webContents.send('pill:destinations',view);
-  window.webContents.send('pill:background-handoff',destinations.background());void measurePicker();
+  window.webContents.send('pill:background-handoff',destinations.background());void measure(current?.revision);
 }});
-async function measurePicker(){if(current)await requestLayout(current.revision);}
-let requestLayout=async()=>{};
+let measure=async()=>{};
 const diagnostics=require('./diagnostics.cjs');
 function diagnosticSnapshot(){
  const now=Date.now(),stateAge=current?Math.max(0,Math.min(86400000,now-lastInput)):null;
@@ -251,8 +256,8 @@ app.whenReady().then(()=>{
     if(hyprland&&!keyboardMode&&admittedWindowId!==null)emit({releaseFocus:admittedWindowId});
     emit(message);
   });
-  async function measure(revision){
-    if(!loaded || window.isDestroyed())return;
+  measure=async(revision)=>{
+    if(!current || !loaded || window.isDestroyed())return;
     const measuredWindow=window,document=documentGeneration;
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000){fail('parent_state_timeout');return;}
     try{
@@ -261,7 +266,7 @@ app.whenReady().then(()=>{
       const size=await geometry.measureContents(window.webContents,area.width,reserve);
       if(window!==measuredWindow||document!==documentGeneration||!loaded||revision!==current?.revision || size?.revision!==revision || !Number.isFinite(size.width)||!Number.isFinite(size.height))return false;
       const width=Math.min(area.width,Math.max(100,Math.ceil(size.width)));
-      const height=Math.min(area.height,Math.max(58,Math.ceil(size.height)));
+      const height=Math.min(area.height,Math.max(hyprland?1:58,Math.ceil(size.height)));
       const before=window.getBounds(),visible=window.isVisible();
       const windowHeight=hyprland&&keyboardMode&&visible?Math.max(before.height,height):height;
       const resized=before.width!==width || before.height!==windowHeight;
@@ -270,7 +275,10 @@ app.whenReady().then(()=>{
       if(nextLayoutKey!==layoutKey){layoutKey=nextLayoutKey;++layoutGeneration;}
       const measuredLayout=layoutGeneration, stale=()=>window!==measuredWindow||window.isDestroyed()||document!==documentGeneration||measuredLayout!==layoutGeneration||!loaded||revision!==current?.revision;
       const repaint=linux && visible && (resized||windowHeight!==height);
-      if(repaint&&(width>before.width||height>before.height)){window.setShape([{x:0,y:0,width:nextVisibleWidth,height}]);appliedShape=null;}
+      if(repaint&&(width>before.width||height>before.height)){
+        window.setShape(hyprland?geometry.shape(nextVisibleWidth,height,size.regions):[{x:0,y:0,width:nextVisibleWidth,height}]);
+        appliedShape=null;
+      }
       const phaseChanged=layoutPhase!==current.phase;
       const previousCenter=phaseChanged?recordingAnchorOffset??(visibleWidth||before.width)/2:recordingCenterOffset??before.width/2;
       const nextCenter=phaseChanged?size.recordingAnchor??nextVisibleWidth/2:size.recordingCenter??width/2;
@@ -290,7 +298,7 @@ app.whenReady().then(()=>{
         if(shapePaint===pendingPaint)shapePaint=null;
         const scale=screen.getDisplayMatching(window.getBounds()).scaleFactor;
         const key=JSON.stringify([visibleWidth,height,scale,inputRegions]);
-        if(key!==appliedShape){window.setShape(inputRegions?geometry.regionShape(inputRegions):geometry.shape(visibleWidth,height));appliedShape=key;}
+        if(key!==appliedShape){window.setShape(geometry.shape(visibleWidth,height,inputRegions));appliedShape=key;}
         if(resized)window.webContents.invalidate();
       }
       return size.revision===current?.revision;
@@ -298,8 +306,7 @@ app.whenReady().then(()=>{
       if(window===measuredWindow&&document===documentGeneration&&loaded&&!window.isDestroyed())fail('layout_measurement_exception');
       return false;
     }
-  }
-  requestLayout=measure;
+  };
   const watchdog=setInterval(()=>{
     if(!rendererReady && Date.now()>renderDeadline){fail('render_readiness_timeout');return;}
     if(current?.phase!=='hidden' && Date.now()-lastInput>5000)fail('parent_state_timeout');
@@ -308,22 +315,19 @@ app.whenReady().then(()=>{
     valid(event,args);
     if(!Number.isSafeInteger(revision) || revision!==current?.revision)return;
     const committed=current.phase==='hidden' || await measure(revision);
-    if(committed && revision===current?.revision){
-      rendererReady=true;
-      if(!readySent){
-        const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
-        if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){fail('invalid_native_window_identity');return;}
-        if(!linux){
-          try{
-            if(require('./native/window.node').preventActivation(windowId)!==true)throw Error('Native window setup refused');
-          }catch{fail('native_window_setup_failed');return;}
-        }
+    if(!committed||revision!==current?.revision)return;
+    rendererReady=true;
+    if(!readySent){
+      const windowId=Number(window.getMediaSourceId().match(/^window:(\d+):\d+$/)?.[1]);
+      if(!Number.isSafeInteger(windowId) || windowId<=0 || windowId>0xffffffff){fail('invalid_native_window_identity');return;}
+      try{
         if(linux)window.setTitle('Apparent Recording Controls '+windowId.toString(16));
-        admittedWindowId=windowId;readySent=true;emit({ready:true,windowId,keyboardMode});
-      }
-      visibility();
-      reportFrame();
+        else if(require('./native/window.node').preventActivation(windowId)!==true)throw Error('Native window setup refused');
+      }catch{fail('native_window_setup_failed');return;}
+      admittedWindowId=windowId;readySent=true;emit({ready:true,windowId,keyboardMode});
     }
+    visibility();
+    reportFrame();
   });
   ipcMain.handle('pill:begin-paste',(event,revision,...args)=>{
     valid(event,args);protocol.command(current,revision,'paste');
@@ -353,11 +357,12 @@ app.whenReady().then(()=>{
     if(!linux)window.setIgnoreMouseEvents(!inside && !pasteGesture,{forward:true});
   },16);
   createWindow=(focusable,bounds)=>{
-    const owned=new BrowserWindow({...(linux?{focusable}:{type:'panel',acceptFirstMouse:true}),width:640,height:58,show:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,
+    const owned=new BrowserWindow({...(linux?{focusable:hyprland||focusable}:{type:'panel',acceptFirstMouse:true}),width:640,height:58,show:false,frame:false,transparent:true,backgroundColor:'#00000000',resizable:false,
     fullscreenable:false,skipTaskbar:true,hasShadow:false,alwaysOnTop:true,title:'Apparent recording controls',
     paintWhenInitiallyHidden:true,
     webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false,webSecurity:true,spellcheck:false,backgroundThrottling:false}});
     window=owned;
+    if(hyprland&&!focusable)owned.setFocusable(false);
     ++documentGeneration;++layoutGeneration;layoutKey='';shapePaint=null;appliedShape=null;inputRegions=null;
     if(!bounds){visibleWidth=0;layoutPhase=null;}
     if(bounds)position(bounds);else if(pendingPlace)applyPlacement(pendingPlace);
@@ -365,9 +370,8 @@ app.whenReady().then(()=>{
   if(linux)window.setVisibleOnAllWorkspaces(true);
   window.setContentProtection(false);
   window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
-  window.webContents.on('will-navigate',event=>event.preventDefault());
-  window.webContents.on('will-attach-webview',event=>event.preventDefault());
-  window.webContents.on('page-title-updated',event=>event.preventDefault());
+  for(const event of ['will-navigate','will-attach-webview','page-title-updated'])
+    window.webContents.on(event,event=>event.preventDefault());
   window.webContents.on('render-process-gone',(_event,details)=>{if(window!==owned)return;fail('renderer_gone',{
     rendererReason:details?.reason,exitCode:details?.exitCode});});
   window.webContents.on('did-start-loading',()=>{if(window!==owned)return;++documentGeneration;++layoutGeneration;layoutKey='';shapePaint=null;appliedShape=null;loaded=false;pending=false;rendererReady=false;pasteGesture=null;setSharingConfirmation(null);renderDeadline=Date.now()+5000;});
@@ -380,16 +384,13 @@ app.whenReady().then(()=>{
     visibility();
   });
   window.on('closed',()=>{if(window!==owned)return;note('window_closed');clearInterval(watchdog);clearInterval(pointerTimer);app.quit();});
-  window.on('show',()=>{if(window===owned)reportFrame();});
-  window.on('move',()=>{if(window===owned)reportFrame();});
-  window.on('resize',()=>{if(window===owned)reportFrame();});
-  if(linux){
-    for(const event of ['show','move','resize'])window.on(event,()=>{
-      if(window!==owned)return;const visible=window.isVisible();
-      if(activated && rendererReady && current && current.phase!=='hidden' && visible)
-        emit({pin:true,phase:current.phase,activated,rendererReady,visible});
-    });
-  }
+  for(const event of ['show','move','resize'])window.on(event,()=>{
+    if(window!==owned)return;
+    reportFrame();
+    const visible=linux&&window.isVisible();
+    if(visible&&activated&&rendererReady&&current&&current.phase!=='hidden')
+      emit({pin:true,phase:current.phase,activated,rendererReady,visible});
+  });
   window.on('move',()=>{
     if(window!==owned)return;const b=window.getBounds(),a=screen.getDisplayMatching(b).workArea;
     if(current?.draggable && expected && (b.x!==expected.x || b.y!==expected.y)){emit({moved:true});expected=b;}
@@ -400,4 +401,3 @@ app.whenReady().then(()=>{
   };
   createWindow(false);
 });
-app.on('window-all-closed',()=>app.quit());
