@@ -16,7 +16,11 @@ export const branchCleanupInput = (path: string) =>
 
 export function admissionTooling(path: string): boolean {
   return (
-    path === ".githooks/pre-commit" ||
+    [
+      ".githooks/pre-commit",
+      ".githooks/prepare-commit-msg",
+      ".githooks/commit-msg",
+    ].includes(path) ||
     path.startsWith("enablement/directory-width/") ||
     path.startsWith("shared/enablement/dependency-policy/") ||
     path.startsWith("shared/enablement/ci/") ||

@@ -27,14 +27,16 @@ It writes only repository, issue number/ID, host, schema and validation time to
 No credentials or issue bodies are cached. Missing/invalid bindings print the
 binding command. Local account control of this metadata is trusted.
 
-The prepared `prepare-commit-msg` hook fills a missing trailer from that binding.
+With `core.hooksPath=.githooks`, the tracked `prepare-commit-msg` hook fills a
+missing trailer from that binding.
 A valid explicit trailer is preserved. `commit-msg` requires the final trailer
 to match the API-validated binding. Bind another issue explicitly when changing
 workstream. Commit hooks use the cached validation and require no network.
 Previously validated existence is a historical observation, with no freshness
 claim at commit time. Custom message hooks run first with their original arguments;
 our validation then sees their final message. Preparation backs up custom hooks
-and changes no live configuration. Parent integration owns activation.
+and changes no live configuration. Parent integration owns activation for
+custom hook paths.
 
 Before expensive verification, pre-push authenticates the live
 `refs/heads/main` of `tryapparent/apparent` once. It checks the union of commits
@@ -87,6 +89,6 @@ not close issues. A PR is unnecessary for the first branch push. This feature
 creates no issues, comments, labels, dashboards or project automation.
 
 For authentication diagnosis, use `gh auth status --hostname github.com` before
-retrying the binding command. The generated message hooks live in the prepared
-hook directory and delegate to the tracked TypeScript implementation. They add
-no tracked extensionless shell paths requiring a language-policy exception.
+retrying the binding command. The tracked and prepared message hooks delegate
+to the same TypeScript implementation. The staged language guard pins the two
+Git-required extensionless entrypoints by exact path, executable mode and digest.

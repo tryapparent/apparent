@@ -7,6 +7,7 @@ import sys
 import unittest
 from unittest.mock import patch
 from test_verification import verification
+import test_pre_push_guard
 
 
 class TempPreflightTests(unittest.TestCase):
@@ -89,6 +90,34 @@ class TempPreflightTests(unittest.TestCase):
         patterns = [call.args[0][-1] for call in run.call_args_list]
         self.assertEqual(patterns, ['shared/ui/scripts/check-theme.py', 'test_*.py', '--contracts'])
         self.assertTrue(all(call.kwargs['check'] for call in run.call_args_list))
+
+    def test_native_push_preflights_before_rust_diagnostics(self):
+        fixture = test_pre_push_guard.PrePushGuardTests()
+        self.addCleanup(fixture.doCleanups)
+        fixture.setUp()
+        diagnostics = fixture.repo / "enablement/local-tests/rust/check.ts"
+        diagnostics.write_text(
+            "import {writeFileSync} from 'node:fs';\n"
+            "writeFileSync(process.env.COMMAND_LOG + '.diagnostics', 'reached');\n")
+        def git(*args):
+            result = test_pre_push_guard.run("git", *args, cwd=fixture.repo)
+            result.check_returncode()
+            return result.stdout.strip()
+        git("add", ".")
+        git("commit", "-qm", "observe diagnostics")
+        fixture.head = git("rev-parse", "HEAD")
+        marker = Path(str(fixture.log) + ".diagnostics")
+        env = dict(fixture.env)
+        del env["TMPDIR"]
+        rejected = fixture.push(env=env)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("verification TMPDIR preflight", rejected.stderr)
+        self.assertFalse(marker.exists(), "Rust diagnostics ran before TMPDIR preflight")
+        self.assertFalse(fixture.log.exists(), "Cargo ran with inadmissible TMPDIR")
+        accepted = fixture.push()
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(marker.read_text(), "reached")
+        self.assertIn("cargo build", fixture.log.read_text())
 
     def test_rejection_precedes_all_subprocesses(self):
         with patch.dict(os.environ, TMPDIR='/missing-preflight-fixture'), patch.object(verification.subprocess, 'run') as run:
