@@ -61,7 +61,7 @@ impl Cli {
     pub(super) fn reads_capture(&self) -> bool {
         matches!(
             self.command,
-            Some(Command::Inspect { .. } | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
+            Some(Command::Inspect(_) | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
         )
     }
 }
@@ -382,25 +382,7 @@ enum Command {
         command: HexCommand,
     },
     /// Fetch and inspect a Connect capture ID, or inspect a local bundle (or `latest`).
-    Inspect {
-        /// Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or `latest`.
-        #[arg(default_value = "latest")]
-        bundle: PathBuf,
-        #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
-        reader: Option<String>,
-        /// Emit raw `apparent.json` instead of `summary.md` (with `--marks`, the marks as JSON).
-        #[arg(long)]
-        json: bool,
-        /// List the marks: keyframe, number as the summary shows it (✎②), time, shape, what it
-        /// was drawn on, and id, for `apparent zoom --mark`.
-        #[arg(long)]
-        marks: bool,
-        #[arg(long, conflicts_with_all = ["json", "marks"], help = "Read earlier transcript examples for a speaking-style handoff")]
-        style_examples: bool,
-        /// Turn an experiment on for this summary (e.g. `agentContext`). Repeatable.
-        #[arg(long = "experiment", value_name = "NAME")]
-        experiments: Vec<String>,
-    },
+    Inspect(super::transcript::InspectArgs),
     /// Extract a dense burst of frames from a `.apparent` bundle's time range (`M:SS` or seconds).
     Frames {
         /// Path to `.apparent` bundle directory or `latest`.
@@ -1445,16 +1427,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Command::Inspect {
-            bundle,
-            reader,
-            json,
-            marks,
-            style_examples,
-            experiments,
-        } => {
-            super::transcript::inspect(bundle, reader, json, marks, style_examples, experiments)
-        }
+        Command::Inspect(args) => super::transcript::inspect(args),
         Command::Clean {
             dry_run,
             captures,
