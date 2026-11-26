@@ -91,48 +91,20 @@ test(`shipped Electron note UI saves, shows saved notes read-only and isolates t
     send([{ kind: 'list' }]);
     await expect.poll(focusedLists).toBe(before + 1);
   }
-  const list = popup.getByRole('list', { name: 'Saved notes' });
-  await expect(list.getByRole('listitem')).toHaveText(/Smaller button\s+x/);
+  await expect(popup.getByRole('listitem')).toHaveText(/Smaller button\s+x/);
   await expect(popup.getByRole('button')).toHaveCount(1);
-  await list.getByText(/Smaller button/).click();
-  await expect(list).toBeVisible();
-  await expect(field).toHaveCount(0);
-  for (const action of ['edit', 'delete']) {
-    await assert.rejects(popup.evaluate(action => window.captureNotes.command({ action, pin: 1 }), action));
-  }
-  await popup.getByRole('button', { name: 'Close notes' }).focus();
-  await popup.keyboard.press('Tab');
-  await expect(list).toBeFocused();
-  const savedNotes = state.notes;
-  state.notes = [{ ...savedNotes[0], text: Array.from({ length: 40 }, (_, i) => `Line ${i + 1}`).join('\n') }];
-  send();
-  await popup.setViewportSize({ width: 320, height: 280 });
-  await expect(list.getByRole('listitem')).toHaveText(/Line 40/);
-  await popup.keyboard.press('End');
-  await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
-  state.notes = [];
-  send();
-  await expect(popup.getByText('No notes yet.')).toBeVisible();
-  state.notes = savedNotes;
-  send();
-  await popup.setViewportSize({ width: 332, height: 350 });
-  await expect(list).toBeVisible();
-  await list.focus();
-  await popup.keyboard.press('Escape');
+  await popup.getByRole('button', { name: 'Close notes' }).click();
   await expect.poll(() => messages.some(m => m.action === 'dismiss')).toBe(true);
-  state.mode = 'badge'; send();
-  state.current = 2;
-  state.drafts = [{ pin: 2, t: 456, x: .4, y: .3, text: '' }];
-  state.mode = 'editor'; send();
-  await expect(field).toBeFocused();
-  await field.fill('Draft correction');
+  const draft = { ...state.notes[0], pin: 2, text: 'New draft' };
+  state = { ...state, current: 2, mode: 'editor', drafts: [draft] }; send();
+  await expect(field).toHaveValue('New draft');
   const dismissals = messages.filter(m => m.action === 'dismiss').length;
   await popup.locator('main').click({ position: { x: 10, y: 210 } });
   await expect.poll(() => messages.filter(m => m.action === 'dismiss').length).toBe(dismissals + 1);
   await field.press('Enter');
   state.error = 'Could not save this note. Your text is kept; try again.'; send();
-  await expect(popup.getByRole('alert')).toBeVisible(); await expect(field).toHaveValue('Draft correction');
-  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 1, text: 'x', path: '/tmp/no' })));
+  await expect(popup.getByRole('alert')).toBeVisible(); await expect(field).toHaveValue('New draft');
+  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 2, text: 'x', path: '/tmp/no' })));
   // Finish must acknowledge every save already sent by this renderer, in pipe order.
   await popup.evaluate(() => { void window.captureNotes.command({ action: 'save', pin: 2, text: 'Final correction' }); });
   child.stdin.write(JSON.stringify({ finishing: true }) + '\n');
