@@ -9,6 +9,7 @@ import {isoTime} from './policy.ts';
 import * as ledger from './state.ts';
 import {markdown, chart} from './format.ts';
 import {collectGitHub, type ReadGitHub} from './github.ts';
+import {reviewPushReceipts} from '../push/review.ts';
 
 const json = (file: string) => JSON.parse(readFileSync(file, 'utf8'));
 const save = (file: string, value: unknown) => writeFileSync(file, JSON.stringify(value, null, 2) + '\n', {mode: 0o600, flag: 'wx'});
@@ -21,7 +22,7 @@ export async function main(args: string[], readGitHub?: ReadGitHub) {
     options.set(args[i], args[i + 1]);
   }
   const allowed: Record<string, string[]> = {
-    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs', 'github-repo', 'ci-run-limit', 'ci-exact-attempt'],
+    collect: ['input', 'workspace', 'exclude-workspace', 'from', 'to', 'out', 'threads', 'jobs', 'github-repo', 'ci-run-limit', 'ci-exact-attempt', 'runner-receipts'],
     init: ['state', 'scope', 'since'], begin: ['state', 'run-id', 'end'], commit: ['state', 'run-id', 'decision'],
     abort: ['state', 'run-id'], plan: ['state'], prepare: ['state', 'key'], record: ['state', 'request-id', 'receipt'],
     delivered: ['state', 'request-id', 'receipt'], benefit: ['state', 'key', 'receipt'], show: ['state'], format: ['input', 'out'], chart: ['input', 'out'],
@@ -43,6 +44,8 @@ export async function main(args: string[], readGitHub?: ReadGitHub) {
       scanned++; malformed += r.malformed; orphanResults += r.orphanResults; calls.push(...r.calls);
     }
     const census = summarize(calls, from, to);
+    const pushTiming = options.has('--runner-receipts') ?
+      reviewPushReceipts(calls, resolve(get('runner-receipts')), from, to) : undefined;
     const grouped = new Map<string, number[]>();
     for (const p of census.correlatedProcesses) grouped.set(p.category, [...(grouped.get(p.category) ?? []), p.observedSpanSeconds]);
     const processGroups = [...grouped].map(([label, durations]) => {
@@ -54,7 +57,7 @@ export async function main(args: string[], readGitHub?: ReadGitHub) {
     const github = options.has('--github-repo') ? collectGitHub(get('github-repo'),get('from'),get('to'),
       Number(options.get('--ci-run-limit') ?? 12),readGitHub,options.get('--ci-exact-attempt')) : null;
     const jobs = options.has('--jobs') ? inspectJobs(json(get('jobs')), from, to) : github ? {...inspectJobs(github.runs,from,to),collection:github.coverage} : null;
-    const result = {schema: 1, census, processGroups, threads, jobs, coverage: {scanned, malformed, orphanResults,
+    const result = {schema: 1, census, processGroups, threads, jobs, pushTiming, coverage: {scanned, malformed, orphanResults,
       threadsProvided: threads !== null, hostedJobsProvided: jobs !== null},
       requiredLenses: ['human-dependency', 'time-eater', 'confusion-maintainability', 'feedback-gap'],
       warning: 'Rank measured totals; count × mean = total. Tool envelopes, recovered process spans and hosted jobs overlap: never add them. Human/code/stale-wait verdicts require original evidence, not keyword matches.'};

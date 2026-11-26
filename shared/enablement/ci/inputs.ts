@@ -16,7 +16,11 @@ export const branchCleanupInput = (path: string) =>
 
 export function admissionTooling(path: string): boolean {
   return (
-    path === ".githooks/pre-commit" ||
+    [
+      ".githooks/pre-commit",
+      ".githooks/prepare-commit-msg",
+      ".githooks/commit-msg",
+    ].includes(path) ||
     path.startsWith("enablement/directory-width/") ||
     path.startsWith("shared/enablement/dependency-policy/") ||
     path.startsWith("shared/enablement/ci/") ||
@@ -25,7 +29,23 @@ export function admissionTooling(path: string): boolean {
   );
 }
 
-export function admissionConsumersKnown(cwd: string, head: string): boolean {
+export const codexStopHookTest =
+  "enablement/hooks/make-it-apparent-stop.test.ts";
+
+const codexStopHookInputs = new Set([
+  "enablement/hooks/make-it-apparent-stop.ts",
+  codexStopHookTest,
+  "enablement/hooks/README.md",
+]);
+
+export function admissionConsumersKnown(
+  cwd: string,
+  head: string,
+  changed: string[],
+): boolean {
+  const pattern = changed.every((path) => codexStopHookInputs.has(path))
+    ? "enablement/hooks|make-it-apparent-stop"
+    : "[.]githooks/pre-commit|enablement/directory-width|shared/enablement/(dependency-policy|ci|issues)|@apparent/dependency-policy|enablement/hooks|make-it-apparent-stop";
   const result = spawnSync(
     "git",
     [
@@ -33,7 +53,7 @@ export function admissionConsumersKnown(cwd: string, head: string): boolean {
       "-I",
       "-l",
       "-E",
-      "[.]githooks/pre-commit|enablement/directory-width|shared/enablement/(dependency-policy|ci|issues)|@apparent/dependency-policy",
+      pattern,
       head,
       "--",
       "capture",

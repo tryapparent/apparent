@@ -6,10 +6,8 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import {
-  AutoPaste,
-  type AutoPasteProps,
-} from "../../../handoff/settings/auto-paste";
+import { AutoPaste } from "../../../handoff/settings/auto-paste";
+import type { AutoPasteBridge } from "../../../handoff/settings/auto-paste-host";
 import { T3Settings } from "../../../handoff/settings/t3";
 import { BugReport } from "../../../handoff/feedback/report-dialog";
 import type { FeedbackBridge } from "../../../handoff/feedback/contract";
@@ -45,6 +43,7 @@ import { DisclosureMenu } from "@apparent/ui/disclosure-menu";
 const panes = [
   "General",
   "Recording",
+  "Handoff",
   "Storage",
   "Permissions",
   "Agents",
@@ -61,6 +60,7 @@ const icons = [
     <circle cx="12" cy="12" r="9" />
     <circle cx="12" cy="12" r="3" />
   </>,
+  <path d="M4 12h14m-5-5 5 5-5 5" />,
   <>
     <path d="m5 4-3 9v7h20v-7l-3-9ZM2 13h20M6 17h.01M10 17h.01" />
   </>,
@@ -88,7 +88,6 @@ declare module "react" {
       > & {
         pane: string;
         pushToTalkExperiment?: ComponentType<PushToTalkProps>;
-        autoPasteExperiment?: ComponentType<AutoPasteProps>;
         speakingStyleExperiment?: typeof SpeakingStyle;
         desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
         frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
@@ -113,6 +112,7 @@ declare global {
     apparentAbout: AboutBridge;
     apparentFeedback?: FeedbackBridge;
     apparentRecording: RecordingBridge;
+    apparentHandoff: AutoPasteBridge;
     apparentPermissions: PermissionBridge;
   }
 }
@@ -239,6 +239,8 @@ function Settings() {
           <General connect={<ConnectCard flow={connect} />} />
         ) : current === "Recording" ? (
           <RecordingSection bridge={window.apparentRecording} />
+        ) : current === "Handoff" ? (
+          <AutoPaste bridge={window.apparentHandoff} />
         ) : current === "Permissions" ? (
           <PermissionsSection bridge={window.apparentPermissions} />
         ) : current === "About" ? (
@@ -254,7 +256,6 @@ function Settings() {
               current === "Labs" ? SpeakingStyle : undefined
             }
             pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
-            autoPasteExperiment={current === "Labs" ? AutoPaste : undefined}
             agentContextExperiment={AgentContextPreference}
             desktopFrogExperiment={
               current === "Labs" ? DesktopFrogWithWardrobe : undefined

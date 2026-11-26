@@ -70,8 +70,8 @@ granted and each on-demand sheet: `target/debug/apparent-helper onboarding --ren
 - **General**: Launch at login and the two shortcuts, Record
   (`⌥⇧S`) and Paste last capture (`⌥⇧V`, which can be turned off).
 - **Recording**: the microphone, with its input level, the transcriber (Apple Speech with its
-  language, Hex while it runs, with its model and language, or Command when it's configured) and,
-  Video export (on by default; its existing Settings section is still labelled Experimental).
+  language, Hex while it runs, with its model and language, or Command when it's configured), and
+  where to find the export command.
 - **Storage**: how long recordings are kept, where new captures go (Change…/Reset on macOS, `"capturesDir"` in
   `~/.config/apparent/config.json` everywhere; captures already made stay put, and an unusable folder falls back to the built-in one), how much space they take, and Show in Finder.
 - **Permissions**: the onboarding checklist, so a permission can be turned on later.
@@ -84,7 +84,7 @@ or ⌃ (a function key can stand alone), and Apparent turns down ⌘ with one ke
 uses, the other Apparent shortcut, and anything another app has already taken. The arrow beside the
 heading puts the default back. While the recorder listens, Apparent's own shortcuts are paused. They
 are saved as `"shortcuts"` in `~/.config/apparent/config.json`. The menu keeps Record Screen, Choose
-What to Record…, Open Latest Capture, Export Last Capture as Video… (when on), Settings…, Check
+What to Record…, Open Latest Capture, Export Last Capture as Video…, Settings…, Check
 for Updates… and Quit.
 
 **Microphone** lists the connected inputs, with System default first, which follows whatever macOS

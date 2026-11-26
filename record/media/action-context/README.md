@@ -58,3 +58,47 @@ captures have no action context. Notes and laser points currently have no row.
 The collector uses a bounded background queue and discards results older than
 50 ms from submission. Work remains off the input sampling path and the bundle
 can be saved when evidence is missing.
+
+## Pin snapshots
+
+With **Recording context for agents** enabled, a pin in a live Screen or Area
+recording can add an action-time accessibility observation on Hyprland or macOS. The row has
+`kind: "stroke"` and an optional `pinWindow` with the pin number, elapsed
+milliseconds from the pin timestamp to the start of the read, a partial-result
+flag, and a bounded list of elements. Each element has a role and can have a
+name, states, an index into the element list for its parent, and window-relative
+bounds in the form `[x, y, width, height]`. Bounds are optional and use the
+window coordinate space.
+
+A dedicated worker checks the compositor window and the accessibility root
+before and after reading. Apparent's own note editor may take focus when the
+pin appears. In that case the worker verifies the exact editor process and the
+underlying Chromium or other app window. An unrelated focus or title change
+leaves the pin without the observation. When a browser exposes the document
+under the pin, its branch is read before browser chrome. The producer reads
+accessible names and skips editable, password, and terminal subtrees. It does
+not query text or value interfaces. The saved summary and clipboard show up to
+four named elements alongside the matching pin and label them as app data.
+Inspect `actionContext[].pinWindow` in the bundle for the rest.
+
+On macOS the worker matches the accessibility window under the pin to the
+Window Server's window ID, owner, and geometry. Element bounds are in macOS
+points. Allow Accessibility in Privacy & Security before recording.
+
+### Verify in an isolated native desktop
+
+1. On Hyprland or macOS, open a synthetic app exposing a disabled Save button, a checked Auto-save
+   checkbox and a password field with a test value. Enable **Recording context
+   for agents** and start a Screen recording.
+2. Place a pin inside the window while it stays foreground. Finish
+   and inspect the contact sheet, `apparent.json`, `summary.md`, and the copy
+   text. Match the pin number and timestamp. Expect Save's disabled and
+   Auto-save's checked states even though neither control was clicked. The
+   password value should be absent from the accessibility observation.
+3. Repeat with the lab disabled. The ordinary pin and images still save and
+   the new recording contains no `pinWindow` data. With the lab on, repeat
+   against a window that supplies no accessibility tree. The recording and pin
+   still finish.
+4. On macOS, repeat the enabled case in Safari with the Dock visible and
+   then with it hidden. Keep the cursor at the pin through the read. Expect
+   the same named control states in both handoffs.

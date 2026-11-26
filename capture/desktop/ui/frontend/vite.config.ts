@@ -68,8 +68,8 @@ export default defineConfig({
       writeFileSync(path.join(reportingOutput, 'reporting.cjs'), outputText);
     },
   }, { name: 'hermes-native-bridge', async closeBundle() {
-    await build({ entryPoints: { 'hermes-main': 'src/hermes/main.ts', 'hermes-preload': 'src/hermes/preload.ts' },
-      bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outdir: 'dist', outExtension: { '.js': '.cjs' } });
+    await build({ entryPoints: { 'hermes-main': '../../../../composition/hermes/main/index.ts', 'hermes-preload': '../../../../composition/hermes/preload/index.ts' },
+      bundle: true, platform: 'node', format: 'cjs', external: ['electron'], nodePaths: [path.resolve('node_modules')], outdir: 'dist', outExtension: { '.js': '.cjs' } });
   } }, { name: 'quit-window', async closeBundle() {
     const source = '../../../../composition/quit';
     const outdir = 'dist/quit';

@@ -280,7 +280,7 @@ await bendScratch(async (scratch) => {
     ),
   );
   assert.deepEqual(repairTable(proofOutput), repair);
-  const [markPriority, markIdentity] = JSON.parse(
+  const [markPriority, markIdentity, markStrokeGroup] = JSON.parse(
     run(
       process.execPath,
       [
@@ -293,6 +293,8 @@ await bendScratch(async (scratch) => {
           policy.prefer_mark_role(candidate, selected))),
         Array.from({length: 4}, (_, flags) =>
           policy.admit_mark_identity(Boolean(flags & 1), Boolean(flags & 2))),
+        Array.from({length: 16}, (_, bits) =>
+          policy.join_mark_strokes(...[1, 2, 4, 8].map(flag => Boolean(bits & flag)))),
       ]));
       `,
       ],
@@ -302,6 +304,7 @@ await bendScratch(async (scratch) => {
   for (const [name, expected] of [
     ["mark-role-priority", markPriority],
     ["mark-identity", markIdentity],
+    ["mark-stroke-group", markStrokeGroup],
   ]) {
     assert.deepEqual(
       JSON.parse(

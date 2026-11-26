@@ -1,8 +1,8 @@
 # Desktop UI foundation
 
 Opt-in Electron development window using React/TypeScript, shadcn/ui and Tailwind.
-It does **not** replace the installed app, Settings, pill or launcher. The opt-in
-window has native Linux and macOS checks; see their distinct scope below. No Windows support.
+This window is for development. See [installed Settings](../../../../composition/settings/README.md)
+for the shared shell and native effects.
 
 From the repository root, with Node 22 and npm 10 or newer:
 
@@ -143,8 +143,7 @@ shared sources, rerun `npm ci`; builds reject a stale installed snapshot.
 ## Experimental General → Apparent Connect
 
 The default-on `connectSettings` flag also gates this opt-in window's Connect
-card; an explicit false hides it. Visibility alone never enables uploads. Installed Settings still use their existing native presentation;
-this slice does not change routing or onboarding. See
+card. Visibility alone never enables uploads. See
 `../../docs/onboarding-and-settings.md` for consent and recovery behavior.
 
 Electron main owns one persistent, same-user Rust socket/controller. Opening and
@@ -715,9 +714,7 @@ The private parent pipe projects only version, updater availability, channel and
 check status. React/TypeScript owns the check/result controls and keyboard choices;
 the native owner remains authoritative for config writes, update transactions,
 capture-safe admission and relaunch. Website/Source accept fixed link identifiers.
-Other panes retain their existing routes. Missing assets or a failed child restore
-native About; retain that fallback until packaged Linux/macOS update, restart,
-navigation and failure acceptance verifies its replacement and all consumers.
+Reopen Settings after a child exit. Missing runtime assets require installation repair.
 Run the focused renderer/bridge check with
 `xvfb-run -a node --experimental-strip-types --test tests/settings/about.ts`
 on Linux after building. This synthetic parent-state test is not native update proof.

@@ -72,6 +72,7 @@ fn compact_browser_handoff_groups_verified_clicks_and_keeps_unverified_actions_s
         page_observation(6000, second),
     ];
     b.action_context.push(ActionContext {
+        pin_window: None,
         kind: ActionKind::Pointer,
         t: 4000,
         window: ActionWindow {
@@ -121,6 +122,7 @@ fn compact_mark_page_requires_every_stroke_to_resolve_to_the_same_url() {
     };
     b.action_context = [1500, 3000]
         .map(|t| ActionContext {
+            pin_window: None,
             kind: ActionKind::Stroke,
             t,
             window: window.clone(),

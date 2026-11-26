@@ -390,6 +390,16 @@ test("a confirmed T3 send keeps its tab and stays centered on the next recording
   );
   await trigger.click();
   assert.equal((await pickerRow.boundingBox()).height, rowHeight);
+  await page.evaluate(() => {
+    document.body.style.maxHeight = "58px";
+  });
+  await page.keyboard.press("ArrowDown");
+  const bodyScroll = await page.evaluate(() => {
+    const top = document.body.scrollTop;
+    document.body.style.removeProperty("max-height");
+    return top;
+  });
+  assert.equal(bodyScroll, 0, "keyboard selection must scroll only the list");
   await page.getByRole("option", { name: /Chosen thread/ }).click();
   const confirmed = page.getByRole("button", { name: /Will send when ready/ });
   await expect(confirmed).toBeVisible();

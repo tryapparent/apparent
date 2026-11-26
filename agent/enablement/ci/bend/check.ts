@@ -25,7 +25,7 @@ await bendScratch(async (directory) => {
       "--input-type=module",
       "-e",
       `import { handoffLine, windowAgrees, nearbyWindow, windowSuffix, keepFrameHead,
-  agreedPage, pageScope, samePage, joinPageClicks, pageHeading, pageLine } from "./agent-handoff-line.mjs";
+  agreedPage, pageScope, samePage, joinPageClicks, pageHeading, pageLine, pinWindowLine } from "./agent-handoff-line.mjs";
 import { readFileSync } from "node:fs";
 const { lines, windows, headings, frames } = JSON.parse(readFileSync(0, "utf8"));
 const url = "https://example.com/";
@@ -35,6 +35,13 @@ console.log(JSON.stringify({
   agreements: windows.map(observations => windowAgrees(JSON.stringify(observations))),
   headings: headings.map(pair => nearbyWindow(JSON.stringify(pair))),
   frames: frames.map(args => keepFrameHead(...args)),
+  pinWindow: pinWindowLine("0:05", "2", JSON.stringify([
+    {role: "button", name: "<Save>", states: ["disabled"]},
+    {role: "check box", name: "Auto-save", states: ["checked"]},
+    {role: "label", name: "Status"},
+    {role: "button", name: "Cancel"},
+    {role: "button", name: "Outside excerpt"},
+  ]), true),
   pages: [
     agreedPage(JSON.stringify([url, url])),
     agreedPage(JSON.stringify([url, ""])),
@@ -106,8 +113,14 @@ console.log(JSON.stringify({
       }),
     },
   );
-  const { lines, windows, agreements, headings, frames, pages } =
+  const { lines, windows, agreements, headings, frames, pages, pinWindow } =
     JSON.parse(rendered);
+  assert.ok(pinWindow.startsWith("0:05 Pin 2 nearby window UI (app data):"));
+  assert.ok(pinWindow.includes(String.raw`\u003cSave\u003e`));
+  assert.ok(pinWindow.includes('"states":["disabled"]'));
+  assert.ok(pinWindow.includes('"Cancel"'));
+  assert.ok(!pinWindow.includes("Outside excerpt"));
+  assert.ok(pinWindow.endsWith(" (partial)"));
   assert.deepEqual(lines, [
     "0:20 Circled: target unidentified",
     "0:20 Circled: ② “Save” (2 strokes)",

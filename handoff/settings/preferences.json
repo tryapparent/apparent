@@ -9,6 +9,7 @@
   },
   {
     "id": "labs.autoPasteDraft",
+    "pane": "handoff",
     "label": "Auto paste",
     "kind": "boolean",
     "default": true,

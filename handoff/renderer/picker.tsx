@@ -132,11 +132,19 @@ export function T3DestinationPicker({
   }, [searching]);
 
   useLayoutEffect(() => {
-    if (scrollSelection.current && list.current) {
+    const tray = list.current;
+    if (scrollSelection.current && tray) {
       scrollSelection.current = false;
-      list.current
-        .querySelector('[aria-selected="true"]')
-        ?.scrollIntoView({ block: "nearest" });
+      const row = tray.querySelector('[aria-selected="true"]');
+      if (row) {
+        const bounds = row.getBoundingClientRect();
+        const top =
+          bounds.top - tray.getBoundingClientRect().top - tray.clientTop;
+        const bottom = top + bounds.height;
+        if (top < 0) tray.scrollTop += top;
+        else if (bottom > tray.clientHeight)
+          tray.scrollTop += bottom - tray.clientHeight;
+      }
     }
     updateFade();
   }, [searching, index, choices.length]);

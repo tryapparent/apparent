@@ -72,6 +72,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     for (const change of [
       { key: "lowerPlayback", value: true },
       { key: "playbackLevel", value: 35 },
+      { key: "videoExport", value: false },
     ]) {
       await assert.rejects(
         page.evaluate(
@@ -82,7 +83,11 @@ test("staged Recording opens directly, receives native facts and saves only on i
       );
       assert.equal(actions.some((action) => action.key === change.key), false);
     }
-    const video = page.getByRole("switch", { name: "Video export" });
+    const exportSection = page.getByRole("region", { name: "Export", exact: true });
+    const exportGuide = exportSection.getByText(
+      "To save your latest capture as an MP4, choose Export Latest Video… from the Apparent menu.",
+      { exact: true },
+    );
     const wordmark = page.getByRole("img", { name: "Apparent", exact: true });
     for (const width of [720, 640]) {
       for (const colorScheme of ["light", "dark"] as const) {
@@ -98,27 +103,13 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ),
           true,
         );
-        if (proof) {
-          await screenshot(`recording-${width}-${colorScheme}`);
-          await video.focus();
-          await screenshot(`export-focus-${width}-${colorScheme}`);
-          await input.focus();
-        }
+        await screenshot(`recording-${width}-${colorScheme}`);
+        await exportGuide.scrollIntoViewIfNeeded();
+        await expect(exportGuide).toBeInViewport({ ratio: 1 });
+        await expect(exportSection.getByRole("switch")).toHaveCount(0);
+        await screenshot(`video-export-${width}-${colorScheme}`);
       }
     }
-    fixture.refuse = true;
-    await video.press("Space");
-    const error = page.getByRole("alertdialog", {
-      name: "Couldn’t confirm the recording preference",
-    });
-    await expect(error).toBeVisible();
-    await expect(video).not.toBeChecked();
-    fixture.refuse = false;
-    await error.getByRole("button", { name: "Try again" }).press("Enter");
-    await expect(error).not.toBeVisible();
-    await expect(video).toBeChecked();
-    await expect(video).toBeFocused();
-
     fixture.mac();
     await expect(
       page.getByRole("combobox", { name: "Language" }),
@@ -129,6 +120,19 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(volumeSection).toBeVisible();
     await expect(volumeSwitch).toBeChecked();
     await expect(volumeSlider).toBeEnabled();
+    fixture.refuse = true;
+    await volumeSwitch.press("Space");
+    const error = page.getByRole("alertdialog", {
+      name: "Couldn’t confirm the recording preference",
+    });
+    await expect(error).toBeVisible();
+    await expect(volumeSwitch).toBeChecked();
+    fixture.refuse = false;
+    await error.getByRole("button", { name: "Try again" }).press("Enter");
+    await expect(error).not.toBeVisible();
+    await expect(volumeSwitch).not.toBeChecked();
+    await expect(volumeSwitch).toBeFocused();
+
     fixture.hex();
     const language = page.getByRole("textbox", { name: "Hex language" });
     const apply = page.getByRole("button", { name: "Apply", exact: true });
@@ -192,8 +196,8 @@ test("staged Recording opens directly, receives native facts and saves only on i
       await page.evaluate(async () => {
         try {
           await Reflect.get(window, "apparentRecording").save({
-            key: "videoExport",
-            value: false,
+            key: "transcriber",
+            value: "hex",
           });
           return false;
         } catch {
@@ -204,9 +208,9 @@ test("staged Recording opens directly, receives native facts and saves only on i
     );
     await navigate("Recording");
     assert.equal(page.url(), startUrl);
-    await expect(video).toBeChecked();
+    await expect(exportGuide).toBeVisible();
 
-    for (const width of [720, 640])
+    for (const width of [740, 640])
       for (const theme of ["light", "dark"] as const) {
         const variant = `${width}-${theme}`;
         await setVariant(width, theme);
@@ -297,9 +301,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
           ["Recording", "Transcription after recording", "transcription"],
           ["Labs", "Live local transcription", "transcription-live"],
           ["Recording", "Notes", "notes"],
-          ["Recording", "Export", "video-export"],
           ["Labs", "Public sharing links", "public-links"],
-          ["Labs", "Auto paste", "auto-paste-unavailable"],
         ]) {
           if (pane !== "Recording") await navigate(pane);
           const target = page
@@ -319,51 +321,34 @@ test("staged Recording opens directly, receives native facts and saves only on i
               page.getByText(/live preview of your English speech/),
             ).toBeInViewport();
           }
-          if (heading === "Auto paste") {
-            await expect(
-              page.getByRole("switch", { name: heading }),
-            ).toBeDisabled();
-            await expect(
-              page.getByText("Auto paste is unavailable on this platform.", { exact: false }),
-            ).toBeVisible();
-            await expect(
-              page.getByText(
-                /Keep the same draft field focused.*You decide when to send/,
-              ),
-            ).toBeVisible();
-          }
           await screenshot(`${name}-${variant}`);
           if (pane !== "Recording") await navigate("Recording");
-          if (heading === "Auto paste") {
-            fixture.autoPasteSaved = true;
-            await navigate("Labs");
-            const autoPaste = page.getByRole("switch", { name: heading });
-            await expect(autoPaste).toBeChecked();
-            await expect(autoPaste).toBeEnabled();
-            await expect(autoPaste).toHaveAccessibleDescription(
-              /use Paste on the saved recording/,
-            );
-            await screenshot(`auto-paste-unavailable-saved-${variant}`);
-            await autoPaste.press("Space");
-            await expect(autoPaste).not.toBeChecked();
-            await expect(autoPaste).toBeDisabled();
-            await navigate("Recording");
-
-            fixture.autoPasteSupported = true;
-            await navigate("Labs");
-            await expect(autoPaste).toBeEnabled();
-            await autoPaste.press("Space");
-            await expect(autoPaste).toBeChecked();
-            await expect(autoPaste).toHaveAccessibleDescription(
-              /Keep the same draft field focused.*You decide when to send/,
-            );
-            await screenshot(`auto-paste-supported-${variant}`);
-            await autoPaste.press("Space");
-            await expect(autoPaste).not.toBeChecked();
-            fixture.autoPasteSupported = false;
-            await navigate("Recording");
-          }
         }
+        await navigate("Handoff");
+        const autoPaste = page.getByRole("switch", { name: "Auto paste" });
+        await expect(autoPaste).toBeChecked();
+        await expect(autoPaste).toBeEnabled();
+        await expect(autoPaste).toHaveAccessibleDescription(/You decide when to send/);
+        await screenshot(`handoff-${variant}`);
+        await autoPaste.press("Space");
+        await expect(autoPaste).not.toBeChecked();
+        await expect(autoPaste).toBeFocused();
+        await navigate("Recording");
+        await navigate("Handoff");
+        await expect(autoPaste).not.toBeChecked();
+        fixture.refuse = true;
+        await autoPaste.press("Space");
+        const retry = page.getByRole("button", { name: "Refresh preference" });
+        await expect(page.getByRole("alert")).toContainText("Couldn’t confirm");
+        await expect(retry).toBeFocused();
+        await screenshot(`handoff-refused-${variant}`);
+        fixture.refuse = false;
+        await retry.press("Enter");
+        await expect(autoPaste).toBeEnabled();
+        await expect(autoPaste).toBeFocused();
+        await autoPaste.press("Space");
+        await expect(autoPaste).toBeChecked();
+        await navigate("Recording");
       }
     await navigate("Agents");
     await expect(page.getByRole("heading", { name: "Send recordings to T3 Code" })).toBeVisible();

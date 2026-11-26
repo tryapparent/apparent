@@ -1,5 +1,6 @@
 // Clanker push boundary: the existing runner owns admission, deadlines and cleanup.
 import {pathToFileURL} from 'node:url';
+import {recordPushLaunch} from '../../timing/push/receipt.ts';
 
 export const runner = '/home/simon/.local/bin/t3-build';
 
@@ -30,7 +31,12 @@ export function replaceProcess(file: string, args: string[]): never {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    replaceProcess(runner, pushArguments(process.argv.slice(2)));
+    const args = process.argv.slice(2);
+    const timing = args[0] === '--runner-timing' ? args.splice(0, 2)[1] : undefined;
+    const invocation = pushArguments(args);
+    delete process.env.APPARENT_PUSH_TIMING;
+    if (timing && recordPushLaunch(timing)) process.env.APPARENT_PUSH_TIMING = timing;
+    replaceProcess(runner, invocation);
   } catch (error) {
     console.error(`push: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 125;

@@ -40,8 +40,8 @@ await bendScratch(async (scratch) => {
       );
       assert.deepEqual(
         [[false, false], [false, true], [true, false], [true, true]]
-          .map(([supported, saved]) => policy.can_toggle(supported, saved)),
-        [false, true, true, true],
+          .map(([known, busy]) => policy.can_toggle(known, busy)),
+        [false, false, true, false],
       );
       assert.deepEqual([t3.show_computers(true, true), t3.show_computers(true, false), t3.show_computers(false, true)], [true, false, false]);
       assert.deepEqual(

@@ -85,7 +85,7 @@ impl ApparentCoordinator {
         let audio = self.completed_audio_issue();
         let facts = pill_state::Facts {
             phone: self.iphone.is_some(),
-            screen_starting: self.active_recording.as_ref().is_some_and(|recording| {
+            screen_starting: self.screen_start_is_pending() || self.active_recording.as_ref().is_some_and(|recording| {
                 matches!(&recording.source, CaptureSource::Screen { session, .. } if !session.has_frames())
             }),
             no_words: self.recording_has_no_words(),

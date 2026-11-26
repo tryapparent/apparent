@@ -38,6 +38,7 @@ pub(in crate::capture) struct Collector {
     jobs: flume::Sender<Request>,
     context: flume::Receiver<ActionContext>,
     last_scroll: Option<u64>,
+    pub(super) pin_windows: Vec<ActionContext>,
 }
 
 impl Collector {
@@ -78,7 +79,7 @@ impl Collector {
                         if kind == ActionKind::Stroke && matches!(request.probe, Probe::Point(..)) {
                             stroke_start = Some((t, window, request.frame));
                         } else {
-                            let _ = publish.try_send(ActionContext { kind, t, window });
+                            let _ = publish.try_send(ActionContext { kind, t, window, pin_window: None });
                         }
                     }
                 }
@@ -88,6 +89,7 @@ impl Collector {
             jobs,
             context,
             last_scroll: None,
+            pin_windows: Vec::new(),
         })
     }
 
@@ -112,6 +114,11 @@ impl Collector {
         let mut rows: Vec<_> = std::iter::from_fn(|| self.context.recv_deadline(deadline).ok())
             .filter(|row| keys.get(&(row.kind, row.t)) == Some(&true))
             .collect();
+        rows.extend(self.pin_windows.into_iter().filter(|row| {
+            row.pin_window.as_ref().is_some_and(|snapshot| {
+                strokes.iter().any(|stroke| stroke.t0 == row.t && stroke.pin == Some(snapshot.pin))
+            })
+        }));
         rows.sort_by_key(|row| (row.t, row.kind));
         rows
     }
@@ -130,6 +137,8 @@ fn event_key(event: &InteractionEvent) -> Option<Key> {
 impl SharedCaptureTelemetry {
     pub(super) fn reset_action_context(&self) {
         let enabled = self.probing() && self.capture_mode.load(Ordering::Acquire) <= 1;
+        #[cfg(target_os = "macos")]
+        crate::capture::engine::accessibility::ax::pin_window::begin(enabled);
         *self
             .action_context
             .lock()

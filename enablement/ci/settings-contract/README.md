@@ -18,6 +18,8 @@ Start a saved preference in its owner’s `settings/preferences.json`. Regenerat
 the renderer types with
 `node enablement/ci/settings-contract/emit.ts --types > shared/settings/preference-ids.ts`.
 Attach `bindPreference(pane, id, change)` to the control or its owner adapter.
+Use the catalog's optional `pane` field when a control moves and its persisted
+ID needs to remain readable by installed versions and CLI callers.
 Reuse the same binding ID for alternate controls that save the same value. An
 existing runtime-only microphone preference is also discoverable through the CLI.
 

@@ -13,6 +13,8 @@ export type Call = { id: string; session: string; workspace: string; tool: strin
   operations?: string[];
   waitedOperations?: string[];
   fingerprint: string; start: number; end?: number; asynchronous: boolean; batched: boolean;
+  pushReceipt?: string; pushResult?: boolean; pushWaitFor?: string;
+  pushExit?: {code: number; observedAt: number};
   processObservedEnd?: number; sourceRef?: {file: string; line: number} }
 const salt = randomBytes(32)
 const hash = (s: string) => createHash('sha256').update(salt).update(s).digest('hex').slice(0, 16)

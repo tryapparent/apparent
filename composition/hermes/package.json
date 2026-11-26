@@ -1,0 +1,13 @@
+{
+  "name": "@apparent/hermes-record-composition",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@apparent/record-capture-request": "file:../../record/capture-request"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "electron": "^45.2.1",
+    "esbuild": "0.25.12"
+  }
+}

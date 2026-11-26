@@ -136,10 +136,10 @@ fn compact_handoff_groups_exact_windows_across_routine_scene_changes() {
     };
     let other = ActionWindow { title: Some("Other tab — Mozilla Firefox".into()), ..page.clone() };
     b.action_context = vec![
-        ActionContext { kind: ActionKind::Stroke, t: 3500, window: page.clone() },
-        ActionContext { kind: ActionKind::Pointer, t: 5500, window: page.clone() },
-        ActionContext { kind: ActionKind::Pointer, t: 6200, window: other },
-        ActionContext { kind: ActionKind::Pointer, t: 8000, window: page },
+        ActionContext { pin_window: None, kind: ActionKind::Stroke, t: 3500, window: page.clone() },
+        ActionContext { pin_window: None, kind: ActionKind::Pointer, t: 5500, window: page.clone() },
+        ActionContext { pin_window: None, kind: ActionKind::Pointer, t: 6200, window: other },
+        ActionContext { pin_window: None, kind: ActionKind::Pointer, t: 8000, window: page },
     ];
     b.events = [5500, 6200, 7000, 8000].map(|t| InteractionEvent::Click {
         t, x: 0.5, y: 0.5, role: None, label: None, button: None,
@@ -180,9 +180,9 @@ fn nearby_windows_do_not_claim_input_time_identity_and_require_stroke_agreement(
         title: Some("Quick picks".into()),
     };
     b.action_context = vec![
-        ActionContext { kind: ActionKind::Stroke, t: 1000, window: window.clone() },
-        ActionContext { kind: ActionKind::Stroke, t: 1800, window: window.clone() },
-        ActionContext { kind: ActionKind::Pointer, t: 3000, window: ActionWindow {
+        ActionContext { pin_window: None, kind: ActionKind::Stroke, t: 1000, window: window.clone() },
+        ActionContext { pin_window: None, kind: ActionKind::Stroke, t: 1800, window: window.clone() },
+        ActionContext { pin_window: None, kind: ActionKind::Pointer, t: 3000, window: ActionWindow {
             title: Some("Page after a tab switch".into()), ..window
         } },
     ];
@@ -289,4 +289,56 @@ fn marks_are_found_by_their_number_in_the_text_or_their_id() {
     let entry = find_mark(&b, "2", Some(2)).unwrap();
     assert!(entry.line().starts_with("#2 ✎② 0:09 "), "{}", entry.line());
     assert_eq!(entry.json()["keyframe"], 2);
+}
+
+#[test]
+fn pin_window_excerpt_requires_an_exact_unique_pin_and_preserves_the_bundle() {
+    let mut b = bundle(Vec::new(), vec![
+        keyframe(1, 2000, KeyframeReason::SceneChange, ""),
+        keyframe(2, 3500, KeyframeReason::Mark, ""),
+    ]);
+    let mut pin = stroke(3500, 0.1, 0.1);
+    pin.pin = Some(2);
+    pin.pts.truncate(3);
+    b.strokes.push(pin);
+    b.marks = crate::capture::engine::sketch::marks_of(&b.strokes);
+    b.keyframes[1].mark_id = Some(b.marks[0].id.clone());
+    b.action_context.push(ActionContext {
+        kind: ActionKind::Stroke,
+        t: 3500,
+        window: ActionWindow {
+            id: "hyprland:1:2".into(),
+            app: "Fixture".into(),
+            title: Some("Synthetic preferences".into()),
+        },
+        pin_window: Some(PinWindow {
+            pin: 2,
+            sampled_after_ms: 45,
+            truncated: false,
+            elements: vec![PinWindowElement {
+                role: "push button".into(),
+                name: Some("Save".into()),
+                parent: None,
+                states: vec!["disabled".into()],
+                window_bounds: Some([10, 20, 30, 40]),
+            }],
+        }),
+    });
+    let serialized = serde_json::to_string(&b).unwrap();
+    let mut reopened: ApparentBundle = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(reopened.action_context, b.action_context);
+    assert!(!reopened.has_action_window_observations());
+    for texts in [keyframe_texts(&reopened), compact_keyframe_texts(&reopened)] {
+        let frames = texts.unwrap();
+        assert!(frames[0].lines.iter().all(|line| !line.contains("window UI")));
+        assert!(frames[1].lines.iter().any(|line| {
+            line.starts_with("0:03 Pin 2 nearby window UI (app data):")
+                && line.contains(r#""name":"Save","states":["disabled"]"#)
+        }));
+    }
+    reopened.action_context.push(reopened.action_context[0].clone());
+    assert!(keyframe_texts(&reopened).unwrap()[1].lines.iter().all(|line| !line.contains("window UI")));
+    reopened.action_context.pop();
+    reopened.action_context[0].t += 1;
+    assert!(keyframe_texts(&reopened).unwrap()[1].lines.iter().all(|line| !line.contains("window UI")));
 }

@@ -145,3 +145,20 @@ def group_labels_go(fuel: Nat, labels: List<&2, String>) -> List<&2, LabelCount>
 
 def group_labels(labels: List<&2, String>) -> List<&2, LabelCount>:
   group_labels_go(3n, labels)
+
+def pin_entries(fuel: Nat, labels: List<&2, String>) -> String:
+  match fuel:
+    case 0n: ""
+    case 1n+k:
+      match labels:
+        case []: ""
+        case label <> rest:
+          String.append(" ", String.append(label, pin_entries(k, rest)))
+
+def pin_window_line(clock: String, pin: String, labels: List<&2, String>, truncated: Bool) -> String:
+  match labels:
+    case []: ""
+    case label <> rest:
+      entries = pin_entries(4n, label <> rest)
+      ending = Bool.pick(String, truncated, " (partial)", "")
+      String.append(clock, String.append(" Pin ", String.append(pin, String.append(" nearby window UI (app data):", String.append(entries, ending)))))

@@ -1,7 +1,7 @@
 import {affectedBendOwners} from "../../shared/enablement/bend/owners.ts";
 import {bendDirectory} from "../../shared/enablement/bend/manifest.ts";
 import {serviceCommands} from '../../connect/enablement/ci/local/service.ts';
-import { verification as publicVerification } from '../../public/enablement/cd/ci/inputs.ts';
+import { verification as publicVerification } from '../../shared/enablement/ci/public-inputs.ts';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -13,7 +13,7 @@ import {desktopDependencies, desktopPackage} from './desktop-install.ts';
 import {owners, selectedOwners, routeDecision, routingProblems, desktopPackagingInputs} from '../ci/routing/consumers.ts';
 import {selectRange} from '../ci/select.ts';
 import {explainSelection} from './preview/explain.ts';
-import {diagnosticContracts, foregroundCommands, timingContracts, workflowContracts} from './contracts.ts';
+import {diagnosticContracts, foregroundCommands, nativePrerequisites, timingContracts, codexStopHookTests, workflowContracts} from './contracts.ts';
 export {owners} from '../ci/routing/consumers.ts';
 import type {Admission} from './service.ts';
 
@@ -71,9 +71,10 @@ export function fixtureMacCommands(): Command[] {
   ];
 }
 
-export function toolingCommands(): Command[] {
+export function toolingCommands(head = 'HEAD', paths: string[] | null = null): Command[] {
   return [
     installCommand,
+    ...codexStopHookTests(head, paths),
     {argv: ['node', '--experimental-strip-types', '--test', 'enablement/posthog-fixer/test/service.test.ts', 'enablement/posthog-fixer/test/t3.test.ts'], cwd: '.'},
     {argv: ['python3', '-m', 'unittest', 'discover', '-s', 'enablement/directory-width/tests', '-p', 'test_*.py'], cwd: '.'},
   ];
@@ -100,17 +101,16 @@ export function agentMediaCommands(): Command[] {
 }
 
 export function commands(selected: Owner[], base: string, head: string, platform = process.platform, rustChanged = true,
-  scope: {paths: string[] | null; workflowControls?: string[]; local?: boolean} = {paths: null}): Command[] {
-  const result: Command[] = scope.local ? workflowContracts(scope.paths, base, scope.workflowControls) : [];
+  scope: {paths: string[] | null; workflowControls?: string[]; local?: boolean; diagnostics?: boolean} = {paths: null}): Command[] {
+  const result: Command[] = nativePrerequisites(selected, base, head, rustChanged, scope.diagnostics);
   const add = (argv: string[], cwd = '.') => result.push({ argv, cwd });
-  if (rustChanged && selected.some(owner => ['capture', 'engine', 'client'].includes(owner)))
-    add(['python3', 'enablement/verification.py', '--base', base, '--preflight']);
+  if (scope.local) result.push(...workflowContracts(scope.paths, base, scope.workflowControls));
   if (selected.includes('tooling') || scope.paths === null)
     add(['python3', 'enablement/verification.py', '--base', base, '--head', head, '--pr']);
   if (scope.local)
     for (const owner of affectedBendOwners(root, scope.paths))
       add(['node', bendDirectory(owner) + '/check.ts']);
-  if (selected.includes('tooling')) result.push(...toolingCommands());
+  if (selected.includes('tooling')) result.push(...toolingCommands(head, scope.paths));
   else if (selected.includes('desktop')) result.push(...installationContracts(scope.paths, scope.workflowControls));
   if (selected.includes('onboarding')) result.push(...onboardingCommands());
   if (selected.includes('capture')) {
@@ -125,7 +125,7 @@ export function commands(selected: Owner[], base: string, head: string, platform
     add(['npm', 'ci', '--ignore-scripts', '--prefix', 'hermes/desktop']);
     add(['python3', '-m', 'unittest', 'discover', '-s', 'hermes/tests', '-p', 'test_*.py']);
     add(['node', '--experimental-strip-types', '--test', 'hermes/desktop/controller.test.ts', 'hermes/desktop/plugin.test.ts', 'hermes/distribution/package.test.ts', 'hermes/distribution/consumer.test.ts', 'hermes/distribution/cache/downloads.test.ts', 'capture/agent/setup/hermes.test.ts', 'capture/agent/setup/hermes-receiver.test.ts',
-      'capture/desktop/ui/frontend/src/hermes/protocol.test.ts', 'capture/desktop/ui/frontend/src/hermes/mailbox.test.ts']);
+      'composition/hermes/enablement/protocol.test.ts', 'composition/hermes/enablement/mailbox.test.ts']);
   }
   if (selected.includes('desktop')) {
     const cwd = 'capture/desktop/ui/frontend';
@@ -247,7 +247,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const paths = result.inputProofKnown ? result.paths : null;
   const native = process.env.GITHUB_ACTIONS ? result.plan.root || result.plan.engine || result.plan.client || result.plan.engineMedia : result.rustChanged;
   const plan = args.includes('--desktop-install-contracts') ? installationContracts(paths, result.workflowControls)
-    : commands(result.selected, base, head, process.platform, native, {paths, workflowControls: result.workflowControls, local: !process.env.GITHUB_ACTIONS});
+    : commands(result.selected, base, head, process.platform, native, {paths, workflowControls: result.workflowControls,
+      local: !process.env.GITHUB_ACTIONS, diagnostics: args.includes('--push-diagnostics')});
   console.log(args.includes('--explain') ? explainSelection(result, plan) : JSON.stringify({ ...result, commands: plan }));
   if (args.includes('--run')) {
     const problems = result.historyKnown ? routingProblems(result) : [];

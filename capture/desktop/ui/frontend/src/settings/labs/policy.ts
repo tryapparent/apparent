@@ -1,5 +1,5 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'autoPaste' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'frogWardrobe' | 'agentContext' | 'speakingStyle' | 'recordingPerformance';
+export type LabsSetting = 'streaming' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'frogWardrobe' | 'agentContext' | 'speakingStyle' | 'recordingPerformance';
 type AgentContextAccess = 'enabled' | 'approval_required' | 'disabled' | 'unavailable';
 type Preferences = {
   saved: boolean | null;
@@ -8,8 +8,6 @@ type Preferences = {
   agentContextSaved?: boolean | null;
   agentContextAccess?: AgentContextAccess;
   sharingSaved?: boolean | null;
-  autoPasteSaved?: boolean | null;
-  autoPasteSupported?: boolean;
   pushToTalkSaved?: boolean | null;
   pushToTalkSupported?: boolean;
   wisprSaved?: boolean | null;
@@ -30,12 +28,12 @@ export function facts(value: unknown): LabsFacts {
   const result: Preferences = {saved: input.saved, ...(input.frogWardrobe == null ? {} : {frogWardrobe: input.frogWardrobe})};
   const access = input.agentContextAccess;
   if (access === 'enabled' || access === 'approval_required' || access === 'disabled' || access === 'unavailable') result.agentContextAccess = access;
-  for (const key of ['autoPasteSaved', 'pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'desktopFrogSaved', 'agentContextSaved', 'speakingStyleSaved', 'recordingPerformanceSaved'] as const) {
+  for (const key of ['pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'desktopFrogSaved', 'agentContextSaved', 'speakingStyleSaved', 'recordingPerformanceSaved'] as const) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
     result[key] = input[key];
   }
-  for (const key of ['autoPasteSupported', 'pushToTalkSupported', 'wisprSupported'] as const) {
+  for (const key of ['pushToTalkSupported', 'wisprSupported'] as const) {
     if (input[key] === undefined) continue;
     if (typeof input[key] !== 'boolean') throw Error('Invalid Labs capability');
     result[key] = input[key];
@@ -43,7 +41,6 @@ export function facts(value: unknown): LabsFacts {
   return result;
 }
 export function enabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.saved ?? false;}
-export function autoPasteEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.autoPasteSaved ?? true;}
 export function sharingEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.sharingSaved ?? false;}
 export function wisprEnabled(value: LabsFacts): boolean | undefined {return value.error ? undefined : value.wisprSaved ?? false;}
 export class LabsPreferences {
@@ -58,7 +55,7 @@ export class LabsPreferences {
     return this.sendRequest(value, setting, wardrobe);
   }
   private sendRequest(value: unknown, setting: LabsSetting, wardrobe?: unknown): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','autoPaste','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','frogWardrobe','agentContext','speakingStyle','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','frogWardrobe','agentContext','speakingStyle','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);
@@ -76,7 +73,7 @@ export class LabsPreferences {
 }
 export function admitLabsRequest(pane: string | undefined, args: unknown[], platform: string): boolean {
   const [enabled, setting, intent] = args;
-  if (pane !== 'labs') return false;
+  if (pane !== 'labs' || setting === 'autoPaste') return false;
   if (args.length === 3) return platform === 'darwin' && enabled === undefined && setting === undefined && !!intent && typeof intent === 'object' && !Array.isArray(intent);
   return args.length <= 2 && (!args.length || typeof enabled === 'boolean') &&
     (platform === 'darwin' || setting !== 'wisprFlow' && setting !== 'frogWardrobe');

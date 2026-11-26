@@ -40,10 +40,6 @@
 | Desktop | capture/desktop/linux/updates/update.rs | source candidate | 1565 | pending |
 | Desktop | capture/desktop/mod.rs | source candidate | 8436 | pending |
 | Desktop | capture/desktop/native/laser_overlay.rs | source candidate | 1575 | pending |
-| Desktop | capture/desktop/native/pill/atlas.rs | source candidate | 576 | pending |
-| Desktop | capture/desktop/native/pill/mod.rs | source candidate | 1902 | pending |
-| Desktop | capture/desktop/native/pill/model.rs | source candidate | 2377 | pending |
-| Desktop | capture/desktop/native/pill/types.rs | source candidate | 100 | pending |
 | Desktop | capture/desktop/scripts/linux/appimage/nss-runtime.test.ts | source candidate | 30 | pending |
 | Desktop | capture/desktop/scripts/linux/appimage/nss-runtime.ts | source candidate | 39 | pending |
 | Desktop | capture/desktop/scripts/linux/gui/input/qmp.test.ts | source candidate | 116 | pending |
@@ -62,7 +58,6 @@
 | Desktop | capture/desktop/scripts/packaging/test_settings_signing.py | source candidate | 185 | pending |
 | Desktop | capture/desktop/scripts/release/desktop-version.test.ts | source candidate | 25 | pending |
 | Desktop | capture/desktop/scripts/release/desktop-version.ts | source candidate | 21 | pending |
-| Desktop | capture/desktop/scripts/release/homebrew/publish.test.ts | source candidate | 127 | pending |
 | Desktop | capture/desktop/scripts/release/homebrew/publish.ts | source candidate | 137 | pending |
 | Desktop | capture/desktop/scripts/release/posthog-release.test.ts | source candidate | 74 | pending |
 | Desktop | capture/desktop/scripts/release/posthog-release.ts | source candidate | 43 | pending |
@@ -86,7 +81,6 @@
 | Desktop | capture/desktop/settings/practice.rs | source candidate | 124 | pending |
 | Desktop | capture/desktop/settings/presentation.rs | source candidate | 351 | pending |
 | Desktop | capture/desktop/settings/settings.rs | source candidate | 3857 | pending |
-| Desktop | capture/desktop/settings/settings_window.rs | source candidate | 2805 | pending |
 | Desktop | capture/desktop/settings/shortcut.rs | source candidate | 248 | pending |
 | Desktop | capture/desktop/ui/controls/mod.rs | source candidate | 399 | pending |
 | Desktop | capture/desktop/ui/desktop_completion/worker.rs | source candidate | 300 | pending |
@@ -98,7 +92,6 @@
 | Desktop | capture/desktop/ui/frontend/electron/onboarding-protocol.cjs | source candidate | 17 | pending |
 | Desktop | capture/desktop/ui/frontend/electron/onboarding.cjs | source candidate | 184 | pending |
 | Desktop | capture/desktop/ui/frontend/electron/onboarding/shortcut-editor.ts | source candidate | 62 | pending |
-| Desktop | capture/desktop/ui/frontend/electron/pill/t3/store.ts | source candidate | 25 | pending |
 | Desktop | capture/desktop/ui/frontend/electron/reporting/reporting.smoke.ts | source candidate | 182 | pending |
 | Desktop | capture/desktop/ui/frontend/electron/reporting/reporting.test.ts | source candidate | 117 | pending |
 | Desktop | capture/desktop/ui/frontend/electron/runtime.cjs | source candidate | 244 | pending |
@@ -151,7 +144,6 @@
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/renderer/window-coach.smoke.ts | source candidate | 537 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/selection.test.ts | source candidate | 15 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/shortcut-editor.test.ts | source candidate | 89 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/onboarding/shortcut.smoke.ts | source candidate | 103 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/state.test.ts | source candidate | 52 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/tsconfig.json | support/scenario | 31 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/onboarding/wispr/macos.test.ts | source candidate | 63 | pending |
@@ -162,18 +154,12 @@
 | Desktop | capture/desktop/ui/frontend/tests/pill/framing.cts | support/scenario | 12 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/host.cts | support/scenario | 5 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/input-meter.smoke.cts | support/scenario | 55 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/meter-policy.test.ts | source candidate | 19 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/notes.smoke.cts | support/scenario | 44 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/pinning.test.ts | source candidate | 148 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/presentation.smoke.cts | support/scenario | 318 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/protocol.test.cts | support/scenario | 49 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/public-sharing/smoke.cts | support/scenario | 60 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/pill/smoke.cts | support/scenario | 150 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/t3/controller.test.ts | source candidate | 89 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/t3/delivery.test.ts | source candidate | 21 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/t3/destination.smoke.cts | support/scenario | 127 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/t3/destinations.test.ts | source candidate | 11 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/pill/t3/testing/server.ts | support/scenario | 28 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/reference-native.cjs | source candidate | 258 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/retention-smoke.cjs | source candidate | 275 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/runtime.test.cjs | source candidate | 437 | pending |
@@ -186,7 +172,6 @@
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/smoke.ts | source candidate | 295 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/t3.test.ts | source candidate | 83 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/agents/testing/provider.ts | support/scenario | 23 | pending |
-| Desktop | capture/desktop/ui/frontend/tests/settings/labs.smoke.ts | source candidate | 130 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/shared-shell.smoke.ts | source candidate | 77 | pending |
 | Desktop | capture/desktop/ui/frontend/tests/settings/t3.smoke.ts | source candidate | 106 | pending |
 | Desktop | composition/settings/enablement/update-policy.test.ts | source candidate | 34 | pending |
@@ -196,7 +181,6 @@
 | Desktop | capture/desktop/ui/linux.rs | source candidate | 1291 | pending |
 | Desktop | capture/desktop/ui/macos.rs | source candidate | 1462 | pending |
 | Desktop | capture/desktop/ui/motion.rs | source candidate | 816 | pending |
-| Desktop | capture/desktop/ui/pill_theme.rs | source candidate | 166 | pending |
 | Desktop | capture/desktop/ui/recording_completion.rs | source candidate | 168 | pending |
 | Desktop | capture/desktop/ui/whiteboard.rs | source candidate | 994 | pending |
 | Desktop | capture/desktop/vendor/taffy/src/compute/grid/explicit_grid.rs | source candidate | 697 | pending |
@@ -274,13 +258,6 @@
 | Engine (legacy) | capture/engine/runtime/audio/transcription/warm_recognizer.rs | source candidate | 689 | pending |
 | Engine (legacy) | capture/engine/runtime/mod.rs | source candidate | 2279 | pending |
 | Engine (legacy) | capture/engine/runtime/phone.rs | source candidate | 730 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/helper.rs | source candidate | 113 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/media.rs | source candidate | 1216 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/overlay.rs | source candidate | 362 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/playback.rs | source candidate | 19 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/capture/uia.rs | source candidate | 138 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/platform/command_line.rs | source candidate | 256 | pending |
-| Engine (legacy) | capture/engine/runtime/platform/legacy_windows/platform/shell.rs | source candidate | 304 | pending |
 | Engine (legacy) | capture/engine/runtime/platform/linux.rs | source candidate | 1302 | pending |
 | Engine (legacy) | capture/engine/runtime/platform/macos.rs | source candidate | 2153 | pending |
 | Engine (legacy) | capture/engine/runtime/recording/notes.rs | source candidate | 284 | pending |
@@ -292,7 +269,6 @@
 | Engine (legacy) | capture/engine/tests/finalizer.rs | source candidate | 64 | pending |
 | Engine (legacy) | capture/engine/tests/process.rs | source candidate | 521 | pending |
 | Engine (legacy) | capture/engine/tests/review_regressions.rs | source candidate | 263 | pending |
-| Repository Enablement | capture/ui_process.rs | source candidate | 79 | pending |
 | Composition | composition/assembly.rs | source candidate | 57 | pending |
 | Composition | composition/cli.rs | source candidate | 2168 | pending |
 | Composition | composition/command_line.rs | source candidate | 425 | pending |

@@ -19,7 +19,7 @@ controls, app shortcut, and the final onboarding action. Reopening an
 existing Settings session from those entry points raises its current pane.
 The launch request for an already configured app and the post-update reopen
 target About. The recording pill can open Agents directly. In the installed
-Electron window, General, Recording, Storage, Permissions, Agents, Labs and
+Electron window, General, Recording, Handoff, Storage, Permissions, Agents, Labs and
 About share one sidebar and window. The native session filters actions against
 the active pane and passes native effects and preference writes to their
 existing owners.

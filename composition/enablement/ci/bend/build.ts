@@ -6,5 +6,21 @@ const settings = fileURLToPath(
   new URL("../../../settings/about/", import.meta.url),
 );
 
-if (process.argv[1] === fileURLToPath(import.meta.url))
-  await buildBend(root, "composition", settings);
+const hermes = fileURLToPath(new URL("../../../hermes/main/", import.meta.url));
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await buildBend(
+    root,
+    "composition",
+    settings,
+    undefined,
+    "composition/settings/about/",
+  );
+  await buildBend(
+    root,
+    "composition",
+    hermes,
+    undefined,
+    "composition/hermes/main/",
+  );
+}

@@ -519,21 +519,12 @@ export function RecordingControls({
         </p>
       </Group>
       <Group title="Export" sectionId="recording-video-export">
-        <div className="recording-group">
-          <Toggle
-            label="Video export"
-            checked={state.videoExport}
-            disabled={disabled}
-            busy={pending?.key === "videoExport"}
-            onChange={bindPreference(
-              "recording",
-              "recording.videoExport",
-              (value) => save({ key: "videoExport", value }),
-            )}
-          />
-        </div>
         <p className="recording-note">
-          Experimental. Adds Export Last Capture as Video… to the menu.
+          To save your latest capture as an MP4, choose{" "}
+          <strong>
+            {mac ? "Export Last Capture as Video…" : "Export Latest Video…"}
+          </strong>{" "}
+          from the Apparent menu.
         </p>
       </Group>
     </>

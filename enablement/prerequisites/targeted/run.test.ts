@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, cpSync, rmSync, ex
 import { resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {pathToFileURL} from 'node:url';
+import {macFiles} from './run.ts';
 
 function fixture(t: any, failure = '') {
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-targeted-electron-'));
@@ -46,10 +47,10 @@ test('${name}', async () => {
  fs.appendFileSync('trace', '${name}:end\\n'); fs.rmdirSync('active-worker');
  ${failure === 'test' && name === 'a' ? "throw Error('genuine assertion');" : ''}
 });`);
-  const macFiles=canonical.scripts['test:electron:mac'].split(' -- ')[1].split(' ');
+  assert.equal(canonical.scripts['test:electron:mac'], 'node --experimental-strip-types ../../../../enablement/prerequisites/targeted/run.ts mac');
   assert.equal(macFiles.length,2);
   macFiles.forEach((file:string,index:number)=>put(file,
-    (file.endsWith('.ts')?"import {createRequire} from 'node:module'; const require=createRequire(import.meta.url);\n":'')+
+    (file.endsWith('.ts')?"import {createRequire} from 'node:module'; const require=createRequire("+JSON.stringify(pathToFileURL(resolve(frontend, "package.json")).href)+");\n":'')+
     readFileSync(resolve(frontend,`tests/${['a','b'][index]}.cts`),'utf8')));
   put('tests/unrelated.smoke.ts', "throw Error('Unrelated renderer suite must remain outside the Mac entrypoint');");
   const env = {...process.env};
@@ -72,14 +73,14 @@ test('actual Mac package entrypoint prepares and runs only its bounded files, pr
     const phases = process.platform === 'darwin' ? 'prepare\nemit\n' : 'build\n';
     assert.equal(f.trace(),failure==='runtime'?'install\n':failure==='build'?
       'install\n'+(process.platform === 'darwin' ? 'prepare\n' : 'build\n'):
-      'install\n'+phases+'a:start\na:end\nb:start\nb:end\n');
+      'install\n'+phases+'b:start\nb:end\na:start\na:end\n');
   }
 });
 
 test('only the exact ordered canonical Mac pair omits global checks, with serial real workers', t => {
   const f = fixture(t), result = f.runAt('darwin');
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.equal(f.trace(), 'install\nprepare\nemit\na:start\na:end\nb:start\nb:end\n');
+  assert.equal(f.trace(), 'install\nprepare\nemit\nb:start\nb:end\na:start\na:end\n');
 });
 
 test('mixed, unknown, extra, duplicate, reordered, alias and Linux selections retain full build', t => {
@@ -118,7 +119,7 @@ test('short preparation preserves lazy runtime, phase failure, and genuine asser
     const f = fixture(t, failure), result = f.runAt('darwin');
     assert.notEqual(result.status, 0, failure);
     const expected = failure === 'runtime' ? 'install\n' : failure === 'prepare' ? 'install\nprepare\n'
-      : failure === 'emit' ? 'install\nprepare\nemit\n' : 'install\nprepare\nemit\na:start\na:end\nb:start\nb:end\n';
+      : failure === 'emit' ? 'install\nprepare\nemit\n' : 'install\nprepare\nemit\nb:start\nb:end\na:start\na:end\n';
     assert.equal(f.trace(), expected);
   }
 });

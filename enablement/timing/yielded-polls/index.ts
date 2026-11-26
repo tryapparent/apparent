@@ -1,4 +1,5 @@
 import type { Call } from "../census.ts";
+import { pushId } from "../push/receipt.ts";
 
 function jsonObject(source: string): Record<string, unknown> | undefined {
   try {
@@ -57,11 +58,25 @@ function structuredExecResult(output: unknown, compact = false) {
 
 const isExec = (tool: string) => tool === "exec" || tool === "functions.exec";
 
-function storedLaunchKey(script: string) {
+function storedLaunch(script: string) {
   const match = script.match(
-    /^const\s+([A-Za-z_]\w*)\s*=\s*await\s+tools\.exec_command\(\s*\{\s*cmd\s*:\s*\x60(?:[^\x60\\$]|\\[\s\S]|\$(?!\{))*\x60\s*,\s*yield_time_ms\s*:\s*\d+\s*\}\s*\)\s*;\s*store\(\s*"([\w-]+)"\s*,\s*\1\.session_id\s*\)\s*;\s*(?:store\(\s*"([\w-]+)"\s*,\s*\1\.output\.trim\(\)\s*\)\s*;\s*)?text\(\s*\1\s*\)\s*;?$/,
+    /^const\s+([A-Za-z_]\w*)\s*=\s*await\s+tools\.exec_command\(\s*\{\s*cmd\s*:\s*\x60((?:[^\x60\\$]|\\[\s\S]|\$(?!\{))*)\x60\s*,\s*yield_time_ms\s*:\s*\d+\s*\}\s*\)\s*;\s*store\(\s*"([\w-]+)"\s*,\s*\1\.session_id\s*\)\s*;\s*(?:store\(\s*"([\w-]+)"\s*,\s*\1\.output\.trim\(\)\s*\)\s*;\s*)?text\(\s*\1\s*\)\s*;?$/,
   );
-  return match && match[2] !== match[3] ? match[2] : undefined;
+  return match && match[3] !== match[4]
+    ? { key: match[3], command: match[2] }
+    : undefined;
+}
+
+function pushReceipt(script: string) {
+  const command =
+    storedLaunch(script)?.command ??
+    script.match(
+      /^text\(\s*await\s+tools\.exec_command\(\s*\{\s*cmd\s*:\s*(["\x60])([^"\x60\n]*)\1\s*,\s*yield_time_ms\s*:\s*\d+\s*\}\s*\)\s*\)\s*;?$/,
+    )?.[2];
+  const path = command?.match(
+    /^node --experimental-strip-types enablement\/local-tests\/execution\/push\.ts --runner-timing (\/[a-zA-Z0-9_./-]+)(?: --(?:jobs|min-jobs|total-budget) [0-9.]+)* --(?: [a-zA-Z0-9_./:=+@-]+)*$/,
+  )?.[1];
+  return path && pushId(path) ? path : undefined;
 }
 
 function storedPollKey(script: string) {
@@ -79,6 +94,7 @@ type StoredSession = {
 
 export class YieldedPolls {
   private launches = new WeakSet<Call>();
+  private runnerSessions = new WeakMap<Call, number>();
   private polls = new Map<string, Call>();
   private cells = new Map<string, Call>();
   private waits = new Map<string, string>();
@@ -100,8 +116,8 @@ export class YieldedPolls {
       this.activeScripts.size > 0 || this.yieldedScripts.size > 0;
     this.activeScripts.add(call);
     if (overlapping || type !== "custom_tool_call") return;
-    const key = storedLaunchKey(script);
-    if (key) this.pendingStore = { call, key };
+    const binding = storedLaunch(script);
+    if (binding) this.pendingStore = { call, key: binding.key };
     else if (
       session &&
       session.launch.processObservedEnd === undefined &&
@@ -146,6 +162,29 @@ export class YieldedPolls {
     else if (terminal) launch.processObservedEnd = call.end;
     else return;
     call.waitedOperations = launch.operations;
+    this.runnerPoll(launch, call, result);
+  }
+
+  private runnerPoll(
+    launch: Call,
+    poll: Call,
+    result: Record<string, unknown>,
+  ) {
+    const session = this.runnerSessions.get(launch);
+    if (
+      session === undefined ||
+      !this.launches.has(launch) ||
+      poll.end === undefined ||
+      launch.pushExit !== undefined
+    )
+      return;
+    if (Number.isSafeInteger(result.exit_code) && !("session_id" in result)) {
+      launch.pushExit = {
+        code: result.exit_code as number,
+        observedAt: poll.end,
+      };
+    } else if (result.session_id !== session || "exit_code" in result) return;
+    poll.pushWaitFor = launch.id;
   }
 
   launch(
@@ -154,8 +193,10 @@ export class YieldedPolls {
     output: unknown,
     previous: Call | undefined,
   ) {
-    if (previous) this.launches.delete(previous);
-    else if (isExec(call.tool) && call.end !== undefined) {
+    if (previous) {
+      this.launches.delete(previous);
+      previous.pushResult = false;
+    } else if (isExec(call.tool) && call.end !== undefined) {
       const result = structuredExecResult(output);
       if (
         result &&
@@ -175,6 +216,7 @@ export class YieldedPolls {
   ) {
     if (isExec(call.tool)) {
       const script = execScript(source);
+      if (type === "custom_tool_call") call.pushReceipt = pushReceipt(script);
       this.startStored(call, script, type);
       const sessionId = singlePrintedPoll(script);
       const launch = sessionId ? processes.get(sessionId) : undefined;
@@ -236,12 +278,37 @@ export class YieldedPolls {
     }
     this.finishStored(call, type, output);
     if (call.end === undefined) return;
+    if (call.pushReceipt && type === "custom_tool_call_output") {
+      const result = structuredExecResult(output, true);
+      if (
+        result &&
+        this.launches.has(call) &&
+        typeof result.session_id === "number"
+      ) {
+        this.runnerSessions.set(call, result.session_id);
+        call.pushResult = true;
+      } else if (
+        result &&
+        Number.isSafeInteger(result.exit_code) &&
+        !("session_id" in result)
+      ) {
+        call.pushResult = true;
+        call.pushExit = {
+          code: result.exit_code as number,
+          observedAt: call.end,
+        };
+      }
+    }
     const polled = this.polls.get(call.id);
     this.polls.delete(call.id);
     const waited = this.waits.get(call.id);
     this.waits.delete(call.id);
     if (yieldedId && polled && !seenCell) this.cells.set(yieldedId, polled);
     else if (cellId && cellId !== waited) this.cells.delete(cellId);
+    if (polled && !yieldedId && type === "custom_tool_call_output") {
+      const result = structuredExecResult(output, true);
+      if (result) this.runnerPoll(polled, call, result);
+    }
     if (!waited || yieldedId === waited) return;
     const launch = this.cells.get(waited);
     this.cells.delete(waited);
@@ -258,5 +325,7 @@ export class YieldedPolls {
       )
         launch.processObservedEnd ??= call.end;
     }
+    const receipt = structuredExecResult(output, true);
+    if (receipt) this.runnerPoll(launch, call, receipt);
   }
 }

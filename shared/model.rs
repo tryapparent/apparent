@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[path = "../engine/native/input/action_context/model.rs"]
 mod action_context;
-pub use action_context::{ActionContext, ActionKind, ActionWindow};
+pub use action_context::{ActionContext, ActionKind, ActionWindow, PinWindow, PinWindowElement};
 
 pub use crate::shared::windows::{CursorSample, WindowSnapshot};
 
@@ -138,7 +138,6 @@ impl VideoInk {
 }
 
 impl ApparentBundle {
-    /// A recorded click, not a spoken reference or a keyframe selected for another reason.
     pub fn has_screen_click(&self) -> bool {
         self.events.iter().any(|event| matches!(event, InteractionEvent::Click { .. } | InteractionEvent::Note { .. }))
     }

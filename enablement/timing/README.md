@@ -97,6 +97,8 @@ Run admission/queue time is unavailable and never inferred. Unsupported provider
 schemas require an explicit adapter, not guessed timestamps. Use existing
 `command.ts` timing receipts when command-phase runtime is required.
 
+For stable push IDs and phase timestamps, see [opt-in push receipts](push/README.md).
+
 ## Opt-in test diff report
 
 Compare two committed trees from the repository root:

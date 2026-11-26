@@ -160,6 +160,17 @@ impl SharedCaptureTelemetry {
             ],
         });
         drop(strokes);
+        #[cfg(target_os = "linux")]
+        if self.probing() && self.capture_mode.load(Ordering::Acquire) <= 1 {
+            let note_pid = self.note_ui_pid.load(Ordering::Acquire) as u32;
+            crate::capture::engine::accessibility::ax::Prober::shared().pin(number, t0, t_ms, x0, y0, note_pid);
+        }
+        #[cfg(target_os = "macos")]
+        if self.probing() && self.capture_mode.load(Ordering::Acquire) <= 1 {
+            let note_pid = self.note_ui_pid.load(Ordering::Acquire) as u32;
+            let dock = *self.dock_bounds.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            crate::capture::engine::accessibility::ax::pin_window::pin(number, t0, t_ms, x0, y0, note_pid, dock);
+        }
         let _ = self.ui_sender.try_send(LiveOverlayEvent::Note {
             pin: number,
             t: t0,

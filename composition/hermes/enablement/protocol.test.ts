@@ -1,0 +1,96 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { Recording, destination } from "../main/protocol.ts";
+import { recorderLaunch } from "../main/launch.ts";
+const id = "0123456789abcdef0123456789abcdef";
+test("installed Mac cold launch selects the exact bundle through Launch Services without activation or a duplicate instance", () => {
+  const bundle = "/Users/test/My Apps/Apparent Preview.app";
+  assert.deepEqual(
+    recorderLaunch(`${bundle}/Contents/MacOS/apparent`, "darwin"),
+    {
+      file: "/usr/bin/open",
+      args: ["-g", "-a", bundle, "--args", "launch", "--background"],
+      waitForExit: true,
+    },
+  );
+});
+test("Linux and unbundled development retain direct background launch; malformed executable paths are refused", () => {
+  for (const [executable, platform] of [
+    ["/opt/Apparent.AppImage", "linux"],
+    ["/private/job/cli.ts", "darwin"],
+  ] as const) {
+    assert.deepEqual(recorderLaunch(executable, platform), {
+      file: executable,
+      args: ["launch", "--background"],
+      waitForExit: false,
+    });
+  }
+  for (const executable of [
+    "apparent",
+    "/Applications/Apparent.app/Contents/MacOS/apparent\0",
+  ])
+    assert.throws(() => recorderLaunch(executable, "darwin"));
+});
+test("capture ownership survives readiness timeout without starting another take", async () => {
+  const calls: string[][] = [];
+  const recording = new Recording(id, async (args) => {
+    calls.push(args);
+    return {
+      capture_id: id,
+      status: args[1] === "start" ? "starting" : "saved",
+      error: args[1] === "start" ? "timeout" : null,
+      bundle_path: "/private/owned.apparent",
+      remote_source: "cccccccccccccccccccccccccccccccc",
+    };
+  });
+  assert.equal((await recording.start()).error, "timeout");
+  await recording.inspect();
+  assert.deepEqual(await recording.handoff(), {
+    bundlePath: "/private/owned.apparent",
+    remoteSource: "cccccccccccccccccccccccccccccccc",
+  });
+  assert.deepEqual(
+    calls.map((c) => c[1]),
+    ["start", "inspect", "handoff"],
+  );
+  assert.ok(calls.every((c) => c.includes(id)));
+});
+test("another capture cannot provide a result, and occupied admission cannot become success", async () => {
+  const wrong = new Recording(id, async () => ({
+    capture_id: "other",
+    status: "saved",
+    bundle_path: "/private/other.apparent",
+    remote_source: null,
+  }));
+  await assert.rejects(wrong.handoff());
+  const failed = new Recording(id, async () => ({
+    capture_id: id,
+    error: "occupied",
+  }));
+  await assert.rejects(failed.start());
+});
+test("an upload pointer does not replace the authoritative path, and local handoff needs no Connect read source", async () => {
+  const path = new Recording(id, async () => ({
+    capture_id: id,
+    bundle_path: "/private/exact.apparent",
+    remote_source: null,
+  }));
+  assert.deepEqual(await path.handoff(), {
+    bundlePath: "/private/exact.apparent",
+    remoteSource: null,
+  });
+  for (const receipt of [
+    { capture_id: id, bundle_path: "relative.apparent", remote_source: null },
+    {
+      capture_id: id,
+      bundle_path: "/private/exact.apparent",
+      remote_source: "/private/other.apparent",
+    },
+  ])
+    await assert.rejects(new Recording(id, async () => receipt).handoff());
+});
+test("launch request accepts only a bounded loopback port and opaque token", () => {
+  assert.deepEqual(destination(`${id}/45000`), { token: id, port: 45000 });
+  for (const suffix of ["45000/extra", "80", "45000?callback=evil", "../45000"])
+    assert.throws(() => destination(`${id}/${suffix}`));
+});

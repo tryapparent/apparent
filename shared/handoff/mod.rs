@@ -798,8 +798,6 @@ pub struct Config {
     #[serde(default)]
     pub auto_send: Option<bool>,
     #[serde(default)]
-    pub video_export: Option<bool>,
-    #[serde(default)]
     pub transcriber: Option<String>,
     #[serde(default)]
     pub warm_recognizer: Option<bool>,
@@ -828,10 +826,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn video_export_enabled(&self) -> bool {
-        self.video_export.unwrap_or(true)
-    }
-
     pub fn warm_recognizer_enabled(&self) -> bool {
         self.warm_recognizer.unwrap_or(true)
     }
@@ -1047,12 +1041,6 @@ pub fn warm_recognizer() -> bool {
 }
 
 
-
-/// Whether the menu offers video export (`videoExport`, default on). `apparent export` works
-/// either way.
-pub fn video_export() -> bool {
-    config().video_export_enabled()
-}
 
 /// The configured transcriber name (`transcriber`) as written, unvalidated.
 pub fn transcriber() -> Option<String> {

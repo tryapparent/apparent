@@ -10,10 +10,13 @@ fn startup_reports_completed_stages_with_first_observations_only() {
     startup.record_at(TracksEnter, at(90));
     startup.record_at(TracksReturn, at(40));
     startup.record_at(PillRequested, at(35));
+    startup.record_at(NotesReady, at(41));
     let stages = startup.stages(origin, 1_000_000_000);
-    assert_eq!(stages.len(), 1);
+    assert_eq!(stages.len(), 2);
     assert_eq!(stages[0].name, "recording.start.prepare");
     assert_eq!((stages[0].start, stages[0].end), (1_000_000_000, 1_020_000_000));
+    assert_eq!(stages[1].name, "recording.start.notes_and_publish");
+    assert_eq!((stages[1].start, stages[1].end), (1_040_000_000, 1_041_000_000));
 }
 
 #[test]

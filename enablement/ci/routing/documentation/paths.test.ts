@@ -47,8 +47,18 @@ test("the skill and its embedded guides reach native and Public verification", (
     ]);
     paths.delete(path);
   }
-  assert.deepEqual(
-    [...paths].sort(),
-    [...publicMarkdown].filter((path) => !path.includes("/skills/")).sort(),
-  );
+  assert.deepEqual([...paths].sort(), [...publicMarkdown].sort());
+});
+
+test("the legacy skill forwarder has no Public publication route", () => {
+  const decision = routeDecision(["capture/agent/skills/apparent/SKILL.md"]);
+  assert.equal(decision.selected.includes("public"), false);
+  assert.equal(decision.publicationStreams.public, false);
+});
+
+test("edits to shared Public inputs still select Public verification", () => {
+  const decision = routeDecision(["shared/enablement/ci/public-inputs.ts"]);
+  assert.deepEqual(decision.selected, ["public", "tooling"]);
+  assert.equal(decision.streams.public, true);
+  assert.equal(decision.publicationStreams.public, true);
 });

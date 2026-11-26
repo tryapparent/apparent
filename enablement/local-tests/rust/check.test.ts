@@ -76,7 +76,14 @@ test("real Cargo diagnostics compare complete pinned trees and tolerate line shi
   install("shared/enablement/dependency-policy/fast/materialize.ts");
   const tools = "shared/enablement/dependency-policy/node_modules";
   install("shared/enablement/issues/run.ts", "process.stdin.resume();\n");
-  install("enablement/local-tests/run.ts", "process.exit(0);\n");
+  install(
+    "enablement/local-tests/run.ts",
+    `import {checkRust} from "./rust/check.ts";
+const args = process.argv.slice(2);
+if (!args.includes("--push-diagnostics")) throw Error("Missing push diagnostics");
+await checkRust(process.cwd(), args[args.indexOf("--base") + 1], args[args.indexOf("--head") + 1]);
+`,
+  );
   put(".gitignore", `/target/\n/cargo-home/\n/${tools}\n`);
   install(
     "build.rs",

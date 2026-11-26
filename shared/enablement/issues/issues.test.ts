@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync, readFileSync, copyFileSync } from "node:fs";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  copyFileSync,
+  existsSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,6 +111,47 @@ test("prepared hooks autofill actual commits, preserve explicit trailer and cust
   assert.match(
     readFileSync(join(f.repo, ".git/message-order"), "utf8"),
     /customcustom/,
+  );
+  assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "123\n");
+});
+
+test("tracked hooks enforce and fill trailers during Git commit", (t) => {
+  const f = fixture(t);
+  for (const directory of [".githooks", "shared/enablement/issues"])
+    mkdirSync(join(f.repo, directory), { recursive: true });
+  for (const name of ["prepare-commit-msg", "commit-msg"]) {
+    const hook = join(root, ".githooks", name);
+    if (existsSync(hook)) copyFileSync(hook, join(f.repo, ".githooks", name));
+  }
+  for (const name of ["reference.ts", "binding.ts", "run.ts"])
+    copyFileSync(
+      join(root, "shared/enablement/issues", name),
+      join(f.repo, "shared/enablement/issues", name),
+    );
+  f.runGit("config", "core.hooksPath", ".githooks");
+  const head = f.runGit("rev-parse", "HEAD");
+  const invoke = (message: string) =>
+    spawnSync("git", ["commit", "--allow-empty", "-m", message], {
+      cwd: f.repo,
+      encoding: "utf8",
+    });
+  const rejected = invoke(
+    "Subject\n\nSee tryapparent/apparent#123 for context.",
+  );
+  assert.notEqual(rejected.status, 0);
+  assert.match(rejected.stderr, /bind tryapparent\/apparent#123/);
+  assert.equal(f.runGit("rev-parse", "HEAD"), head);
+  bind({ repository, number: 123 }, f.repo);
+  process.env.ISSUE_TEST_FAILURE = "offline";
+  assert.notEqual(
+    invoke("Wrong issue\n\nIssue: tryapparent/apparent#124").status,
+    0,
+  );
+  const accepted = invoke("Body reference\n\nSee tryapparent/apparent#123.");
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.match(
+    f.runGit("log", "-1", "--format=%B"),
+    /Issue: tryapparent\/apparent#123$/,
   );
   assert.equal(readFileSync(process.env.ISSUE_TEST_LOG!, "utf8"), "123\n");
 });

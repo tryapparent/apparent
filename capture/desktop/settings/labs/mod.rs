@@ -4,7 +4,6 @@ use crate::shared::handoff::{preference_value, read_preferences, write_preferenc
 use crate::capture::desktop::workflow::performance::{PREFERENCE, SETTING, generation, set_preference};
 
 const KEY: &str = "labs.localStreamingTranscription";
-const AUTO_PASTE: &str = "labs.autoPasteDraft";
 const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permissions/agent-context-activation.json");
 
 #[cfg(not(test))]
@@ -25,8 +24,6 @@ pub(in crate::capture::desktop) fn facts(path: &Path) -> serde_json::Value {
         "speakingStyleSaved": saved("labs.speakingStyle"),
         "agentContextSaved": saved("labs.agentContext"),
         "sharingSaved": saved("labs.hostedSharing"),
-        "autoPasteSaved": saved(AUTO_PASTE),
-        "autoPasteSupported": cfg!(any(target_os = "macos", target_os = "linux")),
         "pushToTalkSaved": saved("labs.pushToTalk"),
         "pushToTalkSupported": push_to_talk_supported(),
         "wisprSaved": saved("labs.onboardingWisprFlow"),
@@ -43,7 +40,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("agentContext") => Some(("labs.agentContext", true)),
         Some("speakingStyle") => Some(("labs.speakingStyle", true)),
         Some("sharing") => Some(("labs.hostedSharing", true)),
-        Some("autoPaste") => Some((AUTO_PASTE, true)),
         Some("pushToTalk") => Some(("labs.pushToTalk", true)),
         Some("wisprFlow") => Some(("labs.onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("dictationFrog") => Some(("labs.dictationFrog", cfg!(target_os = "macos"))),
@@ -197,6 +193,11 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
             } else if let Ok(super::super::settings::Action::AgentsPreference { request: id, enabled, setting }) = serde_json::from_str(&line) {
                 assert!(setting.as_deref() == Some("t3") || setting.is_none() && enabled.is_none());
                 writeln!(input, "{}", super::super::agents::request_for(&path, id, enabled, setting.as_deref())).unwrap();
+            } else if let Ok(super::super::settings::Action::HandoffAutoPaste { request: id, enabled }) = serde_json::from_str(&line) {
+                writeln!(input, "{}", super::super::settings::handoff_auto_paste(&path, id, enabled)).unwrap();
+            } else if let Ok(super::super::settings::Action::Navigate { pane }) = serde_json::from_str(&line) {
+                assert_eq!(pane, super::super::settings::Pane::Handoff);
+                writeln!(input, "{}", serde_json::json!({"type":"show","pane":pane})).unwrap();
             } else {
                 let value: serde_json::Value = serde_json::from_str(&line)
                     .unwrap_or_else(|error| panic!("Unexpected Labs driver output ({error}): {line}"));
@@ -218,16 +219,6 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
             assert_eq!(saved["t3"]["token"],"private-token");
             assert_eq!(saved["experiments"]["agentDemoVideo"],true);assert_eq!(saved["experiments"]["t3DestinationPicker"],true);
         }
-        let initial = facts(&path);
-        let enable = request(&path,3,Some(true),Some("autoPaste"));
-        if initial["autoPasteSupported"] == true {
-            assert_eq!(enable["facts"]["autoPasteSaved"],true);
-        } else {
-            assert_eq!(enable["facts"]["error"],"config_write_failed");
-            assert!(facts(&path)["autoPasteSaved"].is_null());
-        }
-        write_preference(&path, AUTO_PASTE, Some(true.into())).unwrap();
-        assert_eq!(request(&path,3,Some(false),Some("autoPaste"))["facts"]["autoPasteSaved"],false);
         assert_eq!(facts(&path)["saved"],false);
         let before=std::fs::read(&path).unwrap();
         assert_eq!(request(&path,4,Some(true),Some("unknown"))["facts"]["error"],"config_write_failed");

@@ -36,7 +36,7 @@ The original [Settings migration](https://github.com/tryapparent/apparent/issues
 
 - [ ] Move the rest of Permissions and Labs, then General, Recording, Storage, Agents and About. For each pane, migrate the installed control, CLI entry and all production consumers together. Remove the pane's legacy call-site allowances after tests pass. Keep config aliases in the compatibility reader while older files are supported.
 - [ ] Cover side effects with the owning adapters. Shortcut changes must report actual registration. Launch at login must report OS approval and reconciliation. Retention must preserve explicit null. Performance reporting must rotate its consent revision in the same write. Connect consent and revocation must use their existing guarded operations. For live effects, report applied, pending or refused from the provider and test each reachable result.
-- [ ] Update `capture/agent/skills/apparent/SKILL.md` to use the headless commands and verify the effective value. Link the CLI help and owner docs to the same contract. Declare the migration complete when every persisted control has a catalog entry and production has no remaining raw preference call-site allowances.
+- [ ] Update `agent/skills/apparent/SKILL.md` to use the headless commands and verify the effective value. Link the CLI help and owner docs to the same contract. Declare the migration complete when every persisted control has a catalog entry and production has no remaining raw preference call-site allowances.
 
 ## Verification and delivery
 

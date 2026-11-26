@@ -931,19 +931,13 @@ mod tests {
         set(&mut panel, &mut host, "playbackLevel", 101.into());
         set(&mut panel, &mut host, "playbackLevel", (-1).into());
         set(&mut panel, &mut host, "playbackLevel", 0.5.into());
-        assert!(panel.view(&host).video_export);
-        set(&mut panel, &mut host, "videoExport", false.into());
-        assert!(!Panel::default().view(&host).video_export);
-        set(&mut panel, &mut host, "videoExport", true.into());
         set(&mut panel, &mut host, "transcriber", "hex".into());
         set(&mut panel, &mut host, "transcriber", "nonsense".into());
         let view = panel.view(&host);
-        assert!(view.video_export);
         assert!(serde_json::to_value(&view).unwrap().get("autoSend").is_none());
         set(&mut panel, &mut host, "autoSend", true.into());
         assert!(read_json(&host.path).get("autoSend").is_none());
         let config = read_json(&host.path);
-        assert_eq!(config["recording"]["videoExport"], true);
         let mac = cfg!(target_os = "macos");
         assert_eq!(config["recording"]["lowerPlayback"].as_bool(), mac.then_some(true));
         assert_eq!(config["recording"]["playbackLevel"].as_u64(), mac.then_some(35));
@@ -1262,7 +1256,7 @@ mod tests {
         );
         assert_eq!(
             panel.view(&host).skill_command,
-            "bunx skills add https://github.com/tryapparent/apparent/tree/main/capture/agent/skills/apparent"
+            "bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent"
         );
 
         let macos = dir.0.join("Apparent.app/Contents/MacOS");

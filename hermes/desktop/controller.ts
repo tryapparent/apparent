@@ -7,8 +7,6 @@ export interface Destination {
   mode: string;
   local: boolean;
 }
-// Preflight only: native Start still owns atomic capture admission.
-export function captureCanStart(phase: unknown): boolean { return phase === 'idle' || phase === 'completed'; }
 export interface LocalRoute { connectionId: string; profile: string; targetProfile: string }
 export interface Pending {
   version: 4;

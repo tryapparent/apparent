@@ -13,11 +13,27 @@
         "instructions": "From capture/desktop/ui/frontend, run npm run build and then node --experimental-strip-types --test ../../../../composition/settings/enablement/recording.smoke.ts. Set APPARENT_RECORDING_PROOF to save screenshots."
       },
       "expectedEvidence": [
-        "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer.",
-        "The macOS fixture shows a playback switch and slider. At 720 and 640 pixels in both themes, the pane remains keyboard accessible and saves or recovers from a refused Video export change."
+        "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer. The Export instructions show Export Latest Video… at 720 and 640 pixels in both themes.",
+        "The macOS fixture shows a playback switch and slider. At 720 and 640 pixels in both themes, the pane remains keyboard accessible."
       ],
       "limits": [
         "The Electron parent uses synthetic platform and recording facts. Native volume effects and installer behavior require their owning checks."
+      ]
+    },
+    {
+      "id": "linux-tray-video-export",
+      "description": "Verify the video export label and action in Waybar.",
+      "platforms": ["linux-hyprland"],
+      "userEntryPoint": "Open the Apparent tray menu in Waybar and choose Export Latest Video….",
+      "prerequisites": [
+        "A candidate build in a disposable Omarchy guest with Waybar, a working FileChooser portal and a synthetic latest capture."
+      ],
+      "runner": {
+        "path": "capture/desktop/docs/native-testing.md",
+        "instructions": "Use the isolated guest runner and open the actual Waybar tray menu. Select Export Latest Video…, save to a private MP4 path, and decode the result."
+      },
+      "expectedEvidence": [
+        "Waybar shows the entire action label. The action opens the save dialog and saves a decodable MP4 from the synthetic latest capture."
       ]
     },
     {
@@ -49,11 +65,11 @@
       ],
       "runner": {
         "path": "capture/desktop/ui/frontend/package.json",
-        "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
+        "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. From the repository root, run xvfb-run -a node --test record/pill/enablement/startup.smoke.cts after building the frontend. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
       },
       "expectedEvidence": [
         "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
-        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. In the isolated Hyprland guest, check that the startup and ready rows have the same size and that a physical click on Cancel during the spinner returns the same capture to idle with no saved bundle."
+        "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle."
       ],
       "limits": [
         "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."
@@ -224,7 +240,8 @@
         "instructions": "record/settings/renderer/README.md#verify-browser-handoff-on-a-native-desktop"
       },
       "expectedEvidence": [
-        "The clipboard groups successive clicks and circles under one verified page URL with their action times. A multi-stroke circle on the same page has one entry.",
+        "The clipboard groups successive clicks and circles under one verified page URL with their action times.",
+        "Three completed circles around distinct items with less than 1.2 seconds between them remain three marks with separate timestamps and labels.",
         "The clipboard retains marks with missing labels and shows only a short nearby location when needed, with no unknown-window or unidentified-target placeholders.",
         "The saved summary retains individual browser page observations at their original times.",
         "The synthetic query and fragment are absent from the full handoff, including interaction labels.",
@@ -232,6 +249,28 @@
       ],
       "limits": [
         "The browser must publish its accessibility tree. This checks page URLs for clicks and Shift ink on the browsers and versions exercised."
+      ]
+    },
+    {
+      "id": "pin-window-context",
+      "description": "Verify bounded native accessibility context and clipboard text for a pin.",
+      "platforms": ["linux-hyprland", "macos"],
+      "userEntryPoint": "Enable Recording context for agents in Labs and place a pin during a Screen recording.",
+      "prerequisites": [
+        "A candidate running in an isolated macOS or Omarchy desktop and a synthetic app exposing accessible controls.",
+        "Desktop accessibility and live screen recording available."
+      ],
+      "runner": {
+        "path": "record/media/action-context/README.md",
+        "instructions": "record/media/action-context/README.md#verify-in-an-isolated-native-desktop"
+      },
+      "expectedEvidence": [
+        "A disabled button and checked checkbox appear in the pinWindow observation and the relevant keyframe handoff.",
+        "The password value is absent. The pin still saves with the lab off or when the target has no accessibility tree.",
+        "On macOS, Safari pins capture both control states with the cursor at the pin and the Dock either visible or hidden."
+      ],
+      "limits": [
+        "Bounds are best-effort, window-relative coordinates. This check exercises Accessibility on macOS or AT-SPI on Hyprland."
       ]
     }
   ]

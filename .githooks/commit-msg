@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+repo_root=$(git rev-parse --show-toplevel)
+exec node --experimental-strip-types "$repo_root/shared/enablement/issues/run.ts" validate-message "$1"

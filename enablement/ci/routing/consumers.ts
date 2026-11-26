@@ -7,7 +7,7 @@ export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client'
 export type Owner = typeof owners[number];
 export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
   .map(file => 'capture/desktop/scripts/packaging/' + file));
-import { publicMarkdown, hostedBrowserFixture } from '../../../public/enablement/cd/ci/inputs.ts';
+import { publicMarkdown, hostedBrowserFixture } from '../../../shared/enablement/ci/public-inputs.ts';
 export { publicMarkdown };
 const apparentSkill = 'agent/skills/apparent/';
 const proseRoots = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', 'engine', 'handoff', 'onboarding'];
@@ -55,6 +55,7 @@ export function onboardingInput(path: string) {
 }
 function directConsumers(path: string): readonly Owner[] {
   if (documentationOnlyPath(path)) return [];
+  if (path === 'shared/enablement/ci/public-inputs.ts') return ['public', 'tooling'];
   if (branchCleanupInput(path) || admissionTooling(path)) return ['tooling'];
   if (desktopPackagingInputs.has(path)) return ['capture', 'engine', 'desktop', 'capture-tools', 'client-foreground'];
   if (path.startsWith('engine/diagnostics/')) return ['capture'];
@@ -72,7 +73,6 @@ function directConsumers(path: string): readonly Owner[] {
 
   if (path.startsWith(apparentSkill)) return ['capture', 'engine', 'public'];
   if (publicMarkdown.has(path)) return ['public'];
-  if (path === 'hermes/skills/recordings/SKILL.md') return ['hermes'];
   if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)\.md$/i.test(path) && !['capture/', 'connect/', 'public/', 'hermes/', 'record/'].some(root => path.startsWith(root))) return platformOwners;
   const native = /\.(rs|swift|metal|c|cc|cpp|h|mm)$/.test(path) || /(^|\/)Cargo\.(toml|lock)$/.test(path);
   if (/^record\/(?:storage|completion|capture-request|transcription)\/(?:src\/.*\.ts|test\/.*\.test\.ts|package(?:-lock)?\.json|tsconfig(?:\.build)?\.json)$/.test(path) ||
@@ -87,7 +87,7 @@ function directConsumers(path: string): readonly Owner[] {
   if (path === '.github/workflows/checks.yml') return ['capture', 'engine', 'desktop', 'client', 'client-foreground', 'web', 'service', 'capture-tools', 'tooling', 'onboarding'];
   if (/^(hermes\/|\.github\/workflows\/hermes\.yml$)/.test(path)) return ['hermes'];
   if (linuxDrivers.has(path)) return ['capture-tools'];
-  if (path.startsWith(frontend + 'src/hermes/')) return ['desktop', 'capture', 'hermes'];
+  if (path.startsWith(frontend + 'src/hermes/') || path.startsWith('composition/hermes/')) return ['desktop', 'capture', 'hermes'];
   if (path.startsWith(frontend) || /^composition\/(quit|pill)\//.test(path) ||
       /^agent\/(zoom\/|enablement\/ci\/bend\/(build\.ts|modules\.json)$)/.test(path)) return ['desktop', 'capture'];
   if (path.startsWith('capture/desktop/scripts/native/foreground/')) return ['capture', 'engine', 'desktop', 'capture-tools'];
@@ -146,9 +146,8 @@ const directoryPaths = {
     'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path)],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
-  public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml', 'README.md',
-    apparentSkill + '**', 'capture/' + apparentSkill + 'SKILL.md', 'capture/agent/docs/usage.md',
-    'capture/desktop/docs/guides/recording.md', 'capture/engine/docs/guides/processing.md'],
+  public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml',
+    apparentSkill + '**', ...publicMarkdown],
   hermes: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/stream-public.yml', 'hermes/**', 'capture/agent/setup/**',
     frontend + 'src/hermes/**', '.github/workflows/hermes.yml'],
   engine: automaticPaths,
@@ -185,8 +184,8 @@ export function routeDecision(paths: string[] | null, workflowControls: string[]
   const publicSelected = selected.includes('public');
   const updater = unknown || !!orchestration || !!effective?.some(path =>
     ['capture/desktop/scripts/linux/gui/', 'capture/desktop/scripts/linux/updater/'].some(prefix => path.startsWith(prefix)) ||
-    ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/update.rs',
-      'capture/desktop/settings/settings.rs', 'capture/desktop/settings/settings_window.rs'].includes(path));
+    ['.github/workflows/linux-updater-harness.yml', 'capture/desktop/linux/updates/update.rs',
+      'capture/desktop/settings/settings.rs'].includes(path));
   const streams = Object.fromEntries(Object.keys(streamPaths).map(stream => [stream, (unknown && stream !== 'engine') || !!paths?.some(path => affectsStream(stream as Stream, path))]));
   const requiredStreams = {capture: plan.root || plan.engine || plan.desktop || plan.client || plan.tools || plan.onboarding,
     connect: plan.browser || plan.service || plan.client || plan.foreground, public: plan.public, hermes: plan.hermes,

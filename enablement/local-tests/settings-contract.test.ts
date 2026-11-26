@@ -22,6 +22,36 @@ const picker = {
   legacy: { path: "experiments.chooseScreenEachTime", invert: true },
 } satisfies Preference;
 
+test("a moved control keeps its registered config ID and binds in its new pane", async () => {
+  const moved = {
+    ...picker,
+    id: "labs.autoPasteDraft",
+    pane: "handoff",
+  } satisfies Preference;
+  const catalog = validateCatalog([
+    ["handoff/settings/preferences.json", [moved]],
+  ]);
+  assert.match(
+    renderPreferenceIds(catalog),
+    /"labs\.autoPasteDraft": "handoff"/,
+  );
+  const bindings: string[] = [];
+  const inspect = await sourceChecker(catalog, (id) => bindings.push(id));
+  const binding = 'bindPreference("handoff", "labs.autoPasteDraft", () => {});';
+  assert.deepEqual(
+    inspect("handoff/settings/auto-paste.tsx", binding).failures,
+    [],
+  );
+  assert.deepEqual(bindings, [moved.id]);
+  assert.match(
+    inspect(
+      "handoff/settings/auto-paste.tsx",
+      binding.replace('"handoff"', '"labs"'),
+    ).failures.join(),
+    /cannot bind in labs/,
+  );
+});
+
 test("catalog validates one registered ID and config path per preference", () => {
   const record = "record/settings/preferences.json";
   const onboarding = "onboarding/settings/preferences.json";
