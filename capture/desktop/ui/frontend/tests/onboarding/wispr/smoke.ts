@@ -38,16 +38,16 @@ test('Wispr onboarding confirms exit before the dunk, holds the landing, and pre
   await expect.poll(()=>page.locator('.wispr-frog').getAttribute('data-pose')).toBe('3');
   await shot('landing');
   assert.deepEqual(await app.evaluate(()=>(globalThis as any).actions),[],'confirmation hold precedes shortcut listening');
-  await expect(page.getByRole('heading',{name:'Choose your shortcut.'})).toBeVisible();await assertHold();
+  await expect(page.getByRole('button',{name:'Use shortcut'})).toBeDisabled();await assertHold();
+  await page.getByRole('button',{name:'Change shortcut'}).click();
   await expect.poll(()=>app.evaluate(()=>(globalThis as any).actions)).toEqual(['change-shortcut']);
-  // Re-enter the actual step, not a second presentation implementation.
   await update({step:'permissions'});await expect(page.getByRole('heading',{name:'We need three things.'})).toBeVisible();await update({step:'shortcut'});
   await expect(quit).toBeEnabled();await quit.click();
   await app.evaluate(()=>{(globalThis as any).outcome='refused';(globalThis as any).finish();});
   await expect(page.getByRole('heading',{name:'Wispr is still open.'})).toBeVisible();await shot('refused');
   assert.equal(await page.locator('.wispr-frog').getAttribute('data-pose'),'0');
   await page.getByRole('button',{name:'Continue anyway'}).click();
-  await expect(page.getByRole('heading',{name:'Choose your shortcut.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Test your recording shortcut.'})).toBeVisible();
   await update({step:'permissions'});await expect(page.getByRole('heading',{name:'We need three things.'})).toBeVisible();await update({step:'shortcut',wisprFlowEnabled:false});
   await expect(page.locator('.native-wispr')).toHaveCount(0);
   await app.evaluate(()=>{(globalThis as typeof globalThis & {detected:{status:string;apps?:string[]}}).detected={status:'running',apps:['superwhisper']};});
@@ -65,7 +65,7 @@ test('Wispr onboarding confirms exit before the dunk, holds the landing, and pre
   });
   await expect(page.getByText('Superwhisper has quit.')).toBeVisible();await shot('superwhisper-closed');
   await expect.poll(()=>page.locator('.wispr-frog').getAttribute('data-pose')).toBe('3');
-  await expect(page.getByRole('heading',{name:'Choose your shortcut.'})).toBeVisible();await assertHold();
+  await expect(page.getByRole('heading',{name:'Test your recording shortcut.'})).toBeVisible();await assertHold();
   await update({step:'permissions'});
   await expect(page.getByRole('heading',{name:'We need three things.'})).toBeVisible();
   await app.evaluate(()=>{(globalThis as typeof globalThis & {detected:{status:string;apps?:string[]}}).detected={status:'unknown'};});
@@ -76,5 +76,5 @@ test('Wispr onboarding confirms exit before the dunk, holds the landing, and pre
   await page.getByRole('button',{name:'Try again'}).click();
   await expect(page.getByText('Wispr Flow and Superwhisper may use the same shortcut as Apparent.')).toBeVisible();await shot('both-running');
   await page.getByRole('button',{name:'Keep both open'}).click();
-  await expect(page.getByRole('heading',{name:'Choose your shortcut.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Test your recording shortcut.'})).toBeVisible();
 });

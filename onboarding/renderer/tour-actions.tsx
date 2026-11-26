@@ -1,6 +1,6 @@
 import { Button } from "@apparent/ui/button";
 
-type Action = "later" | "skip-pen" | "skip-shortcut-trial";
+type Action = "later" | "skip-pen";
 
 export function TourAction({
   action,
@@ -14,7 +14,6 @@ export function TourAction({
   const label = {
     later: "Later",
     "skip-pen": "Keep current pen",
-    "skip-shortcut-trial": "Skip shortcut practice",
   }[action];
   return (
     <Button

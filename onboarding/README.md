@@ -7,8 +7,9 @@ This is the canonical top-level owner root, not a claim of completed migration. 
 The welcome tour is optional. **Later** and window close save its place and
 silence startup. A successful recording keeps future launches quiet. Open
 **Resume setup** in Settings → About to pick up a saved tour or **Show welcome
-tour** to replay a finished one. Skipping the pen or shortcut practice keeps
-the current choice. Recording entry points use the effective Record shortcut
+tour** to replay a finished one. Electron setup tests the effective Record
+shortcut and waits for **Use shortcut** before advancing. **Change shortcut**
+opens the existing native shortcut editor. Recording entry points use the effective Record shortcut
 or visible capture controls and surface permission repair for actual blockers.
 
 The desktop build compiles the TypeScript launch policy for use before a
