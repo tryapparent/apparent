@@ -19,7 +19,7 @@ tools="$out/tools"
 appdir="$out/AppDir"
 mkdir -p "$tools"
 rm -rf "$appdir"
-python3 "$root/capture/desktop/scripts/packaging/stage-settings.py" "$appdir/usr/share/apparent/settings"
+node --experimental-strip-types "$root/capture/desktop/scripts/packaging/frontend/stage.ts" --appimage "$appdir"
 
 fetch() {
   [ -s "$tools/$2" ] || curl -fsSL -o "$tools/$2" "$1"
@@ -54,7 +54,6 @@ done < "$out/nss-libraries"
 
 cd "$out"
 install -Dm755 "$root/capture/desktop/scripts/support/apparent-restore-clipboard.py" "$appdir/usr/bin/apparent-restore-clipboard.py"
-node "$root/capture/desktop/ui/frontend/scripts/package-notes.mjs" "$appdir/usr/lib/apparent/note-ui"
 desktop_entry="$out/dev.kitlangton.apparent.desktop"
 node --experimental-strip-types "$root/composition/enablement/release/linux/desktop-entry.ts" > "$desktop_entry"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
