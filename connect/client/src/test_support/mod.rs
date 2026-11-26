@@ -636,12 +636,12 @@ pub fn deferred_cancelled_settings_login(
     result
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     root: PathBuf,
-    client: Client,
+    pub(super) client: Client,
 }
 impl Fixture {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         // macOS temporary roots can be aliases; the fixture itself must use a
         // canonical tree so symlink rejection tests reach their intended boundary.
         let root = std::env::temp_dir()
@@ -652,7 +652,7 @@ impl Fixture {
         let client = Client::new(provider(root.join("config.json")));
         Self { root, client }
     }
-    fn authorize(&self, server: &str) {
+    pub(super) fn authorize(&self, server: &str) {
         config::enable_experiment(HOSTED_SYNC);
         atomic_json(&self.client.config, &json!({"unrelated":{"kept":true}, "experiments":{"hostedSync":true},"cloud":{"enabled":true,"uploadConsent":true,"server":server}})).unwrap();
         for scope in ["upload", "read"] {
@@ -698,11 +698,11 @@ impl Drop for Fixture {
 }
 
 #[derive(Default)]
-struct State {
+pub(super) struct State {
     // Optional synthetic registry: public keys and opaque storage, never crypto.
     encryption: Option<EncryptionState>,
     format: Option<String>,
-    request_routes: Vec<String>,
+    pub(super) request_routes: Vec<String>,
     list_routes: Vec<String>,
     progress: Vec<String>,
     shares: usize,
@@ -713,7 +713,7 @@ struct State {
     data: BTreeMap<String, Vec<u8>>,
     ready: bool,
     polls: usize,
-    requests: usize,
+    pub(super) requests: usize,
     mode: String,
     media_gate: Option<Arc<MediaGate>>,
 }
@@ -732,14 +732,14 @@ struct MediaGate {
     transport_paused: AtomicBool,
     transport_release: AtomicBool,
 }
-struct Server {
-    url: String,
-    state: Arc<Mutex<State>>,
+pub(super) struct Server {
+    pub(super) url: String,
+    pub(super) state: Arc<Mutex<State>>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Server {
-    fn new(mode: &str) -> Self {
+    pub(super) fn new(mode: &str) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let addr = listener.local_addr().unwrap();
@@ -1442,6 +1442,7 @@ pub fn hosted_fetch_connection_failures_discover_mcp_without_changing_access() {
     let credential = fs::read(f.client.state.join("read.credential")).unwrap();
     let error = f.client.fetch(&id, &out, 0).unwrap_err().to_string();
     assert!(error.starts_with("Hosted transport failed"), "{error}");
+    assert!(error.contains("phase=manifest, curl_exit=7"), "{error}");
     assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
     assert!(error.contains("separate offline apparent-connect-mcp reader"), "{error}");
     assert!(!error.contains("synthetic-read-secret"), "{error}");
@@ -1461,6 +1462,9 @@ pub fn hosted_fetch_connection_failures_discover_mcp_without_changing_access() {
     assert_eq!(fs::read(&f.client.config).unwrap(), config);
     assert_eq!(proxy.state.lock().unwrap().requests, 1);
     assert!(!out.exists());
+
+    #[cfg(test)]
+    file_transfer::test_stalled_transport(&f.client, &id, &out, |origin| f.authorize(origin));
 }
 
 #[cfg_attr(test, test)]
@@ -1522,8 +1526,10 @@ pub fn hosted_fetch_before_reservation_waits_and_unavailable_is_actionable() {
 /// The caller supplies an application-readable manifest, not a second formatter.
 pub fn inspect_cli_scenario(
     manifest: &Value,
-    run: impl Fn(&Path, &Path, &[&str]) -> std::process::Output,
+    run: impl Fn(&Path, &Path, &[&str]) -> std::process::Output + Copy + 'static,
 ) {
+    use std::os::unix::fs::PermissionsExt;
+
     let f = Fixture::new();
     let server = Server::new("");
     f.authorize(&server.url);
@@ -1532,9 +1538,8 @@ pub fn inspect_cli_scenario(
     let id = f.client.enqueue(&bundle).unwrap();
     f.client.process_once().unwrap();
     server.state.lock().unwrap().mode = "inspect-pending".into();
-    // A receiver needs only a read grant, with no upload experiment or consent.
     fs::remove_file(f.client.state.join("upload.credential")).unwrap();
-    atomic_json(&f.client.config, &json!({"cloud":{"server":server.url}})).unwrap();
+    atomic_json(&f.client.config, &json!({"cloud":{"server":server.url},"experiments":{"hostedEncryption":false}})).unwrap();
     let config_before = fs::read(&f.client.config).unwrap();
     let out = f.root.join(format!("{id}.apparent"));
     let output = run(&f.client.config, &f.root, &["inspect", &id]);
@@ -1595,6 +1600,57 @@ pub fn inspect_cli_scenario(
     let output = run(&f.client.config, &json_cwd, &["inspect", &id, "--json"]);
     assert!(output.status.success(), "{output:?}");
     assert!(String::from_utf8_lossy(&output.stdout).contains("\"id\": \"synthetic-inspect\""));
+    let shared_cwd = f.root.join("shared");
+    fs::DirBuilder::new().mode(0o770).create(&shared_cwd).unwrap();
+    fs::set_permissions(&shared_cwd, fs::Permissions::from_mode(0o770)).unwrap();
+    let private_out = json_cwd.join("marks.apparent");
+    let output = run(&f.client.config, &shared_cwd, &[
+        "inspect", &id, "--out", private_out.to_str().unwrap(), "--marks", "--json",
+    ]);
+    assert!(output.status.success(), "{output:?}");
+    let marks: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(marks.as_array().unwrap().len(), 1);
+    assert_eq!(marks[0]["id"], "synthetic-mark");
+    assert_eq!(marks[0]["t0"], 600);
+    assert!(private_out.join("apparent.json").is_file());
+    assert!(fs::read_dir(&shared_cwd).unwrap().next().is_none());
+    let requests = server.state.lock().unwrap().requests;
+    for (source, destination, error) in [
+        (id.as_str(), private_out.clone(), "already exists"),
+        (id.as_str(), shared_cwd.join("unsafe.apparent"), "group or other users have write permission"),
+        (id.as_str(), json_cwd.join("bad-extension"), "--out must name"),
+        ("./local.apparent", json_cwd.join("unused.apparent"), "--out requires a Connect capture ID"),
+    ] {
+        let output = run(&f.client.config, &shared_cwd, &[
+            "inspect", source, "--out", destination.to_str().unwrap(),
+        ]);
+        assert!(!output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains(error), "{output:?}");
+    }
+    assert_eq!(server.state.lock().unwrap().requests, requests);
+    assert!(fs::read_dir(&shared_cwd).unwrap().next().is_none());
+
+    let staged_out = json_cwd.join("staged.apparent");
+    let inspected_path = staged_out.clone();
+    let config = f.client.config.clone();
+    let cwd = shared_cwd.clone();
+    let inspected_during_fetch = std::rc::Rc::new(std::cell::Cell::new(false));
+    let observed = inspected_during_fetch.clone();
+    set_hook(move |point, _| {
+        if point == "fetch_stage" {
+            let output = run(&config, &cwd, &["inspect", inspected_path.to_str().unwrap(), "--marks"]);
+            assert!(!output.status.success(), "{output:?}");
+            assert!(String::from_utf8_lossy(&output.stderr).contains("Bundle directory not found"));
+            observed.set(true);
+        }
+    });
+    let fetched = f.client.fetch(&id, &staged_out, 0);
+    clear_hook();
+    assert_eq!(fetched.unwrap(), staged_out);
+    assert!(inspected_during_fetch.get());
+    let output = run(&f.client.config, &shared_cwd, &["inspect", staged_out.to_str().unwrap(), "--marks"]);
+    assert!(output.status.success(), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stdout).contains("synthetic-mark"));
     assert_eq!(fs::read(&f.client.config).unwrap(), config_before);
     assert!(!f.client.state.join("upload.credential").exists());
 }
@@ -1604,8 +1660,6 @@ pub fn inspect_cli_failure_scenario(
     run: impl Fn(&Path, &Path, &[&str]) -> std::process::Output,
 ) {
     for mode in ["missing-read", "inspect-unauthorized", "inspect-corrupt", "fetch-missing"] {
-        // A rejected grant is durably auth_required; use an independent receiver
-        // so the corruption case reaches its own integrity boundary.
         let f = Fixture::new();
         let server = Server::new("");
         f.authorize(&server.url);
@@ -1613,6 +1667,7 @@ pub fn inspect_cli_failure_scenario(
         fs::write(bundle.join("apparent.json"), serde_json::to_vec(manifest).unwrap()).unwrap();
         let id = f.client.enqueue(&bundle).unwrap();
         f.client.process_once().unwrap();
+        atomic_json(&f.client.config, &json!({"cloud":{"server":server.url},"experiments":{"hostedEncryption":false}})).unwrap();
         let out = f.root.join(format!("{id}.apparent"));
         let credential = f.client.state.join("read.credential");
         let saved = f.client.state.join("saved-read.credential");
@@ -1831,62 +1886,8 @@ pub fn hosted_integrity_and_pending_timeout_publish_nothing() {
     assert!(start.elapsed() < Duration::from_secs(2));
     assert!(!out.exists());
 }
-#[cfg_attr(test, test)]
-pub fn hosted_transport_network_timeout_and_cancellation() {
-    let f = Fixture::new();
-    let server = Server::new("slow");
-    let stage = Scratch::new(&f.client.state).unwrap();
-    let start = Instant::now();
-    assert!(
-        f.client
-            .raw_request(
-                &server.url,
-                Some("synthetic-secret"),
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("timeout"),
-                100,
-                Duration::from_millis(100),
-                &|| true
-            )
-            .is_err()
-    );
-    assert!(start.elapsed() < Duration::from_secs(1));
-    assert!(
-        f.client
-            .request(
-                &server.url,
-                None,
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("cancelled"),
-                100,
-                Duration::from_secs(1),
-                &|| false
-            )
-            .is_err()
-    );
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    assert!(
-        f.client
-            .request(
-                &url,
-                None,
-                "GET",
-                "/v1/account",
-                None,
-                &stage.0.join("offline"),
-                100,
-                Duration::from_secs(1),
-                &|| true
-            )
-            .is_err()
-    );
-}
+pub use file_transfer::hosted_transport_network_timeout_and_cancellation;
+
 #[cfg_attr(test, test)]
 pub fn hosted_scoped_retry_preserves_other_jobs_and_refuses_terminal_work() {
     for unrelated_status in ["pending", "failed"] {
@@ -2634,41 +2635,4 @@ pub fn hosted_provider_write_failure_never_reports_disabled_or_login_success() {
     assert_eq!(client.jobs().unwrap()[0].status, "cancelled");
     assert!(server.state.lock().unwrap().data.is_empty());
     assert_eq!(fs::read(bundle.join("audio.wav")).unwrap(), b"audio");
-}
-
-#[cfg_attr(test, test)]
-pub fn hosted_activity_real_typescript_and_authenticated_transport() {
-    let f=Fixture::new();
-    let server=Server::new("upload");
-    f.authorize(&server.url);
-    let before=fs::read(&f.client.config).unwrap();
-    f.client.recording_activity(true,f.client.recording_account()).unwrap();
-    assert_eq!(server.state.lock().unwrap().requests,0,"practice must never send");
-    f.client.recording_activity(false,f.client.recording_account()).unwrap();
-    assert_eq!(server.state.lock().unwrap().request_routes,["POST /v1/activity/recording-started"]);
-    fs::remove_file(f.client.state.join("upload.credential")).unwrap();
-    fs::remove_file(f.client.state.join("read.credential")).unwrap();
-    f.client.recording_activity(false,f.client.recording_account()).unwrap();
-    assert_eq!(server.state.lock().unwrap().requests,1,"signed-out must never send");
-    assert_eq!(fs::read(&f.client.config).unwrap(),before,"activity must never enable upload/config permissions");
-}
-
-#[cfg_attr(test, test)]
-pub fn hosted_activity_pins_account_before_background_worker() {
-    let f=Fixture::new();let server=Server::new("upload");
-    let signed_out=f.client.recording_account();assert!(signed_out.is_none());
-    f.authorize(&server.url);
-    f.client.recording_activity(false,signed_out).unwrap();
-    assert_eq!(server.state.lock().unwrap().requests,0,"late sign-in cannot claim an earlier start");
-    let old=f.client.recording_account();assert!(old.is_some());
-    let mut replacement=f.client.credential("upload",&server.url).unwrap();
-    replacement.generation="b".repeat(32);
-    atomic_json(&f.client.state.join("upload.credential"),&replacement).unwrap();
-    assert!(f.client.recording_activity(false,old).is_err());
-    assert_eq!(server.state.lock().unwrap().requests,0,"account replacement revokes the pinned start");
-    let current=f.client.recording_account();
-    f.client.settings_disable(true).unwrap();
-    let before=server.state.lock().unwrap().requests;
-    assert!(f.client.recording_activity(false,current).is_err());
-    assert_eq!(server.state.lock().unwrap().requests,before,"disconnect revokes an already observed start");
 }

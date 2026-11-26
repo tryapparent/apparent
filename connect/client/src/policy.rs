@@ -470,3 +470,14 @@ impl Client {
             .as_str().map(str::to_owned).context("Invalid Connect alternatives")
     }
 }
+
+pub(super) fn transport_failure(method: &str, route: &str, detail: &str, fallback: &str) -> anyhow::Error {
+    let phase = match (method, route, route.strip_prefix("/v1/captures/")) {
+        ("GET", _, Some(capture_route)) if capture_route.contains("/files/") => "asset",
+        ("GET", _, Some(capture_route)) if !capture_route.contains('/') => "manifest",
+        ("GET", "/v1/encryption/peers", _) => "peer_authorization",
+        ("POST", "/v1/token/refresh", _) => "credential_renewal",
+        _ => return hosted_failure(SafeError::Offline, fallback),
+    };
+    hosted_failure(SafeError::Offline, format!("Hosted transport failed (phase={phase}, {detail})"))
+}

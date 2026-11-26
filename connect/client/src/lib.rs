@@ -19,6 +19,7 @@ use encrypted_transfer::snapshot;
 mod private_files;
 use private_files::*;
 mod file_transfer;
+use file_transfer::config_escape;
 mod policy;
 use policy::*;
 mod encryption;
@@ -361,14 +362,6 @@ fn server_url(raw: &str) -> Result<String> {
         "Plain HTTP is allowed only on loopback"
     );
     Ok(raw.to_owned())
-}
-
-fn config_escape(value: &str) -> Result<String> {
-    ensure!(
-        !value.bytes().any(|b| b.is_ascii_control()),
-        "Invalid transport value"
-    );
-    Ok(value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 impl Client {
@@ -1027,7 +1020,7 @@ impl Client {
                 let _ = child.kill();
                 let _ = child.wait();
                 ensure!(active && allowed(), cancelled());
-                bail!(hosted_failure(SafeError::Offline, "Hosted request timed out"));
+                bail!(transport_failure(method, route, "reason=request_deadline", "Hosted request timed out"));
             }
             if let Some(status) = child.try_wait()? {
                 break status;
@@ -1055,10 +1048,13 @@ impl Client {
                 fs::metadata(output).ok().map(|m| m.len()),
             );
         }
-        ensure!(
-            status.success(),
-            hosted_failure(SafeError::Offline, "Hosted transport failed (network, timeout or response limit)")
-        );
+        if !status.success() {
+            let detail = match status.code() {
+                Some(code) => format!("curl_exit={code}"),
+                None => "reason=curl_terminated".to_owned(),
+            };
+            bail!(transport_failure(method, route, &detail, "Hosted transport failed (network, timeout or response limit)"));
+        }
         ensure!(
             fs::metadata(output)?.len() <= limit,
             "Hosted response exceeds limit"

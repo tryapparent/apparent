@@ -121,7 +121,26 @@ impl StyleExamples {
     }
 }
 
-pub(crate) fn inspect(bundle: std::path::PathBuf, reader: Option<String>, json: bool, marks: bool, style_examples: bool, experiments: Vec<String>) -> Result<()> {
+#[derive(clap::Args)]
+pub(super) struct InspectArgs {
+    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest")]
+    bundle: std::path::PathBuf,
+    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+    reader: Option<String>,
+    #[arg(long, conflicts_with = "style_examples", help = "Download a Connect ID to a new .apparent directory under an existing private parent")]
+    out: Option<std::path::PathBuf>,
+    #[arg(long, help = "Emit apparent.json or, with --marks, emit marks as JSON")]
+    json: bool,
+    #[arg(long, help = "List numbered marks with their frame, time, shape and ID for apparent zoom --mark")]
+    marks: bool,
+    #[arg(long, conflicts_with_all = ["json", "marks"], help = "Read earlier transcript examples for a speaking-style handoff")]
+    style_examples: bool,
+    #[arg(long = "experiment", value_name = "NAME", help = "Turn an experiment on for this summary (e.g. agentContext). Repeatable")]
+    experiments: Vec<String>,
+}
+
+pub(super) fn inspect(args: InspectArgs) -> Result<()> {
+    let InspectArgs { bundle, reader, out, json, marks, style_examples, experiments } = args;
     use crate::shared::handoff;
     use crate::capture::agent::context as agent_context;
     use crate::capture::engine::sketch::summary_markdown;
@@ -143,7 +162,9 @@ pub(crate) fn inspect(bundle: std::path::PathBuf, reader: Option<String>, json: 
         return Ok(());
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let bundle = hosted::inspect_source(&bundle, reader.as_deref())?;
+    let bundle = hosted::inspect_source(&bundle, reader.as_deref(), out.as_deref())?;
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    anyhow::ensure!(out.is_none(), "--out requires Connect support");
     let (dir, loaded) = handoff::load_bundle(&bundle)?;
     if marks {
         let entries = agent_context::mark_entries(&loaded);

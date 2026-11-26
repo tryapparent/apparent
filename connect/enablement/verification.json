@@ -22,7 +22,7 @@
     },
     {
       "id": "inspect-connect-directory-diagnostics",
-      "description": "Distinguish unsafe download destinations from unsafe local Connect reader storage during capture inspection.",
+      "description": "Inspect a Connect capture from a shared working directory using a private output path and verify atomic bundle publication.",
       "platforms": ["linux", "macos"],
       "userEntryPoint": "Run apparent inspect <capture-id> from a directory that fails a Connect trust check.",
       "prerequisites": [
@@ -35,10 +35,33 @@
       "expectedEvidence": [
         "An unsafe download destination is named on the first error line, along with the permission failure and a private retry path.",
         "An unsafe reader directory identifies local Connect reader storage and the permission failure.",
-        "Both failures omit absolute paths and leave no downloaded capture or staging directory. The loopback fixture also verifies successful inspection in private storage."
+        "Both failures omit absolute paths and leave no downloaded capture or staging directory.",
+        "From a shared directory, inspect with an explicit private --out and --marks prints the verified bundle's marks. Unsafe, existing and invalid destinations fail before any request.",
+        "A local mark inspection during a separate fetch cannot read the unpublished output. It succeeds after the fetch publishes the complete bundle."
       ],
       "limits": [
         "The scenarios use synthetic files and a loopback Connect service."
+      ]
+    },
+    {
+      "id": "capture-read-transport-diagnostics",
+      "description": "Differentiate a refused Connect manifest connection from a stalled manifest request.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Run apparent fetch or apparent inspect against an authorized Connect capture.",
+      "prerequisites": [
+        "A native test build, curl and a private temporary root."
+      ],
+      "runner": {
+        "path": "connect/client/src/test_support/mod.rs",
+        "instructions": "Build the Connect client TypeScript package and run cargo test --locked --manifest-path connect/client/Cargo.toml hosted_fetch_connection_failures_discover_mcp_without_changing_access."
+      },
+      "expectedEvidence": [
+        "The transport error identifies the manifest phase and distinguishes connection refusal from curl timeout or the client deadline while preserving encrypted relay guidance.",
+        "Stalled asset, peer authorization and credential renewal requests identify their phases without exposing the route, endpoint or credential.",
+        "A stalled fetch publishes no bundle and exposes no capture ID or local path."
+      ],
+      "limits": [
+        "The loopback requests simulate controlled failures. They do not identify the root cause of a production transport incident."
       ]
     },
     {
