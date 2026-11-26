@@ -49,6 +49,16 @@ export function Permissions({
                       : names[row.permission]}
                 </strong>
                 {!repair && !row.required && <small>Optional</small>}
+                {platform === "macos" &&
+                  row.permission === "screen-recording" &&
+                  !granted &&
+                  !checking &&
+                  !row.reopening &&
+                  !row.relaunch && (
+                    <small>
+                      Turn on apparent in System Settings, or click + to add it.
+                    </small>
+                  )}
                 {linuxInput && !granted && !checking && (
                   <small>
                     To draw and add notes over other apps, run this command in a

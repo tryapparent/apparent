@@ -60,3 +60,10 @@ test without Cargo, Electron, or a Mac. Actual OS grants and fallback
 presentation still require native acceptance. Roll back the Bend source,
 table, Cargo adapter and package wiring together. Saved steps keep the same
 names and compatibility aliases.
+## macOS Screen Recording guide
+
+Use a signed Nightly candidate installed on an isolated Mac with a fresh permission state. From Onboarding's Screen & System Audio Recording row, choose **Open Settings**. Check the compact card at normal window size and with System Settings filling the smallest supported display. Repeat in both themes.
+
+Drag the Nightly icon just above the first Add (+) button, under Screen & System Audio Recording. Verify that System Settings shows the correct app and lets you enable access. Verify the onboarding row after Quit & Reopen if prompted. Cancel a drag and confirm the card gives the switch or Add (+) path. Reach Add (+) by keyboard with the card still present.
+
+Record the exact build and macOS version, the `docked` and `dropped` events, and the guide and permission state before and after. Run `capture/desktop/scripts/support/check-permission-panel-dock.sh` against the compiled helper for placement and size. Use `apparent-helper permission-panel --permission screen-recording --preview` to inspect the real card without grant polling. Keep changes to grants inside the isolated Mac.
