@@ -35,6 +35,7 @@
       "expectedEvidence": [
         "An unsafe download destination is named on the first error line, along with the permission failure and a private retry path.",
         "An unsafe reader directory identifies local Connect reader storage and the permission failure.",
+        "From the same shared directory, inspect with --out under an existing private parent prints a summary and writes the bundle only to the chosen location.",
         "Both failures omit absolute paths and leave no downloaded capture or staging directory. The loopback fixture also verifies successful inspection in private storage."
       ],
       "limits": [

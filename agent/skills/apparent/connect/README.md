@@ -53,6 +53,13 @@ Failed/expired uploads use a local path when the sender copies the capture again
 
 A Connect paste starts with `apparent inspect <32-lowercase-hex-id>` (fetches to `./<id>.apparent`, waits up to 120 seconds, then prints the summary); older apps include a `Connect capture:` or `Hosted capture:` header. Reuse the receiving CLI's configured server and existing read grant. For a v2 capture, list and retrieve the evidence you need as described below. For older captures, fetch the complete bundle, then inspect it. The duration header and timestamped words/marks are last; the install fallback links to README’s Agents section, which owns the current installation guide. A local-only paste includes an `apparent inspect <absolute-path>` command. When the pasted timeline has the context you need, use that path to open the local images. Only when authorization is missing should a person approve a **separate read grant**. Update Apparent to use `apparent connect`; older apps use `apparent cloud`, which remains a compatibility alias in updated apps:
 
+A shared worktree may fail the destination trust check. Keep the worktree
+permissions as they are and run `apparent inspect <capture-id> --out <absolute-private-path>.apparent`
+with a new destination under an existing private parent, keeping any original
+`--reader` flag. With an older CLI, run the original command from a private
+working directory.
+
+
 ```sh
 apparent connect login --server https://api.example.com --scope read --no-browser
 apparent fetch <32hex-id> --out ./capture.apparent --wait 120

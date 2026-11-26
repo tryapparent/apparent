@@ -19,7 +19,7 @@ impl TestHost for AppTestHost {
         crate::shared::handoff::set_config_write_hook(hook);
     }
 }
-fn setup() {
+pub(crate) fn setup() {
     test_support::install_host(Arc::new(AppTestHost));
 }
 #[test]
@@ -143,7 +143,7 @@ fn hosted_inspect_command_subprocess() {
     }
 }
 
-fn inspect_manifest() -> Value {
+pub(crate) fn inspect_manifest() -> Value {
     serde_json::json!({
         "version": 1, "id": "synthetic-inspect", "createdAtMs": 0, "durationMs": 4000,
         "target": {"mode": "display", "displayId": 1,
@@ -156,7 +156,7 @@ fn inspect_manifest() -> Value {
     })
 }
 
-fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process::Output {
+pub(crate) fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process::Output {
     // Manual acceptance can run the same scenarios against the rebuilt executable.
     let mut command = if let Some(binary) = std::env::var_os("APPARENT_TEST_INSPECT_BINARY") {
         let mut command = std::process::Command::new(binary);
@@ -183,12 +183,6 @@ fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process:
         }
     }
     output
-}
-
-#[test]
-fn hosted_inspect_pending_download_summary_and_local_options() {
-    setup();
-    test_support::inspect_cli_scenario(&inspect_manifest(), inspect_subprocess);
 }
 
 #[test]

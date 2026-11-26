@@ -1523,6 +1523,7 @@ pub fn hosted_fetch_before_reservation_waits_and_unavailable_is_actionable() {
 pub fn inspect_cli_scenario(
     manifest: &Value,
     run: impl Fn(&Path, &Path, &[&str]) -> std::process::Output,
+    verify_destination: impl FnOnce(&Path, &Path, &str),
 ) {
     let f = Fixture::new();
     let server = Server::new("");
@@ -1589,12 +1590,7 @@ pub fn inspect_cli_scenario(
         assert!(output.status.success(), "{output:?}");
     }
     assert_eq!(server.state.lock().unwrap().requests, requests, "local inspection must not use the network");
-    // Options also survive remote resolution on a fresh destination.
-    let json_cwd = f.root.join("json");
-    fs::DirBuilder::new().mode(0o700).create(&json_cwd).unwrap();
-    let output = run(&f.client.config, &json_cwd, &["inspect", &id, "--json"]);
-    assert!(output.status.success(), "{output:?}");
-    assert!(String::from_utf8_lossy(&output.stdout).contains("\"id\": \"synthetic-inspect\""));
+    verify_destination(&f.client.config, &f.root, &id);
     assert_eq!(fs::read(&f.client.config).unwrap(), config_before);
     assert!(!f.client.state.join("upload.credential").exists());
 }

@@ -121,7 +121,26 @@ impl StyleExamples {
     }
 }
 
-pub(crate) fn inspect(bundle: std::path::PathBuf, reader: Option<String>, json: bool, marks: bool, style_examples: bool, experiments: Vec<String>) -> Result<()> {
+#[derive(clap::Args)]
+pub(crate) struct InspectArgs {
+    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest.")]
+    bundle: std::path::PathBuf,
+    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+    reader: Option<String>,
+    #[arg(long, value_name = "BUNDLE.apparent", conflicts_with = "style_examples", help = "Download a Connect capture ID to this new .apparent directory under a trusted parent")]
+    out: Option<std::path::PathBuf>,
+    #[arg(long, help = "Emit raw apparent.json instead of summary.md (with --marks, the marks as JSON).")]
+    json: bool,
+    #[arg(long, help = "List the marks: keyframe, number as the summary shows it (✎②), time, shape, what it was drawn on, and id, for apparent zoom --mark.")]
+    marks: bool,
+    #[arg(long, conflicts_with_all = ["json", "marks"], help = "Read earlier transcript examples for a speaking-style handoff")]
+    style_examples: bool,
+    #[arg(long = "experiment", value_name = "NAME", help = "Turn an experiment on for this summary (e.g. agentContext). Repeatable.")]
+    experiments: Vec<String>,
+}
+
+pub(crate) fn inspect(args: InspectArgs) -> Result<()> {
+    let InspectArgs { bundle, reader, out, json, marks, style_examples, experiments } = args;
     use crate::shared::handoff;
     use crate::capture::agent::context as agent_context;
     use crate::capture::engine::sketch::summary_markdown;
@@ -143,7 +162,7 @@ pub(crate) fn inspect(bundle: std::path::PathBuf, reader: Option<String>, json: 
         return Ok(());
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let bundle = hosted::inspect_source(&bundle, reader.as_deref())?;
+    let bundle = hosted::inspect_source(&bundle, reader.as_deref(), out.as_deref())?;
     let (dir, loaded) = handoff::load_bundle(&bundle)?;
     if marks {
         let entries = agent_context::mark_entries(&loaded);
@@ -175,3 +194,44 @@ pub(super) const SKILL: &str = concat!(
     "\n",
     include_str!("../agent/skills/apparent/commands/README.md"),
 );
+
+#[cfg(test)]
+#[test]
+fn hosted_inspect_pending_download_summary_and_local_options() {
+    use apparent_connect_client::test_support;
+    use crate::connect::hosted::hosted_tests::{inspect_manifest, inspect_subprocess, setup};
+    use std::os::unix::fs::PermissionsExt;
+
+    setup();
+    test_support::inspect_cli_scenario(&inspect_manifest(), inspect_subprocess, |config, root, id| {
+        let shared = root.join("shared-worktree");
+        std::fs::create_dir(&shared).unwrap();
+        std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o770)).unwrap();
+        let destination = root.join("worktree-inspection.apparent");
+        let out = destination.to_str().unwrap();
+        let result = inspect_subprocess(config, &shared, &["inspect", id, "--out", out]);
+        assert!(result.status.success(), "{result:?}");
+        let summary = String::from_utf8(result.stdout).unwrap();
+        assert!(summary.contains("Synthetic inspect transcript") && summary.contains(out));
+        assert!(destination.join("apparent.json").is_file());
+
+        let json_destination = root.join("worktree-json.apparent");
+        let result = inspect_subprocess(config, &shared, &[
+            "inspect", id, "--out", json_destination.to_str().unwrap(), "--json",
+        ]);
+        assert!(result.status.success(), "{result:?}");
+        assert!(String::from_utf8_lossy(&result.stdout).contains("\"id\": \"synthetic-inspect\""));
+
+        let unsafe_destination = shared.join("unsafe.apparent");
+        let result = inspect_subprocess(config, root, &[
+            "inspect", id, "--out", unsafe_destination.to_str().unwrap(),
+        ]);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("Connect download destination directory"));
+        assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
+
+        let result = inspect_subprocess(config, root, &["inspect", out, "--out", out]);
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("--out requires a Connect capture ID"));
+    });
+}
