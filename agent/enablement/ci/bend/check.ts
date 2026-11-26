@@ -7,6 +7,7 @@ import {
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
 import { assembleHandoffLine, assembleZoom, root } from "./build.ts";
+import { assembleVideo } from "./video.ts";
 
 await bendScratch(async (directory) => {
   await buildBend(
@@ -15,6 +16,43 @@ await bendScratch(async (directory) => {
     directory,
     proofOptions(process.argv.slice(2)),
   );
+
+  assembleVideo(directory);
+  const videoCheck = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `import assert from "node:assert/strict";
+import { parsePlan, policy } from "./plan.mjs";
+assert.equal(policy.clip_valid(20, 100, 100), true);
+assert.equal(policy.clip_valid(100, 100, 100), false);
+assert.equal(policy.clip_valid(20, 101, 100), false);
+assert.equal(policy.still_valid(99, 100), true);
+assert.equal(policy.still_valid(100, 100), false);
+assert.equal(policy.scene_frames(6000, 147, 450), 180);
+assert.equal(policy.scene_frames(0, 147, 450), 161);
+assert.equal(policy.caption_end(30, 33), 31);
+assert.equal(policy.sample_time(20, 80, 2, 3), 100);
+assert.equal(policy.axis_fits(10, 90, 100), true);
+assert.equal(policy.axis_fits(10, 91, 100), false);
+assert.equal(policy.axis_fits(0, 0, 100), false);
+assert.equal(policy.scene_frames(0, 31, 0), 31);
+const scene = { shots: [{ file: "space in name.png", box: [0.25, 0.3, 0.4, 0.4] }], say: ["Here is the evidence."] };
+const plan = parsePlan({version: 1, scenes: [scene]}, "/tmp");
+assert.equal(plan.scenes[0].shots[0].file, "/tmp/space in name.png");
+assert.deepEqual(plan.scenes[0].say, [{text: "Here is the evidence."}]);
+const timed = { ...scene, say: [{text: "Now.", startMs: 1250}] };
+assert.equal(parsePlan({version: 1, scenes: [timed]}, "/tmp").scenes[0].say[0].startMs, 1250);
+assert.throws(() => parsePlan({version: 1, scenes: [{...timed, say: [{text: "Now.", startMs: -5}]}]}, "/tmp"), /startMs/);
+assert.throws(() => parsePlan({version: 1, scenes: [{...scene, shots: [{file: "x.png", box: [1, 2, 3, 4]}]}]}, "/tmp"), /fractions/);
+assert.throws(() => parsePlan({version: 1, scenes: [{...scene, say: []}]}, "/tmp"), /short spoken/);
+assert.throws(() => parsePlan({version: 1, scenes: [{...scene, extra: true}]}, "/tmp"), /unknown field/);
+console.log("Video plan contract passed.");`,
+    ],
+    { cwd: directory, encoding: "utf8" },
+  );
+  assert.equal(videoCheck.trim(), "Video plan contract passed.");
   assembleZoom(directory);
   const embedded = join(directory, "agent-handoff-line.mjs");
   assembleHandoffLine(directory, embedded);

@@ -66,13 +66,6 @@ impl Cli {
     }
 }
 
-fn parse_engine(
-    name: &str,
-) -> Result<crate::capture::engine::runtime::audio::transcription::transcribe::Engine, String> {
-    crate::capture::engine::runtime::audio::transcription::transcribe::Engine::parse(name)
-        .ok_or_else(|| "expected `apple`, `hex` or `command`".to_owned())
-}
-
 /// `apparent hex status`: connection, models and what the next recording would use.
 fn hex_status() {
     let preferred = transcribe::Engine::configured();
@@ -348,7 +341,7 @@ enum Command {
         #[arg(long, hide = true, requires = "bench")]
         live_speed: Option<f64>,
         /// Transcribe with `apple`, `hex` or `command` instead of the configured transcriber.
-        #[arg(long, value_parser = parse_engine)]
+        #[arg(long, value_parser = super::transcript::speech::parse_engine)]
         transcriber:
             Option<crate::capture::engine::runtime::audio::transcription::transcribe::Engine>,
         /// Turn an experiment on for this run, as `"experiments"` in `config.json` would
@@ -478,6 +471,11 @@ enum Command {
         /// Deliberately omit all audio, even when a recorded track exists.
         #[arg(long)]
         no_audio: bool,
+    },
+    #[command(about = "Create a short narrated video from local screenshots and recording excerpts")]
+    Video {
+        #[command(subcommand)]
+        command: super::agent_range::VideoCommand,
     },
     /// Clean up old captures now, as the app does daily: video and audio past the Keep
     /// Recordings setting go to the Trash, then whole bundles; native iPhone video is shrunk.
@@ -1510,6 +1508,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
+        Command::Video { command } => super::agent_range::video_command(command),
         Command::Export {
             bundle,
             out,

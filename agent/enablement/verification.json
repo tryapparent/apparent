@@ -41,6 +41,25 @@
       "limits": [
         "Counters describe guest-visible CPUs and their visible siblings. The lane covers explicit local inspect rather than packaged extraction or remote providers."
       ]
+    },
+    {
+      "id": "local-narrated-video",
+      "description": "Render and review a private established example with one timed narration track.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Run apparent video narrator, then apparent video inspect and apparent video render on local synthetic evidence.",
+      "prerequisites": [
+        "A development Apparent CLI, FFmpeg with libass and drawtext, ffprobe, a provisioned local Apparent narrator, and a private scratch directory."
+      ],
+      "runner": {
+        "path": "agent/enablement/ci/bend/check.ts",
+        "instructions": "agent/video/README.md#inspect-and-render"
+      },
+      "expectedEvidence": [
+        "Timestamped source contact sheets, an editable plan and captions, a decodable 30 fps MP4 with one mono stream and Kokoro voice metadata, and a timestamped review sheet."
+      ],
+      "limits": [
+        "The proof runner checks the plan policy. Inspect and render are supplemented by a CLI replay on Linux. Existing source footage supplies the app behavior. The CLI replay does not open a native capture surface."
+      ]
     }
   ]
 }

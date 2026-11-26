@@ -1,4 +1,8 @@
 {
-  "modules": ["context/handoff-line.bend", "zoom/zoom-plan.bend"],
-  "inputs": ["context/", "zoom/", "enablement/ci/bend/"]
+  "modules": [
+    "context/handoff-line.bend",
+    "zoom/zoom-plan.bend",
+    "video/video-plan.bend"
+  ],
+  "inputs": ["context/", "zoom/", "enablement/ci/bend/", "video/"]
 }
