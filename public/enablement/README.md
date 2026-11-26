@@ -14,8 +14,9 @@ its sibling tooling. No Rust/Connect installation is part of Public verification
 The homepage embeds the Hermes Agent submission through
 [`HermesVideo.tsx`](../site/src/components/home/HermesVideo.tsx). The earlier
 [ghost recording](https://github.com/tryapparent/apparent/pull/148) remains
-a packaged Pages asset. The [archived Pi cut](../site/docs/apparent-demo-pi.md)
-and [Open Graph loop](og-video/capture.mjs) have their own provenance.
+a packaged Pages asset. The [Open Graph loop](og-video/capture.mjs) has its
+own provenance. The legacy interactive Pulse demo and its media can be
+recovered from Git history.
 
 `../../shared/enablement/ci/public-inputs.ts` supplies Public's embedded Markdown, cross-stream fixture and local
 verification command to the existing repository routing/local runner. The central

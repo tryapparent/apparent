@@ -515,7 +515,6 @@
 | Public | public/site/scripts/site-build/package-page-text.mjs | source candidate | 24 | pending |
 | Public | public/site/scripts/site-build/test-expected-canonical-packaging.mjs | source candidate | 100 | pending |
 | Public | public/site/scripts/site-build/verify-composed.mjs | source candidate | 31 | pending |
-| Public | public/site/src/demo/core/Demo.tsx | source candidate | 730 | pending |
 | Public | public/site/src/latest-download.ts | source candidate | 24 | pending |
 | Public | public/site/src/platform.ts | source candidate | 130 | pending |
 | Record | record/capture-request/src/lifecycle.ts | source candidate | 59 | pending |

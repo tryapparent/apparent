@@ -1,3 +1,290 @@
+.stage-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 24px 0 20px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: #fff;
+  transform: translate3d(-50%, -50%, 0);
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1.35, 0.36, 1),
+    box-shadow 0.22s ease,
+    background 0.22s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stage-play:hover {
+    transform: translate3d(-50%, -50%, 0) scale(1.035);
+    background: var(--lg-bg-hover);
+    box-shadow: var(--lg-shadow-hover);
+  }
+}
+
+.stage-play:active,
+.stage-play.pressed {
+  transform: translate3d(-50%, -50%, 0) scale(0.96);
+}
+
+.stage-play svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.32));
+}
+
+.sound-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 86px;
+  height: 34px;
+  padding: 0 13px 0 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  transition:
+    transform 0.14s ease-out,
+    background 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.22s ease;
+}
+
+.sound-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.sound-btn:active {
+  transform: scale(0.97);
+}
+
+.sound-btn.on {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.sound-btn.live {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.sound-btn.pulse {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+    0 0 0 4px rgba(255, 255, 255, 0.08);
+}
+
+.sound-btn svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  overflow: visible;
+}
+
+.sound-wave {
+  transform-origin: 8px 8px;
+  animation: sound-wave-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sound-wave.w2 {
+  animation-delay: 0.045s;
+}
+
+.sound-btn.pulse .sound-wave.w1 {
+  animation: sound-wave-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sound-btn.pulse .sound-wave.w2 {
+  animation: sound-wave-pop 0.46s 0.055s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes sound-wave-in {
+  from {
+    opacity: 0;
+    transform: translateX(-1.5px) scale(0.75);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes sound-wave-pop {
+  0% {
+    opacity: 0.35;
+    transform: translateX(-1.5px) scale(0.72);
+  }
+  55% {
+    opacity: 1;
+    transform: translateX(0.6px) scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.stage-sound-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.95);
+  animation: enter 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition:
+    transform 0.3s cubic-bezier(0.22, 1.35, 0.36, 1),
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stage-sound-hint:hover {
+    transform: scale(1.03);
+    background: var(--lg-bg-hover);
+    box-shadow: var(--lg-shadow-hover);
+  }
+}
+
+.stage-sound-hint:active,
+.stage-sound-hint.pressed {
+  transform: scale(0.96);
+}
+
+.stage-sound-hint svg {
+  width: 15px;
+  height: 15px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.32));
+}
+
+.stage-end {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(6, 6, 10, 0.36);
+  animation: stage-end-in 0.35s ease both;
+}
+
+@keyframes stage-end-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.stage-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 52px;
+  padding: 0 24px 0 20px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  color: #fff;
+  transition:
+    transform 0.32s cubic-bezier(0.22, 1.35, 0.36, 1),
+    box-shadow 0.22s ease,
+    background 0.22s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .stage-btn:hover {
+    transform: scale(1.035);
+    background: var(--lg-bg-hover);
+    box-shadow: var(--lg-shadow-hover);
+  }
+  .stage-btn.primary:hover {
+    background: var(--lg-bg-hover);
+  }
+}
+
+.stage-btn:active,
+.stage-btn.pressed {
+  transform: scale(0.96);
+}
+
+.stage-btn.primary {
+  color: #09090b;
+}
+
+.stage-btn svg {
+  height: 16px;
+  width: auto;
+}
+
+@media (max-width: 760px) {
+  .stage-wrap {
+    border-radius: 12px;
+  }
+  .stage-play {
+    height: 44px;
+    padding: 0 20px 0 16px;
+    gap: 8px;
+    font-size: 14.5px;
+  }
+  .stage-play svg {
+    width: 14px;
+    height: 14px;
+  }
+  .stage-sound-hint {
+    left: 10px;
+    bottom: 10px;
+    height: 36px;
+    padding: 0 13px 0 10px;
+    font-size: 12.5px;
+  }
+  .stage-btn {
+    height: 44px;
+    padding: 0 16px 0 14px;
+    gap: 7px;
+    font-size: 13.5px;
+    white-space: nowrap;
+  }
+  .stage-end {
+    gap: 8px;
+    padding: 0 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sound-wave,
+  .stage-sound-hint,
+  .stage-play,
+  .stage-btn,
+  .liquid-glass::after {
+    transition: none !important;
+    animation: none !important;
+    filter: none !important;
+  }
+}
+
 .video-demo .stage-wrap {
   position: relative;
   aspect-ratio: 1916 / 1164;

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type { PointerEvent as ReactPointerEvent, KeyboardEvent } from "react"
+import "./video-controls.css"
 import "./video-demo.css"
 import { DEMO_CURSOR, DEMO_CAPTIONS } from "../content/cursor-track"
 import { followCursor } from "./cursor-camera"
