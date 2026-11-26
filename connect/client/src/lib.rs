@@ -19,6 +19,7 @@ use encrypted_transfer::snapshot;
 mod private_files;
 use private_files::*;
 mod file_transfer;
+use file_transfer::config_escape;
 mod policy;
 use policy::*;
 mod encryption;
@@ -262,26 +263,29 @@ fn capture_read_transport_error(
     timeout: Duration,
 ) -> anyhow::Error {
     let mut message = message.to_owned();
-    if let ("GET", Some(capture)) = (method, route.strip_prefix("/v1/captures/")) {
-        let stage = match capture.split_once('/') {
+    let stage = match (method, route) {
+        ("GET", "/v1/encryption/peers") => Some("peer_authorization"),
+        ("POST", "/v1/token/refresh") => Some("credential_renewal"),
+        ("GET", _) => route.strip_prefix("/v1/captures/").and_then(|capture| match capture.split_once('/') {
             None if valid_id(capture) => Some("manifest"),
             Some((id, path)) if valid_id(id) && path.starts_with("files/") => Some("file"),
             _ => None,
+        }),
+        _ => None,
+    };
+    if let Some(stage) = stage {
+        let outcome = match curl_result {
+            Some((code, status)) => format!(
+                "curl_exit={}, http_status={}",
+                code.map_or_else(|| "unavailable".into(), |code| code.to_string()),
+                status.map_or_else(|| "unavailable".into(), |status| status.to_string()),
+            ),
+            None => "client_deadline".into(),
         };
-        if let Some(stage) = stage {
-            let outcome = match curl_result {
-                Some((code, status)) => format!(
-                    "curl_exit={}, http_status={}",
-                    code.map_or_else(|| "unavailable".into(), |code| code.to_string()),
-                    status.map_or_else(|| "unavailable".into(), |status| status.to_string()),
-                ),
-                None => "client_deadline".into(),
-            };
-            message.push_str(&format!(
-                " [stage={stage}, {outcome}, request_timeout_ms={}]",
-                timeout.as_millis(),
-            ));
-        }
+        message.push_str(&format!(
+            " [stage={stage}, {outcome}, request_timeout_ms={}]",
+            timeout.as_millis(),
+        ));
     }
     hosted_failure(SafeError::Offline, message)
 }
@@ -364,14 +368,6 @@ fn server_url(raw: &str) -> Result<String> {
         "Plain HTTP is allowed only on loopback"
     );
     Ok(raw.to_owned())
-}
-
-fn config_escape(value: &str) -> Result<String> {
-    ensure!(
-        !value.bytes().any(|b| b.is_ascii_control()),
-        "Invalid transport value"
-    );
-    Ok(value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 impl Client {

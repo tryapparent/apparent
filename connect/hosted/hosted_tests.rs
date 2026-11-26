@@ -150,14 +150,16 @@ fn inspect_manifest() -> Value {
         "target": {"mode": "display", "displayId": 1,
                    "frame": {"x": 0.0, "y": 0.0, "width": 32.0, "height": 32.0, "scale": 1.0}},
         "transcript": {"source": "synthetic", "text": "Synthetic inspect transcript", "segments": []},
-        "strokes": [], "marks": [], "events": [],
+        "strokes": [], "events": [],
+        "marks": [{"id": "synthetic-mark", "strokes": [], "t0": 600, "t1": 600,
+                   "boxNorm": [0.0, 0.0, 0.0, 0.0], "shape": "flag", "description": "Synthetic mark"}],
         "keyframes": [{"index": 1, "t": 0, "reason": "initial",
                       "file": "frames/frame-01.png", "event": "", "said": "Synthetic inspect transcript"}],
         "contactSheet": "contact-sheet.png", "video": "recording.mov", "audio": "audio.wav"
     })
 }
 
-fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process::Output {
+pub(super) fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process::Output {
     // Manual acceptance can run the same scenarios against the rebuilt executable.
     let mut command = if let Some(binary) = std::env::var_os("APPARENT_TEST_INSPECT_BINARY") {
         let mut command = std::process::Command::new(binary);
@@ -190,33 +192,6 @@ fn inspect_subprocess(config: &Path, cwd: &Path, args: &[&str]) -> std::process:
 fn hosted_inspect_pending_download_summary_and_local_options() {
     setup();
     test_support::inspect_cli_scenario(&inspect_manifest(), inspect_subprocess);
-}
-
-#[test]
-fn hosted_inspect_and_zoom_shared_destinations_explain_private_retry() {
-    let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap();
-    let shared = root.join("shared");
-    std::fs::create_dir(&shared).unwrap();
-    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o770)).unwrap();
-
-    let id = "0123456789abcdef0123456789abcdef";
-    for args in [&["inspect", id][..], &["zoom", id, "--at", "0:01"][..]] {
-        let output = inspect_subprocess(&root.join("config.json"), &shared, args);
-        assert!(!output.status.success());
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let diagnostic = stderr.lines().next().unwrap_or_default();
-        for expected in [
-            "Connect download destination directory",
-            "Unsafe shared or unowned directory tree",
-            "group or other users have write permission",
-            "Retry from a private working directory",
-        ] {
-            assert!(diagnostic.contains(expected), "{stderr}");
-        }
-        assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
-    }
-    assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
 }
 
 #[test]

@@ -61,7 +61,7 @@ impl Cli {
     pub(super) fn reads_capture(&self) -> bool {
         matches!(
             self.command,
-            Some(Command::Inspect { .. } | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
+            Some(Command::Inspect(_) | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
         )
     }
 }
@@ -382,22 +382,7 @@ enum Command {
         command: HexCommand,
     },
     /// Fetch and inspect a Connect capture ID, or inspect a local bundle (or `latest`).
-    Inspect {
-        #[command(flatten)]
-        source: hosted::ReadSource,
-        /// Emit raw `apparent.json` instead of `summary.md` (with `--marks`, the marks as JSON).
-        #[arg(long)]
-        json: bool,
-        /// List the marks: keyframe, number as the summary shows it (✎②), time, shape, what it
-        /// was drawn on, and id, for `apparent zoom --mark`.
-        #[arg(long)]
-        marks: bool,
-        #[arg(long, conflicts_with_all = ["json", "marks"], help = "Read earlier transcript examples for a speaking-style handoff")]
-        style_examples: bool,
-        /// Turn an experiment on for this summary (e.g. `agentContext`). Repeatable.
-        #[arg(long = "experiment", value_name = "NAME")]
-        experiments: Vec<String>,
-    },
+    Inspect(super::transcript::InspectArgs),
     /// Extract a dense burst of frames from a `.apparent` bundle's time range (`M:SS` or seconds).
     Frames {
         /// Path to `.apparent` bundle directory or `latest`.
@@ -1441,15 +1426,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
-        Command::Inspect {
-            source,
-            json,
-            marks,
-            style_examples,
-            experiments,
-        } => {
-            super::transcript::inspect(source.bundle, source.reader, json, marks, style_examples, experiments)
-        }
+        Command::Inspect(args) => super::transcript::inspect(args),
         Command::Clean {
             dry_run,
             captures,
@@ -1566,7 +1543,7 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             full,
         } => {
             ensure!(span.is_finite() && span > 0.0, "--span must be positive");
-            let bundle = hosted::inspect_source(&source.bundle, source.reader.as_deref())?;
+            let bundle = hosted::inspect_source(&source.bundle, source.reader.as_deref(), None)?;
             let (dir, loaded) = handoff::load_bundle(&bundle)?;
             let focus = if let Some(query) = &mark {
                 let frame = super::frame_labels::resolve(&loaded.keyframes, frame.as_deref())?;
