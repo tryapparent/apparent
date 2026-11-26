@@ -1,6 +1,8 @@
 ## Use Apparent's local narrator
 
-Use Apparent’s local Kokoro narrator (`bm_fable`). Check the installed CLI help first. `apparent video narrator` probes the same offline worker used by render. A setup or synthesis failure needs the documented recovery step or an explicit blocker. Using Flite, espeak, Edge TTS or another voice requires explicit approval.
+Use Apparent’s local Kokoro narrator (`bm_fable`). Run `apparent --version` to record the build revision, then run `apparent video --help` to check availability. If the CLI reports an unrecognized subcommand, use the standalone narrator path below. Development builds can share a version number, so use the revision and help output to identify the installed capability.
+
+When the command is available, `apparent video narrator` probes the same offline worker used by render. A setup or synthesis failure needs the documented recovery step or an explicit blocker. Using Flite, espeak, Edge TTS or another voice requires explicit approval.
 
 - **Edited walkthrough:** if `apparent video --help` succeeds, use `apparent video inspect --help` to prepare source sheets and a starter plan, then `apparent video render --help` to compose excerpts, comparisons, captions and local narration. Use the review sheet to check scene boundaries, then watch the final movie. Reuse unchanged voice cues when the installed render help offers a private voice cache.
 - **Bundle export:** check `apparent export --help`, then use `apparent export "$bundle" --narration "$cues" --out "$movie" --fps 30` with private absolute paths. Follow the [cue schema](../../../../capture/engine/docs/export-and-retention.md#local-narration) in exported-video milliseconds. Shorten text or extend slots as needed. Respect `experiments.exportNarration: false` and preserve the source bundle and config.

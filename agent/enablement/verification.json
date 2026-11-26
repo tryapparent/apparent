@@ -48,7 +48,7 @@
       "platforms": ["linux"],
       "userEntryPoint": "Run apparent video narrator, then apparent video inspect and apparent video render on local synthetic evidence.",
       "prerequisites": [
-        "A development Apparent CLI, FFmpeg with libass and drawtext, ffprobe, a provisioned local Apparent narrator, and a private scratch directory."
+        "A development Apparent CLI that lists video in its help, FFmpeg with libass and drawtext, ffprobe, a provisioned local Apparent narrator, and a private scratch directory."
       ],
       "runner": {
         "path": "agent/enablement/ci/bend/check.ts",
