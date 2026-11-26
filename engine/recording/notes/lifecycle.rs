@@ -4,7 +4,43 @@ pub enum FinishOutcome {
     Drained,
     UnavailableBeforeAdmission,
 }
-pub type FinishResult = Result<FinishOutcome, String>;
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum FinishFailure {
+    TimedOut,
+    Disconnected,
+    Refused {
+        ready: bool,
+        admitted: bool,
+        startup_protocol_failed: bool,
+        drained: bool,
+        failed_writes: bool,
+        transport_failed: bool,
+        startup_exit: bool,
+    },
+}
+
+impl From<flume::RecvTimeoutError> for FinishFailure {
+    fn from(error: flume::RecvTimeoutError) -> Self {
+        match error {
+            flume::RecvTimeoutError::Timeout => Self::TimedOut,
+            flume::RecvTimeoutError::Disconnected => Self::Disconnected,
+        }
+    }
+}
+
+impl std::fmt::Display for FinishFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Refused { .. } => "Notes did not finish saving; recording assets were retained.",
+            Self::TimedOut | Self::Disconnected => "Notes finish receipt unavailable",
+        })
+    }
+}
+
+impl std::error::Error for FinishFailure {}
+
+pub(crate) type FinishResult = Result<FinishOutcome, FinishFailure>;
 
 /// Native input exclusion while Desktop applies an admitted popup request.
 /// Revisions prevent an older hide receipt from releasing a newer request.
@@ -79,19 +115,28 @@ impl Lifecycle {
         receipt
     }
 
-    pub fn complete(&mut self, drained: bool, failed_writes: bool, startup_exit: bool) {
+    pub fn complete(&mut self, drained: bool, failed_writes: bool, transport_failed: bool, startup_exit: bool) {
         self.seal();
-        let result = if drained && self.ready && !failed_writes && !self.startup_protocol_failed {
+        let save_failed = failed_writes || transport_failed;
+        let result = if drained && self.ready && !save_failed && !self.startup_protocol_failed {
             Ok(FinishOutcome::Drained)
-        } else if startup_exit && !self.ready && !self.admitted && !failed_writes && !self.startup_protocol_failed {
+        } else if startup_exit && !self.ready && !self.admitted && !save_failed && !self.startup_protocol_failed {
             Ok(FinishOutcome::UnavailableBeforeAdmission)
         } else {
             // Preserve the actual refusal branch without note text or pipe frames.
             crate::capture::engine::runtime::apparent_log(format!(
-                "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} startup_exit={startup_exit}",
+                "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} transport_failed={transport_failed} startup_exit={startup_exit}",
                 self.ready, self.admitted, self.startup_protocol_failed,
             ));
-            Err("Notes did not finish saving; recording assets were retained.".into())
+            Err(FinishFailure::Refused {
+                ready: self.ready,
+                admitted: self.admitted,
+                startup_protocol_failed: self.startup_protocol_failed,
+                drained,
+                failed_writes,
+                transport_failed,
+                startup_exit,
+            })
         };
         for waiter in self.waiters.drain(..) {
             let _ = waiter.try_send(result.clone());
@@ -131,7 +176,7 @@ mod tests {
             let receipt = finish_first.then(|| state.finish());
             state.seal();
             assert!(!state.admit_open());
-            state.complete(false, false, true);
+            state.complete(false, false, false, true);
             let receipt = receipt.unwrap_or_else(|| state.finish());
             assert_eq!(
                 receipt.recv().unwrap(),
@@ -143,21 +188,21 @@ mod tests {
     fn admitted_or_ready_or_uncertain_failures_retain_assets() {
         let mut opened = Lifecycle::default();
         assert!(opened.admit_open());
-        opened.complete(false, false, true);
+        opened.complete(false, false, false, true);
         assert!(opened.finish().recv().unwrap().is_err());
         let mut ready = Lifecycle::default();
         ready.observed_ready();
-        ready.complete(false, false, true);
+        ready.complete(false, false, false, true);
         assert!(ready.finish().recv().unwrap().is_err());
         let mut request = Lifecycle::default();
         request.observed_note_request();
-        request.complete(false, false, true);
+        request.complete(false, false, false, true);
         assert!(request.finish().recv().unwrap().is_err());
         let mut unknown = Lifecycle::default();
-        unknown.complete(false, false, false);
+        unknown.complete(false, false, false, false);
         assert!(unknown.finish().recv().unwrap().is_err());
         let mut failed_write = Lifecycle::default();
-        failed_write.complete(false, true, true);
+        failed_write.complete(false, true, false, true);
         assert!(failed_write.finish().recv().unwrap().is_err());
     }
     #[test]
@@ -168,8 +213,29 @@ mod tests {
             state.observed_note_request();
             let receipt = state.finish();
             assert!(receipt.try_recv().is_err());
-            state.complete(true, failed, false);
+            state.complete(true, failed, false, false);
             assert_eq!(receipt.recv().unwrap().is_ok(), !failed);
+        }
+    }
+    #[test]
+    fn refused_finish_preserves_write_and_transport_facts() {
+        for (failed_writes, transport_failed) in [(true, false), (false, true)] {
+            let mut state = Lifecycle::default();
+            state.observed_ready();
+            state.observed_note_request();
+            let receipt = state.finish();
+            state.complete(true, failed_writes, transport_failed, false);
+            let expected = Err(FinishFailure::Refused {
+                ready: true,
+                admitted: true,
+                startup_protocol_failed: false,
+                drained: true,
+                failed_writes,
+                transport_failed,
+                startup_exit: false,
+            });
+            assert_eq!(receipt.recv().unwrap(), expected);
+            assert_eq!(state.finish().recv().unwrap(), expected);
         }
     }
     #[test]
@@ -178,7 +244,7 @@ mod tests {
             let state = std::sync::Arc::new(std::sync::Mutex::new(Lifecycle::default()));
             let opening = state.clone();
             let open = std::thread::spawn(move || opening.lock().unwrap().admit_open());
-            state.lock().unwrap().complete(false, false, true);
+            state.lock().unwrap().complete(false, false, false, true);
             let admitted = open.join().unwrap();
             let result = state.lock().unwrap().finish().recv().unwrap();
             assert_eq!(result.is_err(), admitted);
@@ -189,10 +255,10 @@ mod tests {
         let mut old = Lifecycle::default();
         let mut new = Lifecycle::default();
         let receipt = new.finish();
-        old.complete(false, false, true);
+        old.complete(false, false, false, true);
         assert!(receipt.try_recv().is_err());
         new.observed_ready();
-        new.complete(true, false, false);
+        new.complete(true, false, false, false);
         assert_eq!(receipt.recv().unwrap(), Ok(FinishOutcome::Drained));
     }
 }

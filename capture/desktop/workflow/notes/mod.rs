@@ -1,7 +1,9 @@
 //! The notes-only Electron surface. Its private pipe exposes no shell or filesystem commands.
 pub(crate) mod audio;
+#[path = "../../../../engine/recording/notes/lifecycle.rs"]
 mod lifecycle;
-pub use lifecycle::{FinishOutcome, FinishResult};
+pub use lifecycle::FinishOutcome;
+pub(crate) use lifecycle::{FinishFailure, FinishResult};
 use crate::capture::engine::runtime::recording::notes::Store;
 use crate::capture::engine::runtime::{LiveOverlayEvent, SharedCaptureTelemetry};
 use anyhow::{Context, Result, ensure};
@@ -441,7 +443,7 @@ impl Session {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             );
-            actor_lifecycle.lock().unwrap().complete(drained, !failed_writes.is_empty() || transport_failed,
+            actor_lifecycle.lock().unwrap().complete(drained, !failed_writes.is_empty(), transport_failed,
                 child_eof && exited_before_termination && !stopped.load(Ordering::Acquire));
         });
         Ok(Self {
@@ -515,40 +517,8 @@ fn validate_finish_receipt(finish_requested: bool) -> Result<()> {
 }
 
 #[cfg(test)]
-mod startup_protocol_tests {
-    use super::*;
-    #[test]
-    fn unexpected_finished_then_clean_exit_cannot_become_unavailable() {
-        let action: CommandMessage = serde_json::from_slice(br#"{"action":"finished"}"#).unwrap();
-        assert!(matches!(action, CommandMessage::Finished));
-        let result = validate_finish_receipt(false);
-        assert!(result.is_err());
-        for reader_ahead in [false, true] {
-        let mut state = lifecycle::Lifecycle::default();
-        // The reader can observe Ready ahead of the actor; actor ordering still wins.
-        if reader_ahead { state.observed_ready(); }
-        state.observed_actor_result(result.is_err(), false);
-        // Both late Finish and Finish already waiting must retain a real failure.
-        let waiting = state.finish();
-        state.complete(false, false, true);
-        assert!(waiting.recv().unwrap().is_err());
-        assert!(state.finish().recv().unwrap().is_err());
-        // Neither a subsequent valid message nor a drain may erase the violation.
-        state.observed_actor_result(false, false);
-        state.observed_ready();
-        state.complete(true, false, true);
-        assert!(state.finish().recv().unwrap().is_err());
-        }
-    }
-    #[test]
-    fn an_expected_finish_receipt_preserves_normal_drain() {
-        let mut state = lifecycle::Lifecycle::default();
-        state.observed_ready();
-        state.observed_actor_result(validate_finish_receipt(true).is_err(), true);
-        state.complete(true, false, false);
-        assert_eq!(state.finish().recv().unwrap(), Ok(FinishOutcome::Drained));
-    }
-}
+#[path = "../../../../engine/recording/notes/startup_tests.rs"]
+mod startup_protocol_tests;
 
 // A stopped renderer must not strand the actor inside a full OS pipe, preventing cleanup.
 fn nonblocking(pipe: &std::process::ChildStdin) -> Result<()> {

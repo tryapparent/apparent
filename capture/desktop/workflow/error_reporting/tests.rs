@@ -187,8 +187,8 @@ fn finalization_audio_report_projects_wav_variants_and_wrapped_os_errors_without
     }
 }
 
-#[path = "../../../../engine/diagnostics/sampling_test.rs"]
-mod sampling_test;
+#[path = "../../../../engine/diagnostics/finish_test.rs"]
+mod finish_test;
 
 #[test]
 fn finalization_bounds_provenance_keeps_specific_cause_and_does_not_format_unknown_errors() {

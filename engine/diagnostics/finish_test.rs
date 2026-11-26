@@ -46,3 +46,53 @@ fn finalization_report_identifies_real_empty_frame_failure_without_private_conte
         assert!(!serialized.contains(private), "leaked {private}");
     }
 }
+
+#[test]
+fn finalization_notes_report_projects_timeout_disconnect_and_refusal_without_private_data() {
+    use crate::capture::desktop::workflow::notes::{FinishFailure, FinishResult};
+    use crate::capture::engine::runtime::recording::diagnostics::{Diagnose, Stage};
+    use std::time::Duration;
+
+    let (sender, receiver) = flume::bounded::<FinishResult>(1);
+    let timeout = FinishFailure::from(receiver.recv_timeout(Duration::ZERO).unwrap_err());
+    drop(sender);
+    let disconnected = FinishFailure::from(receiver.recv_timeout(Duration::ZERO).unwrap_err());
+    let refused = FinishFailure::Refused {
+        ready: true,
+        admitted: true,
+        startup_protocol_failed: false,
+        drained: false,
+        failed_writes: false,
+        transport_failed: true,
+        startup_exit: false,
+    };
+    for (failure, expected) in [
+        (timeout, json!({"kind": "timed_out"})),
+        (disconnected, json!({"kind": "disconnected"})),
+        (refused, json!({
+            "kind": "refused",
+            "ready": true,
+            "admitted": true,
+            "startup_protocol_failed": false,
+            "drained": false,
+            "failed_writes": false,
+            "transport_failed": true,
+            "startup_exit": false,
+        })),
+    ] {
+        let error = Err::<(), _>(anyhow::Error::new(failure).context("private-note-canary"))
+            .stage(Stage::NotesReceipt)
+            .stage(Stage::Publication)
+            .unwrap_err();
+        let report = Report::finalization(
+            &error,
+            std::panic::Location::caller(),
+            Consent { generation: "private-consent-canary".into() },
+        );
+        let payload = report.payload("phc_synthetic").unwrap();
+        let diagnostics = &payload["properties"]["finalization"];
+        assert_eq!(diagnostics["notes_receipt"], expected);
+        assert_eq!(diagnostics["stages"][1]["stage"], "notes_receipt");
+        assert!(!payload.to_string().contains("private-"));
+    }
+}

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::recording_trace::{span, Operation};
 
 use super::super::CaptureSource;
-use super::whiteboard;
+use super::{super::workflow::notes::FinishFailure, whiteboard};
 #[cfg(target_os = "linux")]
 use crate::capture::desktop::workflow::FinishPhase;
 use crate::capture::engine::runtime::{ActionContextCollector, apparent_log};
@@ -103,7 +103,7 @@ pub(in crate::capture::desktop) fn finalize(
             let notes_span = span(Operation::NotesWait);
             let notes_result = receipt
                 .recv_timeout(std::time::Duration::from_secs(12))
-                .map_err(|_| "Notes finish receipt unavailable".to_owned())
+                .map_err(FinishFailure::from)
                 .and_then(|r| r.map(|outcome| match outcome {
                     crate::capture::desktop::workflow::notes::FinishOutcome::Drained => {},
                     crate::capture::desktop::workflow::notes::FinishOutcome::UnavailableBeforeAdmission => {
