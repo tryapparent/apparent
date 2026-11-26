@@ -22,7 +22,7 @@
     },
     {
       "id": "inspect-connect-directory-diagnostics",
-      "description": "Distinguish unsafe download destinations from unsafe local Connect reader storage during capture inspection.",
+      "description": "Inspect a Connect capture from a shared working directory using a private output path and verify atomic bundle publication.",
       "platforms": ["linux", "macos"],
       "userEntryPoint": "Run apparent inspect <capture-id> from a directory that fails a Connect trust check.",
       "prerequisites": [
@@ -35,7 +35,9 @@
       "expectedEvidence": [
         "An unsafe download destination is named on the first error line, along with the permission failure and a private retry path.",
         "An unsafe reader directory identifies local Connect reader storage and the permission failure.",
-        "Both failures omit absolute paths and leave no downloaded capture or staging directory. The loopback fixture also verifies successful inspection in private storage."
+        "Both failures omit absolute paths and leave no downloaded capture or staging directory.",
+        "From a shared directory, inspect with an explicit private --out and --marks prints the verified bundle's marks. Unsafe, existing and invalid destinations fail before any request.",
+        "A local mark inspection during a separate fetch cannot read the unpublished output. It succeeds after the fetch publishes the complete bundle."
       ],
       "limits": [
         "The scenarios use synthetic files and a loopback Connect service."
@@ -77,6 +79,7 @@
       "expectedEvidence": [
         "A stalled file read reports the stage, curl exit code, numeric HTTP status and configured request timeout.",
         "A refused manifest connection preserves the existing transfer recovery guidance.",
+        "Stalled peer authorization and credential renewal requests report their stages without exposing the route, endpoint or credential.",
         "The diagnostics omit credentials, capture IDs, endpoint addresses and file names."
       ],
       "limits": [
