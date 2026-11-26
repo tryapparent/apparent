@@ -218,17 +218,22 @@ before staging, then records the desktop in `result.json`. Use a stopped,
 sanitized standalone disk and firmware pair with preparation provenance and
 hashes. The capture smoke recipe below is qualified on Omarchy.
 
-For `--desktop gnome-x11`, use a separately qualified standalone Xorg disk and
-its matching firmware. Metadata can outlive the disk. Verify both files against
-their preparation hashes before preflight and stop if either is missing. The
-runner requires the test user's `gnome-shell`, X11 session, DISPLAY, runtime and
-GNOME identity. Prepared receipts bind the backend and input pair.
+For `--desktop gnome-x11` on Clanker, use the standalone template at
+`/home/simon/VMs/apparent-gnome-xorg-noble-20261126/`. Check both disk and
+firmware with `sha256sum -c template.sha256` from that directory before
+preflight. Use `sshUser` from `preparation.json` and its test-only
+`test_access` key. Run with `--isolated-network` and a fresh private overlay.
 
-For Electron on Ubuntu 24.04/Xorg, a ready desktop can still yield
-`No usable sandbox!`. Verify any guest AppArmor user-namespace profile matches
-the actual Chromium executable path. Require the expected window and sandboxed
-renderer, with the global namespace restriction enabled. Record fixture and
-candidate hashes. Ubuntu Desktop remains outside the supported installer matrix.
+This Ubuntu 24.04 fixture restricts user namespaces globally. Its guest-only
+AppArmor profile allows namespaces for the packaged Electron executable
+under `$HOME/.local/lib/apparent-frog-xorg-proof/squashfs-root`. Extract the
+candidate in `apparent-frog-xorg-proof` and start the resulting `AppRun`.
+Require the expected window and check renderer sandboxing separately. The
+unprofiled control hit `No usable sandbox!`. The qualified fixture opened
+the frog window and a probe of the same packaged Electron confirmed the
+sandboxed preload, seccomp filtering and a nested PID namespace. See the local
+preparation receipt for the candidate hash. Ubuntu Desktop remains outside
+the supported installer matrix.
 
 `gnome-x11 --outputs 2` uses two heads on one VirtIO GPU. Host Python GI
 (Gio/GLib) sends one bounded head-1 UIInfo through QEMU's private peer D-Bus
@@ -251,16 +256,11 @@ The source is Canonical's Ubuntu 24.04 noble 20261017 image, verified against
 its signed SHA manifest; full source hash and signing provenance are in the
 preparation receipt.
 
-Fresh environment qualification established same-user GNOME Wayland
-(`DISPLAY=:0`, `WAYLAND_DISPLAY=wayland-0`), gnome-shell 46.0/libmutter 46.2,
-two logical 1280×800 outputs at 1× and USB mouse EV_REL X/Y, using historical
-runner `aaf681411` (PR #1082). The current runner accepts `--outputs 2` to add
-the second VirtIO GPU; the default is one output, and prepared receipts bind
-the count. The historical `--relative-mouse` option is not part of this runner.
-StatusNotifierWatcher is absent, the account
-has no broad passwordless sudo, and the image has no Apparent state/autostart or
-personal data. This is environment qualification only: capture, scale/coordinates,
-focus/ink, package and receiver acceptance remain unrun by this qualification.
+PR #1082 qualified GNOME Wayland on GNOME Shell 46.0/Mutter 46.2 with two
+1280×800@1× outputs and USB mouse EV_REL X/Y. The runner defaults to one output
+and binds `--outputs 2` in prepared receipts. This image has no
+StatusNotifierWatcher, broad passwordless sudo, Apparent state or personal
+data. Only the environment was qualified.
 
 Use `--desktop gnome --isolated-network` with an owned private per-job `--results`
 directory; the runner creates disposable disk/firmware copies. Never open the
