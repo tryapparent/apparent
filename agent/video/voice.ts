@@ -12,6 +12,16 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readSpeech, run } from "./media.ts";
 
+export const narration = {
+  engine: "kokoro",
+  voice: "bm_fable",
+  sampleRate: 24000,
+  channels: 1,
+};
+
+const setupCheck =
+  "From an Apparent checkout, run node capture/agent/scripts/provision-narrator.ts --check.";
+
 function cacheDirectory(directory: string) {
   if (!lstatSync(directory, { throwIfNoEntry: false })) {
     try {
@@ -56,7 +66,7 @@ export function narrator(directory?: string) {
       [
         worker,
         join(assets, "model.onnx"),
-        join(assets, "voices/bm_fable.bin"),
+        join(assets, "voices", narration.voice + ".bin"),
       ].map((path) => {
         const info = statSync(path, { bigint: true });
         if (!info.isFile()) throw Error("Missing narrator asset.");
@@ -65,7 +75,7 @@ export function narrator(directory?: string) {
     );
   } catch {
     throw Error(
-      "Local narrator is missing. Provision the Apparent narrator before rendering.",
+      `[NARRATION_SETUP] Local Kokoro bm_fable assets are missing. ${setupCheck}`,
     );
   }
   const cache = directory ? cacheDirectory(directory) : undefined;
@@ -91,7 +101,7 @@ export function narrator(directory?: string) {
         run(worker, [assets, input, output], cwd);
       } catch (error) {
         throw Error(
-          `Local narration failed. Verify the provisioned Apparent narrator. ${error instanceof Error ? error.message : error}`,
+          `[NARRATION_SYNTHESIS] Kokoro bm_fable could not synthesize speech. ${setupCheck} ${error instanceof Error ? error.message : error}`,
         );
       }
       const speech = readSpeech(join(cwd, output));
@@ -100,4 +110,13 @@ export function narrator(directory?: string) {
       return speech;
     },
   };
+}
+
+export function checkNarrator(cwd: string) {
+  const sample = narrator().voice(
+    "This is Apparent's local narration check.",
+    cwd,
+    "voice-check",
+  );
+  return { status: "ready", ...narration, sampleDurationMs: sample.ms };
 }

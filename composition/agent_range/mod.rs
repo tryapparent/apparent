@@ -140,6 +140,9 @@ use std::path::PathBuf;
 
 #[derive(Subcommand)]
 pub(super) enum VideoCommand {
+    #[command(about = "Check local Kokoro bm_fable narration with a private sample",
+        after_help = "Prints JSON readiness, engine, voice and sample format after synthesizing a synthetic line locally. The sample stays in temporary storage. If assets are missing, use node capture/agent/scripts/provision-narrator.ts --check from an Apparent checkout.")]
+    Narrator,
     #[command(about = "Create timestamped full-frame contact sheets and JSON metadata for up to eight local media files")]
     Inspect {
         #[arg(required = true, value_name = "MEDIA")]
@@ -163,7 +166,7 @@ Use up to 20 scenes and 1–6 spoken lines per scene, up to 108 characters per l
 review.jpg samples the opening, middle and end of each scene. verification.json lists scene and cue frames.
 Set a spoken caption's start relative to its scene with {\"text\":\"Now paste the note.\",\"startMs\":1500}. Plain strings start after the previous line.
 Run apparent video inspect to find source times and dimensions.
-Requires ffmpeg with libass, drawtext, H.264 and AAC, ffprobe, and a provisioned local Apparent narrator.")]
+Uses local Kokoro bm_fable. Run apparent video narrator to check synthesis. Requires ffmpeg with libass, drawtext, H.264 and AAC, and ffprobe.")]
     Render {
         #[arg(value_name = "PLAN")]
         plan: PathBuf,
@@ -176,6 +179,10 @@ Requires ffmpeg with libass, drawtext, H.264 and AAC, ffprobe, and a provisioned
 
 pub(super) fn video_command(command: VideoCommand) -> Result<()> {
     use crate::composition::worker as process;
+    if !matches!(&command, VideoCommand::Inspect { .. }) {
+        ensure!(crate::shared::handoff::experiment("exportNarration"),
+            "[NARRATION_DISABLED] Local narration is disabled by experiments.exportNarration=false");
+    }
     let temp = tempfile::Builder::new().prefix("apparent-dev-video-worker-").tempdir()?;
     for (name, source) in [
         ("voice.mjs", include_str!(concat!(env!("OUT_DIR"), "/video-worker/voice.mjs"))),
@@ -196,6 +203,9 @@ pub(super) fn video_command(command: VideoCommand) -> Result<()> {
     };
     runner.arg(temp.path().join("video.mjs"));
     match command {
+        VideoCommand::Narrator => {
+            runner.arg("narrator").arg(temp.path());
+        }
         VideoCommand::Inspect { media, frames, out, from_ms, to_ms, starter_plan } => {
             runner.arg("inspect").arg(temp.path()).arg(out).arg(frames.to_string())
                 .arg(from_ms.map_or_else(|| "-".into(), |ms| ms.to_string()))
@@ -203,8 +213,6 @@ pub(super) fn video_command(command: VideoCommand) -> Result<()> {
                 .arg(starter_plan.to_string()).args(media);
         }
         VideoCommand::Render { plan, out, voice_cache } => {
-            ensure!(crate::shared::handoff::experiment("exportNarration"),
-                "Local narration is disabled by experiments.exportNarration=false");
             runner.arg("render").arg(temp.path()).arg(out).arg(plan);
             if let Some(cache) = voice_cache {
                 runner.arg(cache);

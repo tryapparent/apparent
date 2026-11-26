@@ -27,7 +27,16 @@ JPEG, WebP, MP4, MOV, MKV and WebM. Render requires FFmpeg with libass,
 drawtext, H.264 and AAC, ffprobe, and the provisioned local Apparent narrator.
 The [narration guide](../skills/make-it-apparent/narration/README.md) covers
 provisioning. If an Electron runtime is unavailable, use Node 22 on PATH.
-Render honors `experiments.exportNarration=false`.
+Render and the narrator check honor `experiments.exportNarration=false`.
+
+## Check local narration
+
+`apparent video narrator` synthesizes a short private test sentence and returns
+the engine, voice, sample rate, channels and generated duration as JSON. It
+uses the same provisioned offline worker as render. For missing or broken
+assets, use `node capture/agent/scripts/provision-narrator.ts --check` in the
+Apparent checkout to diagnose the setup. Rendering uses Kokoro `bm_fable` and
+records that voice in the media receipt and MP4 comment metadata.
 
 ## Scene plan
 
@@ -85,7 +94,7 @@ one local narration track.
 The JSON receipt names the verified `video.mp4`, editable `captions.srt`, and
 `review.jpg` with time-stamped frames from the start, middle and end of each
 scene. `verification.json` includes scene and cue times in 30 fps output frames,
-a stream check, local voice cache counts, and an end-to-end decode check. Watch the full movie to verify
+a stream check, narrator identity and cache counts, and an end-to-end decode check. Watch the full movie to verify
 the spoken explanation matches the action, highlights are readable, and the
 ending clearly states the status and next action. Use a new output path for
 a revised plan. Pass the same private `--voice-cache` on subsequent renders

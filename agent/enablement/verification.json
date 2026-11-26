@@ -46,7 +46,7 @@
       "id": "local-narrated-video",
       "description": "Render and review a private established example with one timed narration track.",
       "platforms": ["linux"],
-      "userEntryPoint": "Run apparent video inspect and apparent video render on local synthetic evidence.",
+      "userEntryPoint": "Run apparent video narrator, then apparent video inspect and apparent video render on local synthetic evidence.",
       "prerequisites": [
         "A development Apparent CLI, FFmpeg with libass and drawtext, ffprobe, a provisioned local Apparent narrator, and a private scratch directory."
       ],
@@ -55,7 +55,7 @@
         "instructions": "agent/video/README.md#inspect-and-render"
       },
       "expectedEvidence": [
-        "Timestamped source contact sheets, an editable plan and captions, a decodable 30 fps MP4 with one mono stream, and a timestamped review sheet."
+        "Timestamped source contact sheets, an editable plan and captions, a decodable 30 fps MP4 with one mono stream and Kokoro voice metadata, and a timestamped review sheet."
       ],
       "limits": [
         "The proof runner checks the plan policy. Inspect and render are supplemented by a CLI replay on Linux. Existing source footage supplies the app behavior. The CLI replay does not open a native capture surface."

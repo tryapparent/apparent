@@ -15,7 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { cue, ff, probe, renderScene, source } from "./media.ts";
 import { parsePlan, policy, readPlan } from "./plan.ts";
 
-import { narrator } from "./voice.ts";
+import { checkNarrator, narration, narrator } from "./voice.ts";
 
 function publish(cwd: string, destination: string, assets: string[]) {
   mkdirSync(destination, { mode: 0o700 });
@@ -149,6 +149,8 @@ function render(planPath: string, output: string, cwd: string, cache?: string) {
       String(duration),
       "-movflags",
       "+faststart",
+      "-metadata",
+      `comment=Apparent local narration: ${narration.engine} ${narration.voice}`,
       "video.mp4",
     ],
     cwd,
@@ -221,7 +223,7 @@ function render(planPath: string, output: string, cwd: string, cache?: string) {
     timeline,
     reviewFrames,
     audioTracks: 1,
-    voice: narratorJob.stats,
+    voice: { ...narration, ...narratorJob.stats },
     decoded: true,
   };
   writeFileSync(
@@ -237,11 +239,15 @@ function render(planPath: string, output: string, cwd: string, cache?: string) {
   return record;
 }
 
-try {
-  const [operation, cwd, destination, ...args] = process.argv.slice(2);
+function execute(
+  operation: string,
+  cwd: string,
+  destination: string,
+  args: string[],
+) {
+  if (operation === "narrator") return checkNarrator(cwd);
   const output = resolve(destination);
   checkOutput(output);
-  let result: unknown;
   if (operation === "inspect") {
     const [count, from, to, starter, ...paths] = args;
     const { record, assets } = inspect(
@@ -256,10 +262,16 @@ try {
       cwd,
     );
     publish(cwd, output, assets);
-    result = record;
-  } else {
-    result = render(resolve(args[0]), output, cwd, args[1] && resolve(args[1]));
+    return record;
   }
+  if (operation === "render")
+    return render(resolve(args[0]), output, cwd, args[1] && resolve(args[1]));
+  throw Error("Unknown video operation.");
+}
+
+try {
+  const [operation, cwd, destination, ...args] = process.argv.slice(2);
+  const result = execute(operation, cwd, destination, args);
   process.stdout.write(JSON.stringify({ result }) + "\n");
 } catch (error) {
   process.stdout.write(
