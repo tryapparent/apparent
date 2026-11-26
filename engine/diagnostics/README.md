@@ -43,3 +43,10 @@ does not import product implementations. The Linux launch path is the adoption
 point; rollback removes that supervision call and its module while retaining the
 existing reporter. Settings persistence and in-process reporting remain existing
 native debt; this safety repair introduces no new preference or UI workflow.
+
+macOS Sparkle download error 2001 can include a single underlying NSError. The
+existing consent-gated updater report records that cause as
+`updater.sparkle_cause` with an allowlisted domain category and numeric code.
+Sparkle can omit the cause or use another generic 2001 for an HTTP failure.
+The report includes neither descriptions nor HTTP status parsed from text.
+The outer error fingerprint remains stable across the added evidence.
