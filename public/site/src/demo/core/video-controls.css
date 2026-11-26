@@ -1,0 +1,286 @@
+.demo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stage-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  border-radius: 16px;
+  overflow: hidden;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.09),
+    0 40px 120px -20px rgba(0, 0, 0, 0.8);
+  touch-action: pan-y;
+}
+
+.stage-wrap:focus-visible {
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.35),
+    0 40px 120px -20px rgba(0, 0, 0, 0.8);
+}
+
+.controls {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.controls-left,
+.controls-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  transition: background 0.15s;
+}
+
+.icon-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.icon-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
+.icon-btn svg[fill="none"] {
+  fill: none;
+}
+
+.scrubber {
+  flex: 1;
+  padding-top: 8px;
+}
+
+.track {
+  display: flex;
+  gap: 4px;
+  height: 18px;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.track .seg {
+  position: relative;
+  height: 4px;
+  flex-basis: 0;
+  padding: 0;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.track .seg i {
+  position: absolute;
+  inset: 0;
+  background: #f5f5f7;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.beats {
+  display: flex;
+  gap: 4px;
+}
+
+.beats button {
+  flex-basis: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  transition: color 0.15s;
+}
+
+.beats button span {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.beats button em {
+  font-style: normal;
+}
+
+.beats button.on,
+.beats button:hover {
+  color: var(--fg);
+}
+
+.toggle {
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.toggle button {
+  padding: 6px 13px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--muted);
+  transition:
+    background 0.2s,
+    color 0.2s;
+}
+
+.toggle button.on {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--fg);
+}
+
+.liquid-glass {
+  --lg-bg: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.17) 0%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  --lg-bg-hover: linear-gradient(
+    175deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.09) 50%,
+    rgba(255, 255, 255, 0.16) 100%
+  );
+  --lg-bg-active: linear-gradient(
+    185deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.05) 48%,
+    rgba(255, 255, 255, 0.18) 100%
+  );
+  --lg-sheen: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.3) 0%,
+    rgba(255, 255, 255, 0.08) 28%,
+    transparent 56%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  --lg-sheen-hover: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.11) 30%,
+    transparent 56%,
+    rgba(255, 255, 255, 0.16) 100%
+  );
+  --lg-sheen-active: linear-gradient(
+    340deg,
+    rgba(255, 255, 255, 0.32) 0%,
+    rgba(255, 255, 255, 0.09) 32%,
+    transparent 60%,
+    rgba(255, 255, 255, 0.18) 100%
+  );
+  --lg-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.26),
+    inset 0 10px 18px -10px rgba(255, 255, 255, 0.28),
+    inset 0 -10px 18px -12px rgba(255, 255, 255, 0.26),
+    0 12px 30px -8px rgba(0, 0, 0, 0.58),
+    0 2px 6px rgba(0, 0, 0, 0.28);
+  --lg-shadow-hover:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -0.5px 0 rgba(255, 255, 255, 0.36),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.32),
+    inset 0 12px 20px -10px rgba(255, 255, 255, 0.34),
+    inset 0 -10px 18px -11px rgba(255, 255, 255, 0.32),
+    0 16px 36px -8px rgba(0, 0, 0, 0.64),
+    0 4px 10px rgba(0, 0, 0, 0.32);
+  --lg-shadow-active:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.48),
+    inset 0 2px 8px rgba(0, 0, 0, 0.18),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.24),
+    inset 0 -10px 18px -10px rgba(255, 255, 255, 0.36),
+    0 6px 18px -6px rgba(0, 0, 0, 0.54),
+    0 1px 4px rgba(0, 0, 0, 0.28);
+  background: var(--lg-bg);
+  -webkit-backdrop-filter: blur(15px) saturate(205%) brightness(1.22);
+  backdrop-filter: blur(15px) saturate(205%) brightness(1.22);
+  box-shadow: var(--lg-shadow);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.48);
+}
+
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    162deg,
+    rgba(255, 255, 255, 0.78) 0%,
+    rgba(255, 255, 255, 0.16) 42%,
+    rgba(255, 255, 255, 0.08) 68%,
+    rgba(255, 255, 255, 0.44) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.liquid-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--lg-sheen);
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .liquid-glass:hover::after {
+    background: var(--lg-sheen-hover);
+  }
+}
+
+.liquid-glass:active,
+.liquid-glass.pressed {
+  background: var(--lg-bg-active);
+  box-shadow: var(--lg-shadow-active);
+}
+
+.liquid-glass:active::after,
+.liquid-glass.pressed::after {
+  background: var(--lg-sheen-active);
+}
+
+.liquid-glass-primary {
+  --lg-bg: rgba(245, 245, 252, 0.78);
+  --lg-bg-hover: rgba(252, 252, 255, 0.88);
+  --lg-bg-active: rgba(235, 235, 244, 0.82);
+  --lg-sheen: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.65) 0%,
+    rgba(255, 255, 255, 0.15) 36%,
+    transparent 60%,
+    rgba(255, 255, 255, 0.35) 100%
+  );
+  color: #09090b;
+  text-shadow: 0 0.5px 0 rgba(255, 255, 255, 0.55);
+}
