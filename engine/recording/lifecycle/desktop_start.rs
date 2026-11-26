@@ -143,8 +143,14 @@ impl ApparentCoordinator {
         if self.is_recording() || self.source_is_stopping() {
             return;
         }
-        if !self.ready_to_record(prepared_source.is_some()) {
+        if let Err(admission) = self.recording_start_admission(prepared_source.is_some()) {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            let request_id = self.agent_capture_id.clone();
             self.cancel_recording(cx);
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if let Some(id) = request_id {
+                self.agent_captures.fail_start_permissions(&id, admission);
+            }
             return;
         }
         let target = target(self.lab);

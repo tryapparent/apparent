@@ -1,6 +1,25 @@
 {
   "scenarios": [
     {
+      "id": "capture-start-permission-receipt",
+      "description": "Check the permission refusal returned by same-user GUI capture control.",
+      "platforms": ["macos"],
+      "userEntryPoint": "Run apparent capture start --request-id <id> --wait from the machine running Apparent.",
+      "prerequisites": [
+        "Use an installed candidate in an isolated macOS session with a known missing required grant. Use a new request ID."
+      ],
+      "runner": {
+        "path": "capture/engine/docs/capture.md",
+        "instructions": "Check the failed start JSON, then run apparent capture inspect <id> and repeat Start with the same ID. The portable receipt check is cargo test capture_start_reports_permission_blockers_on_wait_and_retry."
+      },
+      "expectedEvidence": [
+        "All three receipts contain the same ID, missing_permissions and the required permission names, with no bundle path. After granting permissions in the guest, use a new request ID and verify that capture can start normally."
+      ],
+      "limits": [
+        "The portable test replays permission decisions through the receipt and CLI wait code. Actual grant observation, permission repair and capture require the installed macOS check."
+      ]
+    },
+    {
       "id": "recording-settings-platform-controls",
       "description": "Verify the Recording pane and confirm that playback volume controls are available only on macOS.",
       "platforms": ["linux", "macos"],

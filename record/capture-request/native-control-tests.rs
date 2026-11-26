@@ -139,3 +139,109 @@ fn older_saved_result_survives_new_capture_and_stop_retry_does_not_stop_it() {
         Outcome::AlreadyEnded
     );
 }
+
+#[test]
+fn finalization_error_or_cancel_never_publishes_a_saved_path() {
+    let mut registry = Registry::default();
+    registry.begin("failure");
+    registry.finish("failure", Err("disk full".into()));
+    let failure = registry.inspect("failure");
+    assert_eq!(failure["status"], "failed");
+    assert_eq!(failure["error"], "finalization_failed");
+    assert_eq!(failure["message"], "disk full");
+    assert!(failure["bundle_path"].is_null());
+    registry.set("cancel", "cancelled", None, None);
+    assert!(registry.inspect("cancel")["bundle_path"].is_null());
+    assert_eq!(registry.inspect("unknown")["error"], "unknown_capture");
+}
+
+#[test]
+fn stop_wait_sends_one_stop_then_inspects_only_that_id_until_saved() {
+    let mut calls = vec![];
+    let replies = [
+        serde_json::json!({"capture_id":"owned", "status":"processing", "outcome":"stopping"}),
+        serde_json::json!({"capture_id":"owned", "status":"processing"}),
+        serde_json::json!({"capture_id":"owned", "status":"saved", "bundle_path":"/captures/exact.apparent"}),
+    ];
+    let value = execute_with(
+        Some((Action::Stop, "owned")),
+        true,
+        Duration::from_secs(1),
+        |action, _| {
+            calls.push(action.map(|(a, id)| (a, id.to_owned())));
+            Ok(replies[calls.len() - 1].to_string())
+        },
+    );
+    assert_eq!(value["bundle_path"], "/captures/exact.apparent");
+    assert_eq!(
+        calls,
+        vec![
+            Some((Action::Stop, "owned".into())),
+            Some((Action::Inspect, "owned".into())),
+            Some((Action::Inspect, "owned".into()))
+        ]
+    );
+}
+
+#[test]
+fn start_wait_requires_real_readiness_receipt_for_the_owned_id() {
+    let mut calls = 0;
+    let value = execute_with(
+        Some((Action::Start, "owned")),
+        true,
+        Duration::from_secs(1),
+        |action, _| {
+            calls += 1;
+            assert_eq!(
+                action.unwrap().0,
+                if calls == 1 {
+                    Action::Start
+                } else {
+                    Action::Inspect
+                }
+            );
+            Ok(serde_json::json!({"capture_id":"owned", "status":if calls == 1 {"starting"} else {"recording"}}).to_string())
+        },
+    );
+    assert_eq!(value["status"], "recording");
+    assert_eq!(calls, 2);
+}
+
+#[test]
+fn capture_start_reports_permission_blockers_on_wait_and_retry() {
+    use crate::{permission_admission::Admission, permission_facts::Permission};
+    let mut registry = Registry::default();
+    for (id, admission, code, missing) in [
+        (
+            "blocked",
+            Admission::Blocked(vec![Permission::ScreenRecording, Permission::Accessibility]),
+            "missing_permissions",
+            serde_json::json!(["screen-recording", "accessibility"]),
+        ),
+        ("checking", Admission::Checking, "permissions_checking", serde_json::Value::Null),
+    ] {
+        assert!(registry.admit(id, false, false));
+        registry.set(id, "cancelled", None, None);
+        registry.fail_start_permissions(id, admission);
+        registry.fail_start(id);
+        assert!(!registry.admit(id, false, false));
+
+        let value = execute_with(
+            Some((Action::Start, id)),
+            true,
+            Duration::from_secs(1),
+            |action, _| {
+                assert_eq!(action, Some((Action::Start, id)));
+                Ok(registry.inspect(id).to_string())
+            },
+        );
+        assert_eq!(value["status"], "failed");
+        assert_eq!(value["error"], code);
+        assert_eq!(value["missing_permissions"], missing);
+        assert!(value["bundle_path"].is_null());
+    }
+    assert!(registry.admit("other", false, false));
+    registry.set("other", "cancelled", None, None);
+    registry.fail_start("other");
+    assert_eq!(registry.inspect("other")["error"], "start_failed");
+}

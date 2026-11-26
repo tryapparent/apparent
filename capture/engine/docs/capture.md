@@ -147,10 +147,12 @@ State keeps its existing `{ "state": { "phase": ..., "capture_id": ... } }` shap
 also include `outcome` and global `state` in their initial reply. Do not rely on those fields in a
 waited reply: it may be the final read-only receipt. Transport/timeout errors may lack `status`
 and `bundle_path`, but carry the owned ID and recovery text. The bounded wait is 1–3600 seconds.
-Useful errors include `occupied`, `admission_expired`, `start_failed`, `unknown_capture`,
-`finalization_failed`, `cancelled`, `timeout`, `control_unavailable`, `app_busy`, `app_unresponsive`
-and `invalid_response`; `outcome: "wrong_capture"` or `"not_ready"` also fails. After disconnect
-or timeout, inspect/retry the same ID before deciding on a new take.
+After disconnect or timeout, inspect the same ID before starting another take.
+An outcome of `wrong_capture` or `not_ready` also fails.
+
+For required grants, `missing_permissions` lists the blocked permissions in an
+array of the same name. Review them in Settings. For `permissions_checking`,
+wait briefly and use a new request ID.
 
 For an agent-authored proof video, see [Agent video workflow](../../agent/docs/agent-video-workflow.md):
 start ownership, settled input geometry, bounded completion checks and final-file QA.
