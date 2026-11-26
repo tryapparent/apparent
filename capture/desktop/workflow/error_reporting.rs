@@ -62,11 +62,8 @@ impl Failure {
     }
 }
 
-#[cfg(any(target_os = "macos", test))]
 #[path = "../../../engine/diagnostics/sparkle_outcomes.rs"]
 mod sparkle_outcomes;
-#[cfg(target_os = "macos")]
-pub(crate) use sparkle_outcomes::sparkle_error_should_report;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Consent {
@@ -463,13 +460,16 @@ pub(crate) fn update_payload_for_test(error: &anyhow::Error, trigger: updates::T
         .payload("phc_synthetic").unwrap()
 }
 
+#[cfg(target_os = "macos")]
 #[track_caller]
-pub(crate) fn report_sparkle_update(domain: &str, code: isize) {
+pub(crate) fn report_sparkle_update(error: &objc2_foundation::NSError) {
     let location = std::panic::Location::caller();
-    if let Some(reporter) = REPORTER.get() {
+    if let Some(reporter) = REPORTER.get()
+        && let Some((native, cause)) = sparkle_outcomes::download_evidence(error)
+    {
         reporter.enqueue(|consent| {
             let mut report = Report::new(Failure::UpdateCheck, location, consent);
-            report.updater = Some(updates::Diagnostics::sparkle(domain, code));
+            report.updater = Some(updates::Diagnostics::sparkle(native, cause));
             report
         });
     }
