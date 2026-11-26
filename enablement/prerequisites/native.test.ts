@@ -11,6 +11,8 @@ import './targeted/run.test.ts';
 const agentMediaFiles = ['worker.js', 'policy.js', 'range-worker.js', 'range-policy.js', 'zoom-worker.mjs', 'zoom-plan.mjs', 'package.json', 'node_modules/@apparent/engine-sdk/dist/index.js', 'native/apparent-engine-frames', 'engine-source-manifest.json'];
 const completionFiles = ['worker.js', 'policy.js', 'session.js', 'copy-admission.mjs', 'package.json'];
 
+const storageFiles = ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs'];
+
 function fixture(t: any) {
   const app = 'capture/desktop/ui/frontend/electron/';
   const root = realpathSync(mkdtempSync('/tmp/apparent-dev-native-inputs-'));
@@ -38,7 +40,7 @@ function fixture(t: any) {
   for (const name of agentMediaFiles) {
     put(app + 'agent-media/' + name);
   }
-  for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs']) {
+  for (const name of storageFiles) {
     put(app + 'storage-owner/' + name);
   }
   return { root, put, electron };
@@ -46,8 +48,9 @@ function fixture(t: any) {
 
 function generators(f: ReturnType<typeof fixture>, fail = '') {
   const outputs = {
-    'record-capture-request': ['node_modules/@apparent/record-capture-request/dist/lifecycle.js'],
-    'storage-policy': ['electron/storage-policy.cjs', ...['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs'].map(name => 'electron/storage-owner/' + name)],
+    'record-capture-request-build': [],
+    'record-capture-request-stage': ['node_modules/@apparent/record-capture-request/dist/lifecycle.js'],
+    'storage-policy': ['electron/storage-policy.cjs', ...storageFiles.map(name => 'electron/storage-owner/' + name)],
     'connect-transport': ['electron/connect.cjs', 'electron/settings/agents.cjs'],
     'updates': ['electron/settings/update-worker.cjs'],
     'pill': completionFiles.map(name => 'electron/record-completion/' + name),
@@ -58,7 +61,13 @@ function generators(f: ReturnType<typeof fixture>, fail = '') {
   outputs.pill.push('electron/notes/record-transcription.cjs');
   for (const [name, files] of Object.entries(outputs)) {
     for (const file of files) rmSync(resolve(f.root, 'capture/desktop/ui/frontend', file));
-    f.put(`capture/desktop/ui/frontend/scripts/${name === 'agent-media' ? 'agent-media/build' : 'build-' + name}.ts`, `
+    const frontend = 'capture/desktop/ui/frontend/scripts/';
+    const scripts: Record<string, string> = {
+      'record-capture-request-build': 'record/enablement/ci/capture-request/build.ts',
+      'record-capture-request-stage': frontend + 'capture-request/stage.ts',
+      'agent-media': frontend + 'agent-media/build.ts',
+    };
+    f.put(scripts[name] ?? frontend + 'build-' + name + '.ts', `
 import {appendFileSync, mkdirSync, writeFileSync} from 'node:fs';
 import {dirname} from 'node:path';
 appendFileSync('trace', '${name}\\n');
@@ -91,9 +100,10 @@ test('Linux release tests prepare their real published provider before Cargo', (
 test('one preparation entrypoint rebuilds absent native artifacts and can run again', t => {
   const f = fixture(t), trace = generators(f);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
+  const expected = 'record-capture-request-build\nrecord-capture-request-stage\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n';
+  assert.equal(trace(), expected);
   assert.equal(prepareNativeInputs(f.root, 'linux'), f.electron);
-  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\nrecord-capture-request\nstorage-policy\nconnect-transport\nupdates\npill\nrecord-media\nagent-media\n');
+  assert.equal(trace(), expected.repeat(2));
 });
 test('missing runtime stops before generating artifacts', t => {
   const f = fixture(t);
@@ -105,7 +115,7 @@ test('missing runtime stops before generating artifacts', t => {
 test('a failed generator stops preparation before subsequent generators', t => {
   const f = fixture(t), trace = generators(f, 'connect-transport');
   assert.throws(() => prepareNativeInputs(f.root, 'linux'));
-  assert.equal(trace(), 'record-capture-request\nstorage-policy\nconnect-transport\n');
+  assert.equal(trace(), 'record-capture-request-build\nrecord-capture-request-stage\nstorage-policy\nconnect-transport\n');
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
 
@@ -133,7 +143,7 @@ test('missing generated capture request package fails before Cargo', t => {
   rmSync(resolve(f.root, 'capture/desktop/ui/frontend/node_modules/@apparent/record-capture-request/dist/lifecycle.js'));
   assert.throws(() => checkNativeInputs(f.root, 'linux'), /ENOENT/);
 });
-for (const name of ['location-workflow.js', 'location-policy.js', 'retention-workflow.js', 'policy.js', 'package.json', 'cleanup-policy/package.json', 'cleanup-policy/policy.js', 'cleanup-policy/retention/policy.js', 'cleanup-policy/retention/worker.js', 'cleanup-policy/retention/size-limit.js', 'cleanup-policy/retention/capacity.mjs', 'retention/size-limit.js', 'retention/capacity.mjs']) {
+for (const name of storageFiles) {
   test(`missing generated Storage workflow ${name} fails before Cargo`, t => {
     const f = fixture(t);
     rmSync(resolve(f.root, 'capture/desktop/ui/frontend/electron/storage-owner/' + name));
