@@ -187,13 +187,6 @@ pub fn find_mark<'a>(
     }
 }
 
-fn normalized(text: &str) -> String {
-    text.chars()
-        .filter(|c| c.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect()
-}
-
 /// Recovers which timed words each keyframe's `said` was built from (Record's transcript policy
 /// gives every frame a run of the time-sorted words). `None` when the transcript has no word
 /// times or the text doesn't line up, and the speech is then shown whole.
@@ -208,23 +201,21 @@ fn frame_words(bundle: &ApparentBundle) -> Option<Vec<Vec<&WordTiming>>> {
         return None;
     }
     words.sort_by_key(|w| w.t0);
-    let mut next = 0;
+    let mut words = words.into_iter();
     let mut out = Vec::with_capacity(bundle.keyframes.len());
     for frame in &bundle.keyframes {
-        let target = normalized(frame.said.as_deref().unwrap_or(""));
-        let mut acc = String::new();
+        let target: String = frame.said.as_deref().unwrap_or("").split_whitespace().collect();
+        let mut remaining = target.as_str();
         let mut taken = Vec::new();
-        while acc.len() < target.len() && next < words.len() {
-            acc.push_str(&normalized(&words[next].text));
-            taken.push(words[next]);
-            next += 1;
-        }
-        if acc != target {
-            return None;
+        while !remaining.is_empty() {
+            let word = words.next()?;
+            let token: String = word.text.split_whitespace().collect();
+            remaining = remaining.strip_prefix(&token)?;
+            taken.push(word);
         }
         out.push(taken);
     }
-    Some(out)
+    words.next().is_none().then_some(out)
 }
 
 /// When each keyframe's stretch of the recording starts: its first word, first mark or own moment,

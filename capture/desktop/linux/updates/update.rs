@@ -407,7 +407,7 @@ fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Relea
     let start = START.get_or_init(Instant::now);
     let mut releases = Vec::new();
     let mut complete = false;
-    for page in 1..=10 {
+    for page in 1..=20 {
         let requests = REQUESTS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| Some(value.saturating_add(1))).unwrap().saturating_add(1);
         let body = fetch(&format!("https://api.github.com/repos/{REPO}/releases?per_page=100&page={page}"))
             .map_err(|error| updates::discovery_failure(error, updates::ReleaseDiscovery {
@@ -1158,13 +1158,12 @@ mod tests {
             serde_json::json!({"tag_name":tag,"prerelease":true,"draft":false,"published_at":date,
                 "assets":assets})
         };
-        // A later page can contain a later publication when GitHub orders by tag creation.
         let candidate = latest_candidate_with("main", "x86_64", &|url| {
-            if url.ends_with("?per_page=100&page=1") {
-                return Ok(serde_json::to_vec(&vec![release("a", "2026-10-28T01:00:00Z"); 100])?);
-            }
-            if url.ends_with("?per_page=100&page=2") {
+            if url.ends_with("?per_page=100&page=11") {
                 return Ok(serde_json::to_vec(&vec![release("b", "2026-10-29T01:00:00Z")])?);
+            }
+            if url.contains("/releases?per_page=100&page=") {
+                return Ok(serde_json::to_vec(&vec![release("a", "2026-10-28T01:00:00Z"); 100])?);
             }
             assert!(url.ends_with(".sha256"), "stop after the final partial page");
             Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
