@@ -55,7 +55,7 @@ pub(crate) fn stage(source: &Path, video: &Path, output: &Path) -> Result<(PathB
     let parent = output_path
         .parent()
         .context("benchmark output has no parent")?;
-    Directory::open(parent, true)?;
+    Directory::open(parent, true).context("Benchmark output parent must be owned by your user with group and other write permissions disabled")?;
     std::fs::DirBuilder::new()
         .mode(0o700)
         .create(&output_path)?;

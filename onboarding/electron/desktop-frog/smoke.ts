@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { constants, lstatSync } from "node:fs";
+import { access, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
   connectToEndpoint,
   waitFor,
 } from "../../../shared/enablement/performance/electron-observer.ts";
+import { sha256 } from "../../enablement/performance/electron-fixture.ts";
 
 const frontend = fileURLToPath(
   new URL("../../../capture/desktop/ui/frontend/", import.meta.url),
@@ -18,9 +20,40 @@ const frontend = fileURLToPath(
 const assets = process.env.APPARENT_FROG_TEST_ASSETS ?? frontend;
 const require = createRequire(join(frontend, "package.json"));
 
+async function smokeRuntime() {
+  const override = process.env.APPARENT_FROG_TEST_ELECTRON;
+  if (process.platform !== "linux")
+    return override ?? (require("electron") as string);
+
+  const locked = join(frontend, "node_modules/electron/dist/electron");
+  const runtime = await realpath(override ?? locked);
+  await access(runtime, constants.X_OK);
+  if (override && runtime !== locked) {
+    const [expected, actual] = await Promise.all([
+      sha256(locked),
+      sha256(runtime),
+    ]);
+    assert(
+      actual === expected,
+      "APPARENT_FROG_TEST_ELECTRON must match the locked frontend Electron executable.",
+    );
+  }
+  const helper = join(dirname(runtime), "chrome-sandbox");
+  const metadata = lstatSync(helper, { throwIfNoEntry: false });
+  assert(
+    metadata?.isFile() &&
+      metadata.uid === 0 &&
+      metadata.gid === 0 &&
+      (metadata.mode & 0o7777) === 0o4755,
+    `Desktop frog smoke requires a regular root:root chrome-sandbox with mode 4755 at ${helper}. Set APPARENT_FROG_TEST_ELECTRON to an already configured copy of the locked Electron runtime.`,
+  );
+  return runtime;
+}
+
 test("desktop frog renders and sends a start only after hiding", {
   timeout: 30000,
 }, async (t) => {
+  const runtime = await smokeRuntime();
   const profile = await mkdtemp(join(tmpdir(), "desktop-frog-"));
   const args = [
     "--ozone-platform=x11",
@@ -31,8 +64,6 @@ test("desktop frog renders and sends a start only after hiding", {
     assets,
     "--desktop-frog",
   ];
-  const runtime =
-    process.env.APPARENT_FROG_TEST_ELECTRON ?? require("electron");
   const child = spawn(runtime, args, {
     env: { ...process.env, APPARENT_UI_PROFILE: profile },
     stdio: ["pipe", "pipe", "pipe"],

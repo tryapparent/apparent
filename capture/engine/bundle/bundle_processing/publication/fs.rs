@@ -47,7 +47,7 @@ impl Directory {
     /// Pin an existing parent for durability sync, accepting root-owned sticky
     /// directories such as /tmp. Bundle and managed artifact checks stay strict.
     pub(super) fn open_sync_parent(path: &Path) -> Result<Self> {
-        Self::open_with_parent_policy(path, false, true)
+        Self::open_with_parent_policy(path, false, true).context("Cannot open the output bundle's parent directory for publication. Use a directory owned by your user or root with group and other write permissions disabled (or a root-owned sticky directory).")
     }
 
     fn open_with_parent_policy(path: &Path, create: bool, sync_parent: bool) -> Result<Self> {
@@ -70,7 +70,7 @@ impl Directory {
                     ensure!(
                         (m.uid() == 0 || m.uid() == uid)
                             && (m.mode() & 0o022 == 0 || sticky || private_ancestor),
-                        "untrusted bundle ancestor"
+                        "untrusted bundle ancestor: use directories owned by your user or root and disable group and other write permissions on shared ancestors (except root-owned sticky directories)"
                     );
                     private_ancestor |= m.uid() == uid && m.mode() & 0o077 == 0;
                 }

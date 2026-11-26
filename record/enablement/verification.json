@@ -110,7 +110,7 @@
       ],
       "runner": {
         "path": "capture/desktop/ui/frontend/tests/notes/smoke.cjs",
-        "instructions": "From capture/desktop/ui/frontend, run npm run test:electron:targeted -- tests/notes/smoke.cjs. Prefix with xvfb-run -a on Linux. In the installed app, attach a multiline note and open the count from the recording pill."
+        "instructions": "From capture/desktop/ui/frontend, run npm run test:electron:targeted -- tests/notes/smoke.cjs. Prefix with xvfb-run -a on Linux. In the installed app, attach a multiline note and open the count from the recording pill. Click the Notes heading and press Escape, then reopen the list and close it with the X."
       },
       "expectedEvidence": [
         "The pill count opens a compact panel centered below the recording controls. It shows the attached text with its line breaks. The X and Escape dismiss it. Long lists scroll by keyboard.",
