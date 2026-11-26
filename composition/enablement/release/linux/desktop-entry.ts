@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const source = new URL(
-  "./dev.kitlangton.apparent.desktop.json",
+  "./dev.simonvanlaak.apparent.desktop.json",
   import.meta.url,
 );
 const lines: string[] = JSON.parse(readFileSync(source, "utf8"));

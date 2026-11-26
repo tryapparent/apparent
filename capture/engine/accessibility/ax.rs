@@ -367,7 +367,6 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     Some(hit)
 }
 
-/// `file:///Users/kit/main.rs` → `main.rs`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn document_name(url: &str) -> Option<String> {
     let path = url.strip_prefix("file://").unwrap_or(url);

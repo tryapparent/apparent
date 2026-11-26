@@ -246,6 +246,8 @@ pub(super) struct Diagnostics {
     json_error_kind: Option<&'static str>,
     sparkle_domain: Option<&'static str>,
     sparkle_code: Option<isize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    sparkle_cause: Option<super::sparkle_outcomes::SparkleError>,
 }
 #[derive(Clone, serde::Serialize)]
 struct Frame { stage: Stage, file: Option<String>, line: u32 }
@@ -253,7 +255,7 @@ impl Diagnostics {
     pub(super) fn from_error(error: &anyhow::Error, trigger: Trigger) -> Self {
         let mut value = Self {trigger, stages: vec![], attempt: Attempt::default(), target: None, release_discovery: None, process: None,
             exit_code: None, signal: None, transfer_ms: None, downloaded_bytes: None, http_status: None, rate_limit_remaining: None, rate_limit_limit: None, rate_limit_reset_after_seconds: None, retry_after_seconds: None, io_kind: None, os_error_code: None,
-            json_error_kind: None, sparkle_domain: None, sparkle_code: None};
+            json_error_kind: None, sparkle_domain: None, sparkle_code: None, sparkle_cause: None};
         for cause in error.chain().take(64) {
             if let Some(boundary) = cause.downcast_ref::<Boundary>() {
                 if value.stages.len() == 8 { value.stages.remove(0); }
@@ -294,14 +296,12 @@ impl Diagnostics {
         }
         value
     }
-    pub(super) fn sparkle(domain: &str, code: isize) -> Self {
-        let mut value = Self::from_error(&anyhow::anyhow!("native updater"), Trigger::Sparkle);
-        value.sparkle_domain = Some(match domain {
-            "SUSparkleErrorDomain" => "sparkle", "NSURLErrorDomain" => "url_loading",
-            "NSCocoaErrorDomain" => "cocoa", "NSPOSIXErrorDomain" => "posix", _ => "other",
-        });
-        value.sparkle_code = Some(code);
-        value
+    #[cfg(any(target_os = "macos", test))]
+    pub(super) fn sparkle(native: super::sparkle_outcomes::SparkleError, cause: Option<super::sparkle_outcomes::SparkleError>) -> Self {
+        Self {
+            sparkle_domain: Some(native.domain), sparkle_code: Some(native.code), sparkle_cause: cause,
+            ..Self::from_error(&anyhow::anyhow!("native updater"), Trigger::Sparkle)
+        }
     }
     pub(super) fn fingerprint(&self) -> String {
         let stage = self.stages.last().map(|frame| format!("{:?}:{}:{}", frame.stage, frame.file.as_deref().unwrap_or("external"), frame.line))

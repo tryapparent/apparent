@@ -241,7 +241,7 @@ impl Controls {
                         title: Some("Apparent".into()),
                         ..Default::default()
                     }),
-                    app_id: Some("dev.kitlangton.apparent".into()),
+                    app_id: Some("dev.simonvanlaak.apparent".into()),
                     ..Default::default()
                 },
                 |_, cx| {

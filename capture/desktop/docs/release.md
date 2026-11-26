@@ -119,7 +119,7 @@ install path on Mac.
 Finder shows **apparent** using the bundle’s localized display name. The on-disk
 name stays `Apparent Preview.app` and the bundle ID stays
 `dev.simonvanlaak.apparent.preview` to preserve the installed path and avoid
-replacing Kit’s `Apparent.app`. The app uses the fork’s Sparkle feed. Release
+replacing the upstream `Apparent.app`. The app uses the fork’s Sparkle feed. Release
 [0.11.1](https://github.com/tryapparent/apparent/releases/tag/preview-mac-11-1) is signed with
 Developer ID and notarized by Apple. Earlier previews were ad-hoc signed and could require
 System Settings → Privacy & Security → Open Anyway on first launch. Sparkle authenticates
@@ -144,7 +144,7 @@ feed. The stable app's build-number ordering and bundle identity will need an ex
 Replacing the app bundle leaves recordings and config in their existing external paths.
 The signing change may require macOS capture permissions to be approved again. Notarization
 keeps the preview bundle identity, Sparkle key/feed and version ordering; it does not enable
-silent installation. Kit's original `Apparent.app` uses a separate feed and will not receive
+silent installation. The upstream `Apparent.app` uses a separate feed and will not receive
 this preview update.
 
 The old ad-hoc-to-notarized Sparkle transition still needs a recorded test on a Mac;
@@ -158,7 +158,7 @@ path without changing the preview identity or Sparkle key/feed. Follow the
 [credential setup and release checklist](mac-signing.md) for maintenance and verification;
 do not publish a higher-version ad-hoc build as a workaround for signing failures.
 
-## Kit's original production release procedure
+## Legacy manual release procedure
 
 Everything lands on `main` through pull requests, the version bump and the appcast included. A release
 is one Mac build (notarized DMG + Sparkle zip) and two Linux AppImages, built from the same tagged
@@ -168,7 +168,7 @@ or publish a Windows zip.
 1. **Version:** bump `version` in `Cargo.toml` and `Cargo.lock` in a `release/<version>` PR.
    PRs do not start Actions; the exact commit’s platform-specific main verification gates publication (Linux/shared for Linux; Linux/shared plus Mac for Mac).
    Test changed behavior locally before merging.
-2. **Mac build** (Studio, from that commit): `APPARENT_BUILD_NUMBER=<n> APPARENT_SPARKLE_DIR=~/.local/share/apparent-release/sparkle-2.9.4 ./capture/desktop/scripts/release/release-app.sh`.
+2. **Mac build** (from that commit): `APPARENT_APPLE_SIGNING_IDENTITY=<identity> APPARENT_BUILD_NUMBER=<n> APPARENT_SPARKLE_DIR=~/.local/share/apparent-release/sparkle-2.9.4 ./capture/desktop/scripts/release/release-app.sh`.
    The build number goes up by one every release (Sparkle compares it, not the version). The script
    builds, signs, notarizes and staples `dist/Apparent-<version>-arm64.dmg` and `.zip`. Its own
    `dist/updates/appcast.xml` is throwaway: the published appcast comes from step 4.
@@ -176,9 +176,8 @@ or publish a Windows zip.
    with the DMG. Manually dispatch the Linux release workflow on `main` with `tag=v<version>`;
    it checks out the tag and attaches its assets. Check the run and assets before deploying.
    Pushing the tag alone does not start the workflow. Do not dispatch the Windows release workflow.
-4. **Appcast** (the Pro, over ssh): copy the Sparkle zip into `~/.local/share/apparent-release/updates/`
-   and run `launchctl kickstart gui/$(id -u)/dev.kit.apparent-appcast`. The job
-   (`~/Library/LaunchAgents/dev.kit.apparent-appcast.plist` → `~/.local/share/apparent-release/appcast.sh`)
+4. **Appcast:** copy the Sparkle zip into `~/.local/share/apparent-release/updates/`
+   and run the configured appcast LaunchAgent in its GUI session. The job
    reads the ed25519 key from the login keychain, which only a GUI-session job can, and runs
    `generate_appcast` over that folder, which holds every earlier zip so it can make deltas. Its log is
    `~/.local/share/apparent-release/appcast.log` and ends with `exit=0`. Copy `updates/appcast.xml` into
@@ -188,9 +187,6 @@ or publish a Windows zip.
 5. **Site** (the Pro's checkout, where `wrangler` is signed in): fast-forward to `main`, copy the DMG,
    Sparkle zip and the new `Apparent<n>-*.delta` files into `public/site/public/assets/releases/` (also as
    `Apparent-latest-*`), then `bun run build && bunx wrangler@latest deploy`.
-6. **Homebrew (Kit's original app only):** a PR to `kitlangton/homebrew-tap` bumping
-   `version` and `sha256` in `Casks/apparent.rb`. The fork's regular preview pipeline
-   manages its own tap automatically as described above; it does not modify Kit's tap.
 
 Keep the Sparkle tools and the updates folder under `~/.local/share/apparent-release/`, never in `target/`
 or `/tmp`: a clean or a reboot would take the tools and every earlier zip with them.

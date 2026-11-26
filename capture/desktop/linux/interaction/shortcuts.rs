@@ -6,7 +6,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::capture::engine::runtime::{ShortcutConfig, ShortcutKind};
 
-const COMPONENT: &str = "dev.kitlangton.apparent";
+const COMPONENT: &str = "dev.simonvanlaak.apparent";
 static BUS: OnceLock<zbus::blocking::Connection> = OnceLock::new();
 
 fn action(id: &str) -> [&str; 4] {

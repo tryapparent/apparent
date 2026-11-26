@@ -516,9 +516,9 @@ mod tests {
     fn file_uris_are_percent_encoded() {
         assert_eq!(
             file_uri(Path::new(
-                "/Users/kit/Library/Application Support/apparent/captures/a b#1.apparent/contact-sheet.png"
+                "/Users/simon/Library/Application Support/apparent/captures/a b#1.apparent/contact-sheet.png"
             )),
-            "file:///Users/kit/Library/Application%20Support/apparent/captures/a%20b%231.apparent/contact-sheet.png"
+            "file:///Users/simon/Library/Application%20Support/apparent/captures/a%20b%231.apparent/contact-sheet.png"
         );
     }
 
@@ -1269,7 +1269,7 @@ mod session_lookup {
         sessions[150].title = "UP DOWN APP".into();
         sessions[300].title = "updown older".into();
         let (result, paths) = counting(&sessions, |get| {
-            resolve_opencode_session_with(get, None, Some("com.kitlangton.UpDown"), None).unwrap()
+            resolve_opencode_session_with(get, None, Some("com.example.UpDown"), None).unwrap()
         });
         assert_eq!(result, ("ses_00150".into(), "UP DOWN APP".into()));
         assert_eq!(paths.len(), 2);

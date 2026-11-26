@@ -1,4 +1,45 @@
-pub(crate) fn sparkle_error_should_report(domain: &str, code: isize) -> bool {
+#[derive(Clone, serde::Serialize)]
+pub(crate) struct SparkleError {
+    pub(crate) domain: &'static str,
+    pub(crate) code: isize,
+}
+
+#[cfg(any(target_os = "macos", test))]
+impl SparkleError {
+    pub(crate) fn new(domain: &str, code: isize) -> Self {
+        let domain = match domain {
+            "SUSparkleErrorDomain" => "sparkle",
+            "NSURLErrorDomain" => "url_loading",
+            "NSCocoaErrorDomain" => "cocoa",
+            "NSPOSIXErrorDomain" => "posix",
+            _ => "other",
+        };
+        Self { domain, code }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn download_evidence(error: &objc2_foundation::NSError) -> Option<(SparkleError, Option<SparkleError>)> {
+    use objc2_foundation::{NSError, NSUnderlyingErrorKey};
+
+    let domain = error.domain().to_string();
+    let code = error.code();
+    if !sparkle_error_should_report(&domain, code) {
+        return None;
+    }
+    let native = SparkleError::new(&domain, code);
+    let cause = if native.domain == "sparkle" && code == 2001 {
+        error.userInfo().objectForKey(unsafe { NSUnderlyingErrorKey })
+            .and_then(|cause| cause.downcast::<NSError>().ok())
+            .map(|cause| SparkleError::new(&cause.domain().to_string(), cause.code()))
+    } else {
+        None
+    };
+    Some((native, cause))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn sparkle_error_should_report(domain: &str, code: isize) -> bool {
     use crate::embedded_policy::EmbeddedPolicy;
 
     const SOURCE: &str = include_str!(concat!(env!("OUT_DIR"), "/sparkle-outcomes.mjs"));

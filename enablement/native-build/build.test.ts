@@ -17,7 +17,7 @@ function fixture(t: { after: (fn: () => void) => void }, output = 'target/debug/
   // Obtain the finite production source inventory; don't maintain a test copy.
   const source = readFileSync(production, 'utf8');
   for (const [path] of source.matchAll(/'(capture\/[^']+\.(?:swift|metal)|shared\/native\/[^']+\.(?:swift|plist))'/g)) {
-    put(path.slice(1, -1), path.endsWith("Info.plist'") ? '<string>dev.kitlangton.apparent.helper</string>' : 'synthetic input');
+    put(path.slice(1, -1), path.endsWith("Info.plist'") ? '<string>dev.simonvanlaak.apparent.helper</string>' : 'synthetic input');
   }
   // Redirect only OS-owned absolute paths; execute the production policy and
   // Rust adapter against real symlinks without touching the host. Keep the
@@ -137,7 +137,7 @@ test('native outputs: cold build, verified reuse, restaging and per-artifact inv
   writeFileSync(join(f.out, 'laser_overlay.metallib'), 'corrupted');
   assert.equal(f.run().status, 0);
   assert.deepEqual(f.count().slice(4), ['metal', 'metallib']);
-  f.put('shared/native/Info.plist', '<string>dev.kitlangton.apparent.helper</string> changed');
+  f.put('shared/native/Info.plist', '<string>dev.simonvanlaak.apparent.helper</string> changed');
   assert.equal(f.run().status, 0);
   assert.equal(f.count().at(-1), 'swiftc');
   assert.equal(f.count().length, 7);
@@ -160,7 +160,7 @@ test('SDK, exact tool bytes, target and preview identity cannot reuse incompatib
   assert.match(readFileSync(join(f.root, 'swiftc-arguments'), 'utf8'), /arm64-apple-macos15\.0/);
   assert.equal(f.run('aarch64').status, 0);
   assert.equal(f.count().length, 18);
-  assert.equal(readFileSync(join(f.root, 'helper-plist'), 'utf8'), '<string>dev.kitlangton.apparent.helper</string>');
+  assert.equal(readFileSync(join(f.root, 'helper-plist'), 'utf8'), '<string>dev.simonvanlaak.apparent.helper</string>');
   assert.notEqual(f.run('aarch64', { APPARENT_HELPER_BUNDLE_ID: 'untrusted' }).status, 0);
   assert.equal(f.count().length, 18);
 });

@@ -23,7 +23,7 @@ fn command() -> Result<String> {
 
 fn desktop_entry(exec: &str) -> String {
     format!(
-        "[Desktop Entry]\nType=Application\nName=Apparent\nComment=Show an agent what you mean\nExec={exec}\nIcon=dev.kitlangton.apparent\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
+        "[Desktop Entry]\nType=Application\nName=Apparent\nComment=Show an agent what you mean\nExec={exec}\nIcon=dev.simonvanlaak.apparent\nTerminal=false\nX-GNOME-Autostart-enabled=true\n"
     )
 }
 
