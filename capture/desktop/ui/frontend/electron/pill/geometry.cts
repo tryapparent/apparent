@@ -40,10 +40,10 @@ function clamp(bounds,area){
 function measureContents(contents,limit,reserve){
  return contents.executeJavaScript(`(() => {
    document.documentElement.style.setProperty('--pill-limit', '${limit}px');
-   const element=document.querySelector('main'),rect=element?.getBoundingClientRect();
-   if (!rect) return null;
+   const element=document.querySelector('main');if (!element) return null;
    if (${reserve} !== null && element.dataset.phase==='recording')
      document.documentElement.style.setProperty('--pill-recording-reserve', '${reserve}px');
+   const rect=element.getBoundingClientRect();
    const live = document.querySelector('.pill[data-live=true]');
    const background=document.querySelector('.pill-background-layer');
    const row=element.dataset.phase==='recording'?document.querySelector('.pill-row')?.getBoundingClientRect():null;

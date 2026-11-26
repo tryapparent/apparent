@@ -40,6 +40,7 @@ const hidden = {
   reducedMotion: false,
   draggable: true,
   inputWaveform: null,
+  noteCount: 0,
   actions: [],
 };
 const recording = {
@@ -68,7 +69,9 @@ const recording = {
 test("the first Linux spinner shows after layout without waiting for hidden-window paints", {
   skip: process.platform !== "linux",
 }, async (t) => {
-  const application = await launchPill(t, "pill-early-spinner-");
+  const application = await launchPill(t, "pill-early-spinner-", {
+    HYPRLAND_INSTANCE_SIGNATURE: "startup-test",
+  });
   const page = await application.firstWindow();
   const publish = (view) =>
     application.evaluate(
@@ -89,6 +92,9 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
     const evaluate = window.webContents.executeJavaScript.bind(
       window.webContents,
     );
+    window.restoreEvaluation = () => {
+      window.webContents.executeJavaScript = evaluate;
+    };
     window.webContents.executeJavaScript = (code, ...args) =>
       code.includes("requestAnimationFrame(()=>requestAnimationFrame(")
         ? new Promise(() => {})
@@ -126,10 +132,40 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
     );
   });
   await expect.poll(visible, { timeout: 1500 }).toBe(true);
+  assert.equal(
+    await application.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getBounds().width,
+    ),
+    Math.ceil((await page.locator(".pill-row").boundingBox()).width),
+  );
   await expect(
     page.getByRole("button", { name: "Finish", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Cancel", exact: true }),
   ).toBeEnabled();
+  await application.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows()[0].restoreEvaluation(),
+  );
+  const geometry = async (revision) => {
+    await expect(page.locator("main")).toHaveAttribute(
+      "data-revision",
+      String(revision),
+    );
+    await page.evaluate((value) => window.apparentPill.layout(value), revision);
+    return {
+      row: await page.locator(".pill-row").boundingBox(),
+      native: await application.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getBounds(),
+      ),
+    };
+  };
+  await publish({ ...recording, revision: 3 });
+  const empty = await geometry(3);
+  assert.equal(empty.native.width, Math.ceil(empty.row.width));
+  await publish({ ...recording, revision: 4, noteCount: 1 });
+  const populated = await geometry(4);
+  assert.deepEqual(populated.row, empty.row);
+  assert.equal(populated.native.x, empty.native.x);
+  assert.equal(populated.native.width, empty.native.width + 72);
 });
