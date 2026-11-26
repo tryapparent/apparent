@@ -1,3 +1,9 @@
+struct RecordingFlush {
+    capture: String,
+    first: Instant,
+    red: Option<Instant>,
+}
+
 impl Session {
     pub fn note_badge_anchor(&self) -> Option<[f64; 4]> {
         if !self.healthy() || !self.ready() { return None; }
@@ -6,7 +12,10 @@ impl Session {
             (revision == self.view.revision).then_some(rect)
         }
     }
-    pub(crate) fn recording_pill_timing(&self, generation: u64) -> Option<(Instant, Instant)> {
+    pub(crate) fn recording_pill_timing(&self, generation: u64, red: bool) -> Option<(Instant, Instant)> {
+        if red && !self.view.actions.iter().any(|action| action.id == "finish" && action.enabled) {
+            return None;
+        }
         if self.generation != generation || self.view.phase != "recording" || !self.healthy() || !self.ready() {
             return None;
         }
@@ -15,8 +24,9 @@ impl Session {
             return None;
         }
         let observation = self.observation.lock().ok()?;
-        let (capture, flushed) = observation.first_recording_flush.as_ref()?;
-        (*capture == Self::capture_key(generation)).then_some((*flushed, reported))
+        let flush = observation.recording_flush.as_ref()?;
+        let flushed = if red { flush.red? } else { flush.first };
+        (flush.capture == Self::capture_key(generation)).then_some((flushed, reported))
     }
 }
 
@@ -30,9 +40,17 @@ fn observe_flushed_state(observation: &Mutex<Observation>, message: &serde_json:
         let mut observation = observation.lock().unwrap();
         if phase == "recording"
             && let Some(capture) = message.get("capture").and_then(serde_json::Value::as_str)
-            && !observation.first_recording_flush.as_ref().is_some_and(|(key, _)| key == capture)
         {
-            observation.first_recording_flush = Some((capture.to_owned(), Instant::now()));
+            let now = Instant::now();
+            if !observation.recording_flush.as_ref().is_some_and(|flush| flush.capture == capture) {
+                observation.recording_flush = Some(RecordingFlush { capture: capture.to_owned(), first: now, red: None });
+            }
+            if message.pointer("/view/actions").and_then(serde_json::Value::as_array).is_some_and(|actions| {
+                actions.iter().any(|action| action["id"] == "finish" && action["enabled"] == true)
+            }) && let Some(flush) = &mut observation.recording_flush
+            {
+                flush.red.get_or_insert(now);
+            }
         }
         observation.wrote_state(phase, revision);
     }

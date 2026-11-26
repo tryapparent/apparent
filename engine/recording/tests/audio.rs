@@ -279,3 +279,26 @@ fn wav_is_mono_16k_pcm_and_clips_safely() {
         vec![-32_768, -16_384, 0, 16_384, 32_767, 0]
     );
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn overlap_audio_wav_uses_the_screen_clock_from_the_first_pcm_block() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let prepared = PreparedAudio::new(root.path())?;
+    let PreparedAudio { samples, mut writer, .. } = prepared;
+    let clock = Instant::now();
+    {
+        let mut samples = samples.lock().unwrap();
+        samples.use_clock(clock);
+        assert!(samples.is_empty());
+        samples.align_first_input(|| clock + Duration::from_millis(80));
+        samples.extend_from_slice(&[0.5, -0.5]);
+        samples.align_first_input(|| panic!("A later buffer cannot move the WAV origin"));
+    }
+    let (wav, _) = writer.finish()?;
+    let audio = decode_wav_16k(&wav)?;
+    assert_eq!(audio.len(), 1_282);
+    assert!(audio[..1_280].iter().all(|sample| *sample == 0.0));
+    assert_eq!(audio[1_280..], [0.5, -0.5]);
+    Ok(())
+}
