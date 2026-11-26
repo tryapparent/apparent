@@ -10,7 +10,7 @@
       ],
       "runner": {
         "path": "composition/settings/enablement/recording.smoke.ts",
-        "instructions": "From capture/desktop/ui/frontend, run npm run build and then node --experimental-strip-types --test ../../../../composition/settings/enablement/recording.smoke.ts. Set APPARENT_RECORDING_PROOF to save screenshots."
+        "instructions": "From the repository root with the locked Desktop frontend dependencies installed, run node --experimental-strip-types record/enablement/ci/settings/verify.ts. Prefix with xvfb-run -a on Linux. Set APPARENT_RECORDING_PROOF to save screenshots."
       },
       "expectedEvidence": [
         "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer. The Export instructions show Export Latest Video… at 720 and 640 pixels in both themes.",
@@ -200,6 +200,25 @@
       ],
       "limits": [
         "The hosted Start score covers the Electron pill and the hosted Stop score covers packaged replay finalization. Native physical input and real capture require separate acceptance."
+      ]
+    },
+    {
+      "id": "record-performance-fixtures",
+      "description": "Verify Record recipe references and synthetic performance evidence.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Open the Record check on a pull request that changes the verification manifest or the audited performance tests.",
+      "prerequisites": [
+        "Node 22 and HTTPS access to the pinned Bend2 compiler."
+      ],
+      "runner": {
+        "path": "record/enablement/ci/performance/verify.ts",
+        "instructions": "From the repository root, run node --experimental-strip-types record/enablement/ci/performance/verify.ts."
+      },
+      "expectedEvidence": [
+        "The manifest has unique recipe IDs and resolves its runner files. Synthetic CPU accounting, trace parsing and score qualification tests pass."
+      ],
+      "limits": [
+        "Synthetic inputs exercise comparison and parsing. Use the manual benchmark for measured latency and installed Desktop acceptance for native behavior."
       ]
     },
     {

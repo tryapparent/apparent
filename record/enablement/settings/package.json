@@ -1,0 +1,8 @@
+{
+  "name": "@apparent/record-settings-verification",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./recording-fixture": "./recording-fixture.ts"
+  }
+}

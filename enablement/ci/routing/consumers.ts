@@ -3,26 +3,14 @@ import {portableForegroundInputs, serviceOnlyInputs} from '../../../shared/enabl
 import {bendConsumers} from '../../../shared/enablement/bend/consumers.ts';
 import {admissionTooling, branchCleanupInput, connectConsumers, nativeWorkflowPaths} from '../../../shared/enablement/ci/inputs.ts';
 import {affectsEngine, automaticPaths, desktopEnginePaths, desktopPaths, independentInputs} from './engine-inputs/qualify.ts';
+import {recordOnlyInputs} from '../../../shared/enablement/ci/record-inputs.ts';
 export const owners = ['capture', 'engine', 'desktop', 'capture-tools', 'client', 'client-foreground', 'web', 'service', 'public', 'hermes', 'tooling', 'onboarding', 'engine-media'] as const;
 export type Owner = typeof owners[number];
 export const desktopPackagingInputs = new Set(['install-app.sh', 'frontend/stage.ts']
   .map(file => 'capture/desktop/scripts/packaging/' + file));
-import { publicMarkdown, hostedBrowserFixture } from '../../../shared/enablement/ci/public-inputs.ts';
+import { publicMarkdown, hostedBrowserFixture, apparentSkill, documentationOnlyPath } from '../../../shared/enablement/ci/public-inputs.ts';
 export { publicMarkdown };
-const apparentSkill = 'agent/skills/apparent/';
-const proseRoots = ['capture', 'record', 'agent', 'connect', 'public', 'hermes', 'enablement', 'shared', 'composition', 'engine', 'handoff', 'onboarding'];
-const rootProse = new Set(['CONTRIBUTING.md', 'LICENSE', 'NOTICE', 'SECURITY.md', 'CODE_OF_CONDUCT.md', 'CONTEXT.md', 'VERIFICATION.md']);
-const productMarkdown = new Set(['hermes/README.md', 'connect/client/typescript/README.md']);
-const embeddedSegments = /(^|\/)(skills?|prompts?|instructions?|tests?|fixtures?|templates?)(\/|$)/i;
-export function documentationOnlyPath(path: string) {
-  if (rootProse.has(path) || /^agent\/skills\/(?:\.gitattributes|(?:pitch-deck|make-it-apparent)\/.*\.md)$/.test(path)) return true;
-  if (!path.endsWith('.md') || publicMarkdown.has(path) || path.startsWith(apparentSkill) || productMarkdown.has(path)) return false;
-  if (/^public\/site\/(public|src|brand\/(src|shared))\//.test(path) ||
-      (embeddedSegments.test(path) && !/(^|\/)README\.md$/i.test(path))) return false;
-  if (/(^|\/)AGENTS\.md$/.test(path)) return true;
-  if (/(^|\/)(AGENTS|SKILL|CLAUDE|GEMINI)[^/]*\.md$/i.test(path)) return false;
-  return proseRoots.includes(path.split('/')[0]);
-}
+export {documentationOnlyPath};
 export const linuxDrivers = new Set(['capture-smoke.py', 'gui-vm.py', 'gui-vm-reaper.py',
   'test-capture-smoke.py', 'test-gui-vm.py'].map(name => 'capture/desktop/scripts/linux/gui/' + name));
 const webAssets = new Set(['hosted/source-pond-v4.png', 'hosted/agent-pond-v4.png',
@@ -113,6 +101,8 @@ function directConsumers(path: string): readonly Owner[] {
     ? owners.filter(owner => owner !== 'engine-media') : owners;
 }
 export function consumers(path: string): readonly Owner[] {
+  if (recordOnlyInputs.has(path)) return [];
+  if (path === 'record/enablement/ci/bend/performance/recording-performance.ts') return ['capture', 'desktop'];
   const bend = bendConsumers(path);
   if (bend) return bend;
   const selected = [...directConsumers(path)];
@@ -143,7 +133,8 @@ const nativeOnlyTriggers = [...nativeWorkflowPaths.map(path => '!' + path),
   '!enablement/prerequisites/**', '!enablement/native-build/**', '!enablement/verification.py', '!enablement/build_version.rs'];
 const directoryPaths = {
   capture: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopEnginePaths, 'capture/**', 'record/**', 'connect/**',
-    'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path)],
+    'agent/**', 'AGENTS.md', 'public/**', ...Array.from(serviceOnlyInputs, path => '!' + path),
+    ...Array.from(recordOnlyInputs, path => '!' + path)],
   connect: [...common, ...independent, '!.github/workflows/hermes.yml', '!.github/workflows/stream-public.yml', ...native, ...desktopPackagingInputs, 'connect/**', 'public/**',
     '.github/workflows/stream-connect.yml', 'enablement/release_gate.py'],
   public: [...common, ...independent, ...nativeOnlyTriggers, '!.github/workflows/stream-connect.yml', '!.github/workflows/hermes.yml', 'public/**', '.github/workflows/stream-public.yml',
