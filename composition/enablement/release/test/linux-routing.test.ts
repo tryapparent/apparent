@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -111,8 +112,14 @@ test("the workflow-SHA wrapper hands off encoder proof to a required dist check"
   }
 });
 
-for (const { name, route, legacy, fails, checks } of [
+for (const { name, route, legacy, fails, preparationFails, checks } of [
   { name: "standalone", route: "shell", checks: ["target"] },
+  {
+    name: "standalone stops when frontend preparation fails",
+    route: "shell",
+    preparationFails: true,
+    checks: [],
+  },
   {
     name: "standalone rejects bad encoding",
     route: "shell",
@@ -210,6 +217,42 @@ fi
     }
     write("bin/ffprobe", "#!/bin/sh\nprintf 'h264\\n'\n");
     write("bin/uname", "#!/bin/sh\nprintf 'x86_64\\n'\n");
+    if (route === "shell") {
+      const coordinator = "capture/desktop/scripts/packaging/frontend/stage.ts";
+      const popup = "capture/desktop/ui/frontend/scripts/popup-entries.mjs";
+      const frontend = "capture/desktop/ui/frontend";
+      copy(coordinator, coordinator);
+      copy(popup, popup);
+      write(
+        "bin/node",
+        `#!/bin/sh
+case "$1 $2" in
+  *package-notes.mjs*) printf 'duplicate build\\n' >> "$PROOF_LOG.frontend" ;;
+  *packaging/frontend/stage.ts*) exec "${process.execPath}" "$@" ;;
+esac
+`,
+      );
+      write(
+        "bin/python3",
+        `#!/bin/sh
+set -eu
+printf 'Settings build\\n' >> "$PROOF_LOG.frontend"
+${preparationFails ? "exit 19" : ""}
+mkdir -p "$2" "${frontend}/dist"
+printf fresh > "$2/settings-test"
+printf fresh > "${frontend}/dist/index.html"
+`,
+      );
+      for (const file of [
+        "runtime.cjs",
+        "notes/main.cjs",
+        "notes/presentation.cjs",
+        "notes/lifecycle.cjs",
+      ]) {
+        write(`${frontend}/electron/${file}`, file);
+      }
+      write(`${frontend}/dist/index.html`, "stale");
+    }
     write("target/appimage/tools/linuxdeploy-plugin-gstreamer.sh", "unused\n");
     write("target/release/libggml-cpu.so", "");
     write("target/release/apparent", "");
@@ -226,9 +269,37 @@ fi
         );
     assert.equal(
       packageResult.status,
-      direct && fails ? 1 : 0,
+      (direct && fails) || preparationFails ? 1 : 0,
       packageResult.stderr?.toString(),
     );
+    if (route === "shell") {
+      assert.equal(readFileSync(log + ".frontend", "utf8"), "Settings build\n");
+      const appdir = join(root, "target/appimage/AppDir");
+      if (preparationFails) {
+        assert.match(packageResult.stderr.toString(), /stage-settings\.py/);
+        assert.equal(
+          existsSync(join(appdir, "usr/lib/apparent/note-ui")),
+          false,
+        );
+        assert.equal(existsSync(join(root, target)), false);
+        assert.equal(existsSync(log), false);
+        return;
+      }
+      assert.equal(
+        readFileSync(
+          join(appdir, "usr/share/apparent/settings/settings-test"),
+          "utf8",
+        ),
+        "fresh",
+      );
+      assert.equal(
+        readFileSync(
+          join(appdir, "usr/lib/apparent/note-ui/dist/index.html"),
+          "utf8",
+        ),
+        "fresh",
+      );
+    }
     if (route === "hosted") {
       const publishedName = readFileSync(output, "utf8").trim().split("=")[1];
       assert.equal(publishedName, artifact);
