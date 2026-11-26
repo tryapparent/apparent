@@ -48,3 +48,9 @@ code, kbd { overflow-wrap: anywhere; }
 figcaption { color: var(--color-muted-foreground); }
 pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 footer { padding-block: 1.25rem 2.5rem; }
+
+.guide h1 { max-width: 24ch; font-size: clamp(2rem, 6.5vw, 3.5rem); }
+.guide ol { max-width: 65ch; padding-inline-start: 1.5rem; }
+.guide ol li + li { margin-block-start: .5rem; }
+.guide blockquote { padding-inline-start: 1rem; margin-inline: 0; border-inline-start: .2rem solid var(--color-brand); }
+.guide pre { padding: .75rem 1rem; background: var(--color-muted); }

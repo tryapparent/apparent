@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { packagePageText } from "./package-page-text.mjs"
 import { hasUpstreamLinks } from "../browser-proof/upstream-link-guard.mjs"
 import { hasExpectedHomepageCanonical } from "./expected-homepage-canonical.mjs"
-import { agentOutputNames } from "../artifact/agent-paths.ts"
+import { agentOutputNames, agentRoutes } from "../artifact/agent-paths.ts"
 
 
 const site = join(dirname(fileURLToPath(import.meta.url)), "../../site")
@@ -37,7 +37,9 @@ for (const name of required) {
   cpSync(join(dist, name), join(out, name), { recursive: true })
 }
 writeFileSync(join(out, "robots.txt"), "User-agent: *\nAllow: /\nSitemap: https://app.tryapparent.com/sitemap.xml\n")
-writeFileSync(join(out, "sitemap.xml"), '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://app.tryapparent.com/</loc></url><url><loc>https://app.tryapparent.com/agents/</loc></url></urlset>\n')
+const sitemapRoutes = ["/", ...agentRoutes.filter(([path]) => path.endsWith(".html")).map(([, route]) => route)]
+const sitemapEntries = sitemapRoutes.map(route => `<url><loc>https://app.tryapparent.com${route}</loc></url>`).join("")
+writeFileSync(join(out, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${sitemapEntries}</urlset>\n`)
 for (const name of ["appcast.xml", "og.mp4", "narration.mp3", "narration-iphone.mp3", "releases", "map-tyyxsf5b"]) {
   if (existsSync(join(out, name))) throw new Error(`Unexpected file in public artifact: ${name}`)
 }

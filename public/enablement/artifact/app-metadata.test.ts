@@ -60,3 +60,25 @@ test("agent documentation survives the illustrated README and relocated guides",
     /https:\/\/github\.com\/tryapparent\/apparent\/blob\/main\/capture\/agent\/docs\/installation\.md/,
   );
 });
+
+test("the public guides are indexable and linked from the agent quickstart", () => {
+  const origin = "https://app.tryapparent.com";
+  const routes = [
+    "/guides/record-screen-for-coding-agent/",
+    "/guides/send-existing-screen-recording/",
+    "/guides/show-coding-agent-right-ui-element/",
+  ];
+  const sitemap = readFileSync(join(publicDir, "sitemap.xml"), "utf8");
+  const quickstart = readFileSync(join(publicDir, "agents/index.html"), "utf8");
+  const index = readFileSync(join(publicDir, "llms.txt"), "utf8");
+  for (const route of routes) {
+    assert.ok(sitemap.includes(`<loc>${origin}${route}</loc>`), route);
+    assert.ok(quickstart.includes(`href="${route}"`), route);
+    assert.ok(index.includes(`(${origin}${route})`), route);
+    const html = readFileSync(join(publicDir, route.slice(1), "index.html"), "utf8");
+    assert.ok(html.includes(`rel="canonical" href="${origin}${route}"`), route);
+    assert.match(html, /<meta name="description" content="[^"]+"/);
+    assert.doesNotMatch(html, /<script\b|\bnoindex\b/i);
+    assert.match(html, /<h1>[^<]+<\/h1>/);
+  }
+});
