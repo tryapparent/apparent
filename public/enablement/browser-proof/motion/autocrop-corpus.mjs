@@ -68,7 +68,7 @@ function terminal(o) {
 function browserPage(o) {
   const toast = o.toast ? `<div class="toast" data-t="toast">Couldn't save changes · <u>Retry</u></div>` : '';
   const dropdown = o.notifications ? `<div class="notif" data-t="notifs"><b>Notifications</b>
-      <div class="n-item"><span data-t="n-0">Deploy <b>web-412</b> failed on <i>main</i></span></div><div class="n-item">Kit invited you to <b>acme/web</b></div><div class="n-item">Usage is at 92% of your plan</div></div>` : '';
+      <div class="n-item"><span data-t="n-0">Deploy <b>web-412</b> failed on <i>main</i></span></div><div class="n-item">Simon invited you to <b>acme/web</b></div><div class="n-item">Usage is at 92% of your plan</div></div>` : '';
   const bars = [42, 58, 51, 66, 80, 74, 92, 61, 70, 88, 95, 77].map((v, i) => `<i style="height:${v}%" ${i === 10 ? 'data-t="spike"' : ''}></i>`).join('');
   const rows = ['web-409 · main · 2m ago · Ready', 'web-410 · fix/slider · 9m ago · Ready', 'web-411 · main · 21m ago · Ready', 'web-412 · main · 1h ago · Failed', 'web-413 · docs · 2h ago · Ready', 'web-414 · main · 3h ago · Ready']
     .map((r, i) => `<div class="tr${i === 3 ? ' fail' : ''}" data-t="row-${i}">${r.split(' · ').map((c) => `<span>${c}</span>`).join('')}</div>`).join('');
@@ -78,7 +78,7 @@ function browserPage(o) {
       <div class="topbar"><span class="crumb">acme / web / ${o.tab || 'Settings'}</span><span class="search">Search…  ⌘K</span><span class="bell" data-t="bell">🔔<b class="badge" data-t="badge">3</b></span><span class="avatar">KL</span>${dropdown}</div>
       <h1>${o.tab || 'Settings'}</h1>
       <div class="grid">
-        <div class="card" data-t="card-account"><h3 data-t="card-head">Account</h3><div class="row"><span>Name</span><span>Kit Langton</span></div><div class="row"><span>Email</span><span>kit@example.com</span></div><div class="row"><span>Plan</span><span class="pill">Pro</span></div></div>
+        <div class="card" data-t="card-account"><h3 data-t="card-head">Account</h3><div class="row"><span>Name</span><span>Simon van Laak</span></div><div class="row"><span>Email</span><span>simon@example.com</span></div><div class="row"><span>Plan</span><span class="pill">Pro</span></div></div>
         <div class="card" data-t="chart"><h3>Requests · 12h</h3><div class="bars">${bars}</div><div class="dim small"><span data-t="peak">Peak 18.2k/min at 09:00</span></div></div>
         <div class="card wide" data-t="table"><h3>Recent deployments</h3>${rows}</div>
         <div class="card"><h3>Notification volume</h3><div class="slider" data-t="slider"><i style="left:${o.slider ?? 30}%"></i></div><div class="dim small">Drag to adjust</div></div>
@@ -125,9 +125,9 @@ function editor(o) {
 
 function chat(o) {
   const msgs = [
-    ['Mara', 'deploy for web-412 failed again, anyone looking?'], ['Kit', 'yep, it is the settings header test, fixing now'],
+    ['Mara', 'deploy for web-412 failed again, anyone looking?'], ['Simon', 'yep, it is the settings header test, fixing now'],
     ['Jon', 'is this the same one from yesterday? the account card thing'], ['Mara', words(14, 3)],
-    ['Kit', 'pushed a fix, waiting on CI'], ['Jon', 'ty! also the slider in notifications does nothing for me'],
+    ['Simon', 'pushed a fix, waiting on CI'], ['Jon', 'ty! also the slider in notifications does nothing for me'],
   ];
   return `<div class="slack"><div class="ws"><b>Anomaly</b>${['# general', '# core', '# deploys', '# design', '# random'].map((c) => `<div class="${c === '# deploys' ? 'on' : ''}">${c}</div>`).join('')}<div class="dim">Direct messages</div><div>Mara</div><div>Jon</div></div>
     <div class="chan"><div class="chead"># deploys <span class="dim">· 14 members</span></div>${msgs.map(([who, m], i) => `<div class="cm" data-t="msg-${i}"><span class="av">${who[0]}</span><div><b>${who}</b> <span class="dim">10:${12 + i}</span><div>${esc(m)}</div></div></div>`).join('')}

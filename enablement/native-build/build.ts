@@ -197,7 +197,7 @@ export function buildNative(root: string, output: string, architecture: string) 
       let plist = join(root, 'shared/native/Info.plist');
       if (previewId !== undefined) {
         const source = readFileSync(plist, 'utf8');
-        const original = '<string>dev.kitlangton.apparent.helper</string>';
+        const original = '<string>dev.simonvanlaak.apparent.helper</string>';
         if (!source.includes(original)) throw new Error('Helper bundle ID changed');
         plist = join(stage, 'preview-helper-Info.plist');
         writeFileSync(plist, source.replaceAll(original, `<string>${previewId}</string>`));

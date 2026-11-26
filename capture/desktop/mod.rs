@@ -538,8 +538,6 @@ pub struct ApparentCoordinator {
     inbox: crate::capture::desktop::workflow::inbox::Inbox,
     /// The mode the last recording used; the picker opens on it.
     last_mode: SelectionMode,
-    /// The picker opened on Area because the last recording was the iPhone and no phone had been
-    /// seen yet: switch to the phone when discovery finds one, unless Kit picked a mode himself.
     open_iphone_when_found: bool,
     /// The welcome window, while it's open (`crate::onboarding`).
     onboarding: Option<crate::capture::desktop::settings::onboarding::Session>,

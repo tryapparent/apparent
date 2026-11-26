@@ -12,7 +12,7 @@ CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 FRAMEWORKS_DIR="${CONTENTS_DIR}/Frameworks"
-SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
+IDENTITY="${APPARENT_APPLE_SIGNING_IDENTITY:--}"
 SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
 
 cd "${REPO_DIR}"
@@ -78,7 +78,7 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleIconFile</key>
   <string>Apparent</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.kitlangton.apparent</string>
+  <string>dev.simonvanlaak.apparent</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -123,11 +123,6 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
 </plist>
 PLIST
 
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "${SIGN_ID}"; then
-  IDENTITY="${SIGN_ID}"
-else
-  IDENTITY="-"
-fi
 node --experimental-strip-types "${REPO_DIR}/capture/desktop/scripts/packaging/frontend/stage.ts" "${RESOURCES_DIR}" --sign "${IDENTITY}"
 
 if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
@@ -138,8 +133,8 @@ if [[ -d "${FRAMEWORKS_DIR}/Sparkle.framework/Versions/B" ]]; then
   codesign --force --sign "${IDENTITY}" "${SPARKLE_VER}/Updater.app"
   codesign --force --sign "${IDENTITY}" "${FRAMEWORKS_DIR}/Sparkle.framework"
 fi
-codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent.helper" "${MACOS_DIR}/apparent-helper"
-codesign --force --sign "${IDENTITY}" --identifier "dev.kitlangton.apparent" "${APP_DIR}"
+codesign --force --sign "${IDENTITY}" --identifier "dev.simonvanlaak.apparent.helper" "${MACOS_DIR}/apparent-helper"
+codesign --force --sign "${IDENTITY}" --identifier "dev.simonvanlaak.apparent" "${APP_DIR}"
 
 if [[ "${APPARENT_NO_LAUNCH:-0}" == "1" ]]; then
   exit 0

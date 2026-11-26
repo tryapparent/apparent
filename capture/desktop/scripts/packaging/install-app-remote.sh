@@ -10,7 +10,7 @@ set -euo pipefail
 
 HOST="${1:-pro}"
 STAGE="/tmp/ApparentStage.app"
-LABEL="dev.kitlangton.apparent-install-$(date +%s)"
+LABEL="dev.simonvanlaak.apparent-install-$(date +%s)"
 
 ssh "${HOST}" bash -s -- "${STAGE}" "${LABEL}" <<'REMOTE'
 set -euo pipefail

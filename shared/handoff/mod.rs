@@ -1113,8 +1113,6 @@ fn safe_word(text: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"-_.@/~".contains(&b))
 }
 
-/// The Mac whose OpenCode server holds Kit's sessions when it isn't this one: an SSH host from
-/// `APPARENT_AGENT_HOST` or `~/.config/apparent/config.json` (`{"agentHost": "studio"}`).
 pub fn agent_host() -> Option<String> {
     std::env::var("APPARENT_AGENT_HOST")
         .ok()

@@ -93,7 +93,7 @@ final class Mirror: NSObject, NSApplicationDelegate, NSWindowDelegate, AVCapture
   var microphone: (id: String, name: String)?
   lazy var session = AVCaptureSession()
   lazy var movieOutput = AVCaptureMovieFileOutput()
-  let queue = DispatchQueue(label: "dev.kitlangton.apparent.helper.session")
+  let queue = DispatchQueue(label: "dev.simonvanlaak.apparent.helper.session")
   var phoneInput: AVCaptureDeviceInput?
   var window: MirrorPanel?
   var caseView: PhoneCaseView?

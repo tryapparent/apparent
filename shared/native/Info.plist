@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>dev.kitlangton.apparent.helper</string>
+  <string>dev.simonvanlaak.apparent.helper</string>
   <key>CFBundleName</key>
   <string>Apparent Helper</string>
   <key>NSCameraUsageDescription</key>

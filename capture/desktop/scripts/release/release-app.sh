@@ -6,7 +6,7 @@ MODE="${1:-prepare}"
 VERSION="${APPARENT_VERSION:-$(sed -n 's/^version = "\(.*\)"/\1/p' "${REPO_DIR}/Cargo.toml" | head -1)}"
 BUILD_NUMBER="${APPARENT_BUILD_NUMBER:-1}"
 BASE_URL="${APPARENT_RELEASE_BASE_URL:-https://app.tryapparent.com}"
-SIGN_ID="Developer ID Application: Christopher Langton (QC99C9JE59)"
+IDENTITY="${APPARENT_APPLE_SIGNING_IDENTITY:?Set APPARENT_APPLE_SIGNING_IDENTITY for a manual release}"
 SPARKLE_PUBLIC_KEY="mIek27lttJe8cIBqVZFhh6reRKjpTx1h9ZY9OKWPtuM="
 
 DIST_DIR="${REPO_DIR}/dist"
@@ -54,7 +54,7 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key>
   <string>Apparent</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.kitlangton.apparent</string>
+  <string>dev.simonvanlaak.apparent</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
@@ -99,12 +99,6 @@ cat > "${APP_BUNDLE}/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "${SIGN_ID}"; then
-  IDENTITY="${SIGN_ID}"
-else
-  IDENTITY="-"
-fi
-
 ENTITLEMENTS="${REPO_DIR}/capture/desktop/scripts/packaging/Apparent.entitlements"
 # Notarization requires the hardened runtime and a secure timestamp on every signed binary.
 SIGN=(codesign --force --options runtime --timestamp --sign "${IDENTITY}")
@@ -120,8 +114,8 @@ SPARKLE_VER="${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework/Versions/B"
 "${SIGN[@]}" "${SPARKLE_VER}/Autoupdate"
 "${SIGN[@]}" "${SPARKLE_VER}/Updater.app"
 "${SIGN[@]}" "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework"
-"${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.kitlangton.apparent.helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
-"${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.kitlangton.apparent" "${APP_BUNDLE}"
+"${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.simonvanlaak.apparent.helper" "${APP_BUNDLE}/Contents/MacOS/apparent-helper"
+"${SIGN[@]}" --entitlements "${ENTITLEMENTS}" --identifier "dev.simonvanlaak.apparent" "${APP_BUNDLE}"
 
 /usr/bin/ditto "${APP_BUNDLE}" "${DIST_DIR}/staging/Apparent.app"
 ln -s /Applications "${DIST_DIR}/staging/Applications"

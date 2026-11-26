@@ -140,9 +140,9 @@ export const MacWindow = memo(function MacWindow({ fix, sheen = 0, refs, inactiv
           ))}
         </nav>
         <div className="win-user">
-          <span>KL</span>
+          <span>SV</span>
           <div>
-            <b>Kit Langton</b>
+            <b>Simon van Laak</b>
             <em>pulse.dev</em>
           </div>
         </div>

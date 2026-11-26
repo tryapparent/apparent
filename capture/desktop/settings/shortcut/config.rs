@@ -218,8 +218,6 @@ fn is_function_key(key_code: u32) -> bool {
 }
 
 /// Combinations macOS or nearly every app keeps for itself, as (Carbon modifiers, key label).
-/// Turned-off system shortcuts are allowed; `Pressed::reserved` covers the enabled ones,
-/// including any Kit set up himself.
 fn reserved(modifiers: u32, key: &str) -> bool {
     const CMD: u32 = CARBON_CMD_KEY;
     const SHIFT: u32 = CARBON_SHIFT_KEY;

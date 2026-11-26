@@ -294,8 +294,8 @@ fn watch_desktop_tooling() {
         "capture/desktop/scripts/tests/test_preview_sparkle_setup.py",
         "capture/desktop/scripts/release/verify-preview-sparkle-key.swift",
         "capture/desktop/scripts/support/virtual-display.swift",
-        "composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json",
-        "composition/enablement/release/linux/dev.kitlangton.apparent.png",
+        "composition/enablement/release/linux/dev.simonvanlaak.apparent.desktop.json",
+        "composition/enablement/release/linux/dev.simonvanlaak.apparent.png",
     ] {
         println!("cargo:rerun-if-changed={path}");
     }

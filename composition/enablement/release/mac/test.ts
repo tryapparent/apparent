@@ -50,7 +50,7 @@ test("accepts exactly the admitted checkout, Cargo version and stable tag", () =
     env.CANDIDATE_SHA,
   );
   for (const [key, value] of Object.entries({
-    GITHUB_REPOSITORY: "kitlangton/apparent",
+    GITHUB_REPOSITORY: "example/apparent",
     CANDIDATE_SHA: "main",
     APPARENT_VERSION: "01.2.3",
     RELEASE_TAG: "preview-mac-2-3",
