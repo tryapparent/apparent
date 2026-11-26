@@ -163,7 +163,9 @@ test('flags, absent selections and paths outside source test owners are refused 
 // of phase selection. Moving a native producer/check changes this contract.
 const buildInventory = [
   'node --experimental-strip-types ../../../../composition/onboarding/prepare.ts',
-  ...['record-capture-request', 'record-media'].map(name => `node --experimental-strip-types scripts/build-${name}.ts`),
+  'node --experimental-strip-types ../../../../record/enablement/ci/capture-request/build.ts',
+  'node --experimental-strip-types scripts/capture-request/stage.ts',
+  'node --experimental-strip-types scripts/build-record-media.ts',
   'node --experimental-strip-types scripts/agent-media/build.ts',
   ...['notes', 'storage-policy', 'updates', 'pill'].map(name => `node --experimental-strip-types scripts/build-${name}.ts`),
   'python3 ../../../../shared/ui/scripts/check-theme.py',
@@ -176,7 +178,7 @@ test('producer phase inventory preserves full order, native/theme preparation an
   const {scripts} = JSON.parse(readFileSync(frontendPackage, 'utf8'));
   assert.equal(scripts.build, buildInventory.join(' && '), 'ordinary and targeted builds use the same producers');
   assert.deepEqual(['build:prepare', 'build:typecheck', 'build:emit'].flatMap(name => scripts[name].split(' && ')), buildInventory);
-  assert.deepEqual(scripts['build:typecheck'].split(' && '), buildInventory.slice(9, 12));
+  assert.deepEqual(scripts['build:typecheck'].split(' && '), buildInventory.slice(10, 13));
   for (const config of ['tsconfig.json', 'scripts/settings-native/tsconfig.json']) {
     const {compilerOptions} = JSON.parse(readFileSync(resolve('capture/desktop/ui/frontend', config), 'utf8'));
     assert.equal(compilerOptions.noEmit, true);
