@@ -1,20 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialPresentation, transition, validEvents, popupBounds, projectSnapshot } from '../../src/notes/presentation.ts';
+import { initialPresentation, transition, validEvents, projectSnapshot } from '../../src/notes/presentation.ts';
 
 test('fresh list requests replace anchoring and request focus even with the list already open', () => {
   let state = initialPresentation([20, 30]);
   state = transition(state, { kind: 'badge', rect: [100, 40, 584, 56] });
   state = transition(state, { kind: 'list' });
   assert.equal(state.mode, 'list');
-  assert.deepEqual(state.position, [684, 96]);
+  assert.deepEqual(state.badgeRect, [100, 40, 584, 56]);
   const revision = state.focusRevision;
   state = transition(state, { kind: 'badge', rect: [-600, 80, 584, 56] });
   state = transition(state, { kind: 'list' });
-  assert.deepEqual(state.position, [-16, 136]);
+  assert.deepEqual(state.badgeRect, [-600, 80, 584, 56]);
   assert.equal(state.focusRevision, revision + 1);
-  assert.deepEqual(popupBounds({ x: -16, y: 136 }, { x: -800, y: 0, width: 800, height: 600 }, 350),
-    { x: -332, y: 148, width: 332, height: 350 });
+  assert.deepEqual(state.position, [20, 30]);
 });
 
 test('only admitted save effects transition; failed writes and draft snapshots keep recovery state', () => {

@@ -170,6 +170,7 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
   await publish({ ...recording, revision: 3 });
   const empty = await geometry(3);
   assert.equal(empty.native.width, Math.ceil(empty.row.width));
+  assert.equal(empty.native.height, Math.ceil(empty.row.height));
   const micWarning = "Microphone unavailable; screen recording continues";
   await publish({ ...recording, revision: 4, micWarning });
   const microphone = await geometry(4);

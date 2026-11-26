@@ -8,9 +8,9 @@ The welcome tour is optional. **Later** and window close save its place and
 silence startup. A successful recording keeps future launches quiet. Open
 **Resume setup** in Settings → About to pick up a saved tour or **Show welcome
 tour** to replay a finished one. Electron setup tests the effective Record
-shortcut and waits for **Use shortcut** before advancing. **Change shortcut**
-opens the existing native shortcut editor. Recording entry points use the effective Record shortcut
-or visible capture controls and surface permission repair for actual blockers.
+shortcut. **Use shortcut** completes regular setup. **Change shortcut** opens
+the native shortcut editor. Recording entry points use the effective Record shortcut or visible
+capture controls and surface permission repair for actual blockers.
 
 The desktop build compiles the TypeScript launch policy for use before a
 renderer starts. Electron and the native fallback share the Rust adapter and
@@ -108,9 +108,10 @@ existing onboarding experience.
 
 ## Desktop frog trial
 
-On macOS, enable **Settings → Labs → Desktop frog**, then open **Show welcome
-tour** from About. The second shortcut prompt leads to the frog naming step
-and then the real screen picker. The guided practice uses the existing capture,
+Enable **Settings → Labs → Desktop frog** on macOS or a supported Linux
+session, then open **Show welcome tour** from About. Confirm the shortcut to
+reach the frog naming step. Naming the frog leads to the platform’s guided
+capture. The guided practice uses the existing capture,
 annotation, save and handoff actions. A completed practice recording and
 **Finish setup** commit the frog to the profile before it lands on the desktop.
 
@@ -120,19 +121,39 @@ and choose **Quit for 1 hour** to hide it temporarily, including across an app
 restart. When the hour ends, it returns when recording and setup are idle. The frog
 pauses during capture and setup. Turning the experiment off hides it, and
 turning it back on restores a previously named and adopted frog. On restart
-the frog starts in the display corner again. Linux keeps its existing tour.
+the frog starts in the display corner again.
 
 ### Frog wardrobe
 
-After adopting a frog on macOS, turn on **Frog wardrobe** in Settings → Labs.
-Sunglasses, a flowering lily pad and a unicorn horn become claimable after
-10, 20 and 30 eligible saves. Claiming keeps the item. Equipping and removing
-it affects the desktop frog within its next config refresh.
+After adopting a frog, turn on **Frog wardrobe** in Settings → Labs.
+The frog earns and equips sunglasses at 10 eligible saves. The flowering
+lily pad follows after 20 more saves (30 total). The unicorn horn follows
+after another 30 (60 total). The desktop frog shows the achievement and
+celebrates briefly. With reduced motion it shows the achievement without
+the hop or streamers. Equip and Remove in Labs change what the frog
+wears without resetting ownership.
 
 Only new, successfully published user-started Desktop recordings count.
 Guided practice, feedback, simulations, Agent-started captures, imports and
 recovered recordings are excluded. Clipboard and share outcomes are separate.
-The native completion receipt is deduplicated by bundle ID. Progress pauses
+The native completion receipt is deduplicated by bundle ID. The same profile
+transaction records the count and the new equipped item. Existing earned
+items and save counts carry forward without replaying celebrations. Progress pauses
 with either experiment off, survives onboarding replay and is local to the
 active profile. A process crash between bundle publication and the progress
 write can miss a credit. The recording itself remains saved.
+
+### Linux desktop frog
+
+Labs uses the desktop frog capability supplied by the native session. The
+Linux adapter uses X11 on Xorg and XWayland on Hyprland. Other Wayland sessions
+keep the normal welcome tour. Linux lands the frog in the corner after setup.
+The existing native screen-recording path owns consent, startup, and capture
+lifetime. The frog button issues a start request after hiding its window.
+
+The Onboarding Electron smoke drives the production frog child under Xvfb
+with synthetic coordinator messages. It checks the visible window and start
+protocol. Installed checks on each supported window manager still cover
+stacking, focus, workspaces, drag, output changes, capture exclusion and
+real recordings. The Mac adapter needs an installed check when it or the
+shared native path changes. Release packaging retains its platform checks.

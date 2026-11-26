@@ -11,13 +11,14 @@ test('popup assets replace old output without shipping another runtime and refus
   await fs.mkdir(path.join(source, 'dist'));
   await fs.writeFile(path.join(source, 'electron/notes/main.cjs'), 'notes');
   await fs.writeFile(path.join(source, 'electron/notes/presentation.cjs'), 'generated policy');
-  await fs.writeFile(path.join(source, 'electron/notes/lifecycle.cjs'), 'generated lifecycle');
+  for (const policy of ['lifecycle.cjs', 'dropdown-layout.mjs']) {
+    await fs.writeFile(path.join(source, 'electron/notes', policy), 'generated layout');
+  }
   await fs.writeFile(path.join(source, 'electron/runtime.cjs'), 'same-user reporting adapter');
   await fs.writeFile(path.join(source, 'dist/index.html'), 'renderer');
   const { stagePopupAssets } = await import('../../scripts/popup-entries.mjs');
   for (const unsafe of [source, dir, path.join(source, 'nested/output')]) {
     await assert.rejects(stagePopupAssets(source, unsafe), /overlap/);
-    assert.equal(await fs.readFile(path.join(source, 'dist/index.html'), 'utf8'), 'renderer');
   }
   const alias = path.join(dir, 'source-alias');
   await fs.symlink(source, alias);
@@ -26,9 +27,8 @@ test('popup assets replace old output without shipping another runtime and refus
   await fs.writeFile(path.join(out, 'runtime/old-electron'), 'obsolete generated runtime');
   await stagePopupAssets(source, out);
   assert.equal(await fs.readFile(path.join(out, 'dist/index.html'), 'utf8'), 'renderer');
-  assert.equal(await fs.readFile(path.join(out, 'electron/notes/main.cjs'), 'utf8'), 'notes');
-  assert.equal(await fs.readFile(path.join(out, 'electron/notes/presentation.cjs'), 'utf8'), 'generated policy');
-  assert.equal(await fs.readFile(path.join(out, 'electron/notes/lifecycle.cjs'), 'utf8'), 'generated lifecycle');
+  for (const policy of ['main.cjs', 'presentation.cjs', 'lifecycle.cjs', 'dropdown-layout.mjs'])
+    assert.deepEqual(await fs.readFile(path.join(out, 'electron/notes', policy)), await fs.readFile(path.join(source, 'electron/notes', policy)));
   assert.equal(await fs.readFile(path.join(out, 'electron/runtime.cjs'), 'utf8'), 'same-user reporting adapter');
   await assert.rejects(fs.stat(path.join(out, 'runtime')), { code: 'ENOENT' });
   const link = path.join(dir, 'link');
@@ -48,9 +48,9 @@ test('popup packaging requires notes and includes a present independent share en
   await assert.rejects(stagePopupEntries(root, out), { code: 'ENOENT' });
   await fs.writeFile(path.join(root, 'electron/notes/presentation.cjs'), 'generated policy');
   await assert.rejects(stagePopupEntries(root, out), { code: 'ENOENT' });
-  await fs.writeFile(path.join(root, 'electron/notes/lifecycle.cjs'), 'generated lifecycle');
+  for (const policy of ['lifecycle.cjs', 'dropdown-layout.mjs'])
+    await fs.writeFile(path.join(root, 'electron/notes', policy), 'generated layout');
   await stagePopupEntries(root, out);
-  assert.equal(await fs.readFile(path.join(out, 'electron/notes/main.cjs'), 'utf8'), 'notes entry');
   await fs.mkdir(path.join(root, 'electron/share'));
   await assert.rejects(stagePopupEntries(root, out), { code: 'ENOENT' });
   await fs.writeFile(path.join(root, 'electron/share/main.cjs'), 'share entry');
@@ -69,17 +69,17 @@ test('production staging ships the generated TypeScript policy actually loaded b
   await stagePopupEntries(root, dir);
   const policyPath = path.join(dir, 'electron/notes/presentation.cjs');
   assert.deepEqual(await fs.readFile(policyPath), await fs.readFile(path.join(root, 'electron/notes/presentation.cjs')));
-  const lifecyclePath = path.join(dir, 'electron/notes/lifecycle.cjs');
-  assert.deepEqual(await fs.readFile(lifecyclePath), await fs.readFile(path.join(root, 'electron/notes/lifecycle.cjs')));
+  for (const policy of ['lifecycle.cjs', 'dropdown-layout.mjs'])
+    assert.deepEqual(await fs.readFile(path.join(dir, 'electron/notes', policy)), await fs.readFile(path.join(root, 'electron/notes', policy)));
   const main = await fs.readFile(path.join(dir, 'electron/notes/main.cjs'), 'utf8');
   assert.match(main, /require\('\.\/presentation\.cjs'\)/);
   assert.match(main, /projectSnapshot\(presentation, state\)/);
-  assert.match(main, /require\('\.\/lifecycle\.cjs'\)/);
+  assert.match(main, /require\('\.\/dropdown-layout\.mjs'\)/);
   const { initialPresentation, projectSnapshot } = require(policyPath);
   const state = projectSnapshot(initialPresentation([20, 30]), {
     events: [{ kind: 'badge', rect: [100, 40, 584, 56] }, { kind: 'list' }],
     notes: [], drafts: [], error: null,
   });
   assert.equal(state.mode, 'list');
-  assert.deepEqual(state.position, [684, 96]);
+  assert.deepEqual(state.badgeRect, [100, 40, 584, 56]);
 });

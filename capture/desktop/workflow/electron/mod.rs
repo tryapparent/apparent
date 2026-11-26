@@ -146,7 +146,6 @@ pub(crate) fn poll_windows(
     cx: &mut gpui::App,
     _coordinator: &gpui::Entity<crate::capture::desktop::ApparentCoordinator>,
 ) {
-    #[cfg(target_os = "macos")]
     desktop_frog::poll_for(cx, _coordinator);
     #[cfg(target_os = "macos")]
     frog_nudge::poll(cx);
@@ -178,10 +177,8 @@ pub(crate) fn poll_windows(
     }
 }
 
-#[cfg(target_os = "macos")]
-#[path = "../../../../engine/native/macos/desktop/desktop_frog.rs"]
-mod desktop_frog;
-#[cfg(target_os = "macos")]
+#[path = "../../../../engine/native/desktop/desktop_frog.rs"]
+pub(in crate::capture::desktop) mod desktop_frog;
 pub(in crate::capture::desktop) use desktop_frog::land_desktop_frog;
 
 #[cfg(target_os = "macos")]

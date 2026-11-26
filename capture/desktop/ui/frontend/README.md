@@ -652,13 +652,10 @@ discards unsubmitted text. Linux display video still includes the visible popup
 and its text. Enter with no text closes the field and retains the pin. Shift+Enter
 adds a newline. Capture completion closes this capture-local surface.
 
-If the notes child exits before readiness and before Rust admits any note request,
-Rust seals admission and returns a distinct unavailable-before-admission outcome.
-The screen capture can then finish without typed notes, matching synchronous
-notes-startup failure. The no-tray controls show the existing unavailability warning.
-This is not an Electron Finished acknowledgement. Any admitted note request,
-post-readiness crash, uncertain exit or failed write still retains recording assets
-instead of reporting a saved capture. No sandbox check is disabled for this fallback.
+After EOF and confirmed child exit, a recording can finish without notes if no
+note work was admitted, even after Ready. The no-tray controls warn when Notes
+is unavailable. Without a valid drain, admitted work, uncertain exits, startup
+protocol failures and failed writes retain recording assets.
 
 The native menu and Electron Recording control share `microphoneEnabled` in
 `~/.config/apparent/config.json`. It defaults on, preserves device selection,

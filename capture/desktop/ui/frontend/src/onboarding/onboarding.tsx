@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {useCallback} from "react";
 import { Button } from '@apparent/ui/button';
-import {Keycap} from '@apparent/ui/keycap';
 import { recordKeys } from './shortcut/keys';
-import {ShortcutSuggestions} from './shortcut/suggestions';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
 import { savePen } from './pen/save';
@@ -98,10 +96,6 @@ export function NativeOnboarding(){
     }
   }
   const optionGesture=useRef(new OptionShortcutGesture());
-  async function chooseSuggested(shortcut:ShortcutCapture){
-    if(!await sendAction('back')||!await sendAction('change-shortcut'))return;
-    await sendAction({action:'shortcut',kind:'record',...shortcut,reserved:false});
-  }
   const shortcutRecorder=useCallback((element:HTMLDivElement|null)=>{
     if(!element)return;
     element.focus();
@@ -170,7 +164,7 @@ export function NativeOnboarding(){
         },
       }}/>}
     {state.frogNaming&&<MeetFrog submit={name=>sendAction({action:'frog-name',name})} saveError={Boolean(state.frogError)}/>}
-    {goAgain&&!state.frogNaming&&<><h1 className="native-shortcut-prompt">One more time.</h1><div className="native-shortcut"><Keycap className="native-shortcut-example">{state.shortcut}</Keycap><ShortcutSuggestions platform={state.platform} onChoose={shortcut=>void chooseSuggested(shortcut)}/></div></>}
+    {goAgain&&!state.frogNaming&&<><h1 className="native-shortcut-prompt">Try a practice capture.</h1><p>Use your recording shortcut to begin.</p></>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&!shortcutStep&&<p role="alert">{error}</p>}
     </>}

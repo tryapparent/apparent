@@ -7,9 +7,16 @@ contextBridge.exposeInMainWorld("desktopFrog", {
     ipcRenderer.on("desktop-frog:shortcut", relay);
     return () => ipcRenderer.removeListener("desktop-frog:shortcut", relay);
   },
-  onWardrobe(listener: (items: string[]) => void) {
-    const relay = (_event: unknown, items: string[]) => listener(items);
+  onWardrobe(
+    listener: (items: string[], achievement?: [number, string]) => void,
+  ) {
+    const relay = (
+      _event: unknown,
+      items: string[],
+      achievement?: [number, string],
+    ) => listener(items, achievement);
     ipcRenderer.on("desktop-frog:wardrobe", relay);
+    ipcRenderer.send("desktop-frog:wardrobe-ready");
     return () => ipcRenderer.removeListener("desktop-frog:wardrobe", relay);
   },
   start: () => ipcRenderer.send("desktop-frog:start"),

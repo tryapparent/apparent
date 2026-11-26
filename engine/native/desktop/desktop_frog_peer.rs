@@ -1,12 +1,13 @@
-#[cfg(target_os = "macos")]
+use crate::capture::desktop::frog_wardrobe::Achievement;
+
 pub(crate) struct DesktopFrogHost {
     child: Option<crate::capture::ui_process::UiChild>,
     input: pipe::Input,
-    requests: std::sync::mpsc::Receiver<()>,
-    last: Option<(bool, String, Vec<&'static str>)>,
+    requests: std::sync::mpsc::Receiver<u32>,
+    revision: u32,
+    last: Option<(bool, String, Vec<&'static str>, Option<Achievement>)>,
 }
 
-#[cfg(target_os = "macos")]
 impl DesktopFrogHost {
     pub(crate) fn open(name: &str, takeoff: Option<[f64; 3]>) -> anyhow::Result<Self> {
         use std::{
@@ -16,7 +17,13 @@ impl DesktopFrogHost {
         };
         let (assets, runtime) = super::presentation::onboarding_assets()
             .map_err(|error| anyhow::anyhow!("{}", error.stage()))?;
-        let mut child = super::presentation::onboarding_command(runtime, assets)
+        let mut command = super::presentation::onboarding_command(runtime.clone(), assets);
+        #[cfg(target_os = "linux")]
+        {
+            command.arg("--ozone-platform=x11");
+            crate::capture::desktop::workflow::electron::configure_sandbox(&mut command, &runtime)?;
+        }
+        let mut child = command
             .arg("--desktop-frog")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -44,8 +51,12 @@ impl DesktopFrogHost {
             let mut stdout = BufReader::new(stdout);
             let mut line = Vec::new();
             while matches!(read_protocol_line(&mut stdout, &mut line), Ok(1..=65_536)) {
-                if line == b"record\n" {
-                    let _ = send.try_send(());
+                if let Some(revision) = std::str::from_utf8(&line).ok()
+                    .and_then(|line| line.strip_prefix("record "))
+                    .and_then(|revision| revision.strip_suffix('\n'))
+                    .and_then(|revision| revision.parse().ok())
+                {
+                    let _ = send.try_send(revision);
                 }
                 line.clear();
             }
@@ -54,6 +65,7 @@ impl DesktopFrogHost {
             child: Some(child),
             input,
             requests,
+            revision: 0,
             last: None,
         };
         anyhow::ensure!(
@@ -67,32 +79,51 @@ impl DesktopFrogHost {
         self.input.send(format!("{state}\n").into_bytes())
     }
 
-    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str]) -> Option<bool> {
+    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str], achievement: Option<Achievement>) -> Option<bool> {
         if !matches!(self.child.as_mut()?.try_wait(), Ok(None)) {
             return None;
         }
+        self.project(visible, shortcut, equipped, achievement)?;
+        let Ok(revision) = self.requests.try_recv() else { return Some(false); };
+        let start = crate::capture::desktop::settings::onboarding::frog_policy::VISIBLE[
+            usize::from(visible) * 2 + usize::from(revision != self.revision)
+        ];
+        if !start && !self.settle_record_request() { return None; }
+        Some(start)
+    }
+
+    pub(crate) fn project(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str], achievement: Option<Achievement>) -> Option<()> {
         if !self
             .last
             .as_ref()
-            .is_some_and(|(was_visible, was_shortcut, was_equipped)| {
-                *was_visible == visible && was_shortcut == shortcut && was_equipped == equipped
+            .is_some_and(|(was_visible, was_shortcut, was_equipped, was_achievement)| {
+                *was_visible == visible && was_shortcut == shortcut && was_equipped == equipped && *was_achievement == achievement
             })
         {
-            if !self.send(serde_json::json!({"visible": visible, "shortcut": shortcut, "equipped": equipped})) {
+            if self.last.as_ref().is_none_or(|(was_visible, ..)| *was_visible != visible) {
+                self.revision = self.revision.wrapping_add(1);
+            }
+            if !self.send(serde_json::json!({"visible": visible, "revision": self.revision, "shortcut": shortcut, "equipped": equipped, "achievement": achievement})) {
                 return None;
             }
-            self.last = Some((visible, shortcut.to_owned(), equipped.to_vec()));
+            self.last = Some((visible, shortcut.to_owned(), equipped.to_vec(), achievement));
         }
-        let start = self.requests.try_recv().is_ok();
-        Some(visible && start)
+        Some(())
+    }
+
+    pub(crate) fn settle_record_request(&mut self) -> bool {
+        self.send(serde_json::json!({"type": "record-settled"}))
     }
 }
 
-#[cfg(target_os = "macos")]
 impl Drop for DesktopFrogHost {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
             std::thread::spawn(move || {
+                for _ in 0..20 {
+                    if !matches!(child.try_wait(), Ok(None)) { return; }
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
                 let _ = child.kill();
                 let _ = child.wait();
             });
@@ -101,6 +132,11 @@ impl Drop for DesktopFrogHost {
 }
 
 impl Session {
+    fn frog_enabled(shell: bool) -> bool {
+        shell && crate::capture::desktop::workflow::electron::desktop_frog::supported()
+            && crate::shared::handoff::experiment_preference("labs.desktopFrog")
+    }
+
     fn frog_stage(&self) -> u8 {
         let active = self.frog_enabled
             && self.flow.first_capture_required
@@ -115,8 +151,7 @@ impl Session {
             + usize::from(self.frog_revealed)]
     }
 
-    #[cfg(target_os = "macos")]
-    pub(crate) fn name_frog(&mut self, name: String) -> bool {
+        pub(crate) fn name_frog(&mut self, name: String) -> bool {
         if self.frog_stage() != 2 {
             return false;
         }
@@ -147,8 +182,7 @@ impl Session {
         Effect::None
     }
 
-    #[cfg(target_os = "macos")]
-    pub(crate) fn take_frog_takeoff(&mut self) -> Option<[f64; 3]> {
+        pub(crate) fn take_frog_takeoff(&mut self) -> Option<[f64; 3]> {
         self.frog_takeoff.take()
     }
 }

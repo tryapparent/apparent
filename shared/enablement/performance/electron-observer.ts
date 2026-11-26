@@ -3,7 +3,13 @@ import { lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
-type Surface = "pill" | "notes" | "draft" | "onboarding" | "whiteboard";
+type Surface =
+  | "desktop-frog"
+  | "pill"
+  | "notes"
+  | "draft"
+  | "onboarding"
+  | "whiteboard";
 type Target = { url: string; webSocketDebuggerUrl: string };
 
 export async function waitFor<T>(

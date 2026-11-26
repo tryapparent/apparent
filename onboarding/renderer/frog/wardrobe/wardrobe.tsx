@@ -2,10 +2,12 @@ import { Button } from "@apparent/ui/button";
 import { ErrorDialog } from "@apparent/ui/error-dialog";
 import { Switch } from "@apparent/ui/switch";
 import { useRef, useState, useSyncExternalStore } from "react";
+import lily from "../lily.png";
+import { FrogSprite } from "../sprite";
 import { FrogAccessory, accessoryNames, type Accessory } from "./accessory";
 import "./wardrobe.css";
 
-type Action = "claim" | "equip" | "remove";
+type Action = "equip" | "remove";
 type Item = { id: Accessory; threshold: number; action: Action | "" };
 type Snapshot = { enabled: boolean; count: number; items: Item[] };
 type Receipt = { frogWardrobe?: unknown; error?: string };
@@ -18,7 +20,6 @@ export type WardrobeBridge = {
 };
 
 const actions: Record<Action, string> = {
-  claim: "Claim",
   equip: "Equip",
   remove: "Remove",
 };
@@ -37,27 +38,28 @@ function project(value: unknown): Snapshot | undefined {
     typeof count !== "number" ||
     !Number.isInteger(count) ||
     count < 0 ||
-    count > 30 ||
     !Array.isArray(items) ||
     items.length !== 3
   )
     throw Error("Invalid wardrobe state");
 
   const expected = Object.keys(accessoryNames);
+  let previousThreshold = 0;
   const projected = items.map((item, index): Item => {
     const rawItem = record(item);
     const { id, threshold, action } = rawItem ?? {};
     if (
       id !== expected[index] ||
-      threshold !== (index + 1) * 10 ||
-      (action !== "" &&
-        action !== "claim" &&
-        action !== "equip" &&
-        action !== "remove")
+      typeof threshold !== "number" ||
+      !Number.isSafeInteger(threshold) ||
+      threshold <= previousThreshold ||
+      (action !== "" && action !== "equip" && action !== "remove")
     )
       throw Error("Invalid wardrobe item");
+    previousThreshold = threshold;
     return { id: id as Accessory, threshold, action };
   });
+  if (count > previousThreshold) throw Error("Invalid wardrobe count");
   return { enabled, count, items: projected };
 }
 
@@ -181,44 +183,63 @@ export function FrogWardrobe({ bridge }: { bridge: WardrobeBridge }) {
         />
       </div>
       <p id="frog-wardrobe-help">
-        Save recordings to unlock accessories for your frog.
+        Rewards equip automatically when you earn them.
       </p>
       {snapshot?.enabled && (
-        <ul className="frog-wardrobe-items" aria-busy={busy}>
-          {snapshot.items.map(({ id, threshold, action }) => (
-            <li key={id} className="frog-wardrobe-item">
-              <span className="frog-wardrobe-art">
-                <FrogAccessory item={id} />
-              </span>
-              <span>
-                <span className="frog-wardrobe-item-name">
-                  {accessoryNames[id]}
+        <div className="frog-wardrobe-layout">
+          <ul className="frog-wardrobe-items" aria-busy={busy}>
+            {snapshot.items.map(({ id, threshold, action }) => (
+              <li key={id} className="frog-wardrobe-item">
+                <span className="frog-wardrobe-art">
+                  <FrogAccessory item={id} />
                 </span>
-                {action !== "claim" && (
+                <span>
+                  <span className="frog-wardrobe-item-name">
+                    {accessoryNames[id]}
+                  </span>
                   <small>
-                    {action === "remove"
-                      ? "Equipped"
-                      : action === "equip"
-                        ? "Claimed"
-                        : `${snapshot.count} of ${threshold} saved`}
+                    {action
+                      ? `${action === "remove" ? "Equipped" : "Unlocked"} · ${threshold}-recording reward`
+                      : `${snapshot.count} of ${threshold} recordings saved`}
                   </small>
+                </span>
+                {action ? (
+                  <Button
+                    variant="outline"
+                    disabled={busy || unconfirmed}
+                    aria-label={`${actions[action]} ${accessoryNames[id].toLowerCase()}`}
+                    onClick={(event) =>
+                      act(event, () => bridge.act({ item: id, action }))
+                    }
+                  >
+                    {actions[action]}
+                  </Button>
+                ) : (
+                  <small className="frog-wardrobe-locked">Locked</small>
                 )}
-              </span>
-              {action && (
-                <Button
-                  variant="outline"
-                  disabled={busy || unconfirmed}
-                  aria-label={`${actions[action]} ${accessoryNames[id].toLowerCase()}`}
-                  onClick={(event) =>
-                    act(event, () => bridge.act({ item: id, action }))
-                  }
-                >
-                  {actions[action]}
-                </Button>
+              </li>
+            ))}
+          </ul>
+          <figure className="frog-wardrobe-preview">
+            <figcaption>Desktop frog</figcaption>
+            <div className="frog-wardrobe-preview-art" aria-hidden="true">
+              {snapshot.items.some(
+                ({ id, action }) => id === "lily-pad" && action === "remove",
+              ) ? (
+                <span className="frog-wardrobe-preview-flowering">
+                  <FrogAccessory item="lily-pad" />
+                </span>
+              ) : (
+                <img className="frog-wardrobe-preview-pad" src={lily} alt="" />
               )}
-            </li>
-          ))}
-        </ul>
+              <FrogSprite
+                wardrobe={snapshot.items
+                  .filter(({ action }) => action === "remove")
+                  .map(({ id }) => id)}
+              />
+            </div>
+          </figure>
+        </div>
       )}
       {unconfirmed && !error && (
         <Button

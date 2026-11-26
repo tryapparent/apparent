@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./record-inputs": "./record-inputs.ts",
     "./release-admission": "./release-admission.ts"
   }
 }

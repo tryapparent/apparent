@@ -5,14 +5,14 @@ function inset(y,width,height,radius=28){
  const edge=Math.min(y+.5,height-y-.5);
  return edge>=r?0:Math.ceil(r-Math.sqrt(Math.max(0,r*r-(r-edge)**2)));
 }
-function shape(width,height){
+function shape(width,height,regions){
+ if(regions?.length)return regionShape(regions);
  return Array.from({length:height},(_,y)=>{const x=Math.max(0,inset(y,width,height)-1);return {x,y,width:Math.max(1,width-2*x),height:1};});
 }
 function contains(point,bounds){
  const x=point.x-bounds.x,y=point.y-bounds.y;
- if(y<0||y>=bounds.height)return false;
  const edge=inset(Math.floor(y),bounds.width,bounds.height);
- return x>=edge&&x<bounds.width-edge;
+ return y>=0&&y<bounds.height&&x>=edge&&x<bounds.width-edge;
 }
 // Separate notification capsules leave real click-through space between them.
 // Regions come from main's own trusted document measurement, never an IPC size.

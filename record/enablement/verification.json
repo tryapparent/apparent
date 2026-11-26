@@ -1,6 +1,25 @@
 {
   "scenarios": [
     {
+      "id": "capture-start-permission-receipt",
+      "description": "Check the permission refusal returned by same-user GUI capture control.",
+      "platforms": ["macos"],
+      "userEntryPoint": "Run apparent capture start --request-id <id> --wait from the machine running Apparent.",
+      "prerequisites": [
+        "Use an installed candidate in an isolated macOS session with a known missing required grant. Use a new request ID."
+      ],
+      "runner": {
+        "path": "capture/engine/docs/capture.md",
+        "instructions": "Check the failed start JSON, then run apparent capture inspect <id> and repeat Start with the same ID. The portable receipt check is cargo test capture_start_reports_permission_blockers_on_wait_and_retry."
+      },
+      "expectedEvidence": [
+        "All three receipts contain the same ID, missing_permissions and the required permission names, with no bundle path. After granting permissions in the guest, use a new request ID and verify that capture can start normally."
+      ],
+      "limits": [
+        "The portable test replays permission decisions through the receipt and CLI wait code. Actual grant observation, permission repair and capture require the installed macOS check."
+      ]
+    },
+    {
       "id": "recording-settings-platform-controls",
       "description": "Verify the Recording pane and confirm that playback volume controls are available only on macOS.",
       "platforms": ["linux", "macos"],
@@ -10,7 +29,7 @@
       ],
       "runner": {
         "path": "composition/settings/enablement/recording.smoke.ts",
-        "instructions": "From capture/desktop/ui/frontend, run npm run build and then node --experimental-strip-types --test ../../../../composition/settings/enablement/recording.smoke.ts. Set APPARENT_RECORDING_PROOF to save screenshots."
+        "instructions": "From the repository root with the locked Desktop frontend dependencies installed, run node --experimental-strip-types record/enablement/ci/settings/verify.ts. Prefix with xvfb-run -a on Linux. Set APPARENT_RECORDING_PROOF to save screenshots."
       },
       "expectedEvidence": [
         "Linux shows Notes and Export without the Other-app volume group and rejects playback preference requests from the renderer. The Export instructions show Export Latest Video… at 720 and 640 pixels in both themes.",
@@ -71,6 +90,7 @@
         "The recording row has icon-only controls and no elapsed time. A slashed microphone indicates missing audio while Finish remains available. The full microphone status is available on hover and through assistive technology.",
         "Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. On Hyprland, the native window fits the row before any notes exist. The first note extends the window without moving the controls.",
+        "On Hyprland, the same window stays mapped from recording through the destination picker. The initial picker has the measured content height and rounded shape. Down opens the list, Escape collapses it, and the close control dismisses it.",
         "Local completion shows four evenly spaced icon slots. A reported copy failure disables Paste and places a recovery card directly below the row with an Inspect recording action.",
         "In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle.",
         "The startup smoke records requested, native and viewport widths and the first note extension's edge with an intentionally ignored resize."
@@ -81,7 +101,7 @@
     },
     {
       "id": "read-only-recording-notes",
-      "description": "Verify that the recording pill opens a read-only list of attached notes.",
+      "description": "Verify that the recording pill opens its read-only Notes dropdown.",
       "platforms": ["linux", "macos"],
       "userEntryPoint": "During a recording, attach a typed note, open the count on the recording pill, and close the Notes list before finishing.",
       "prerequisites": [
@@ -93,7 +113,7 @@
         "instructions": "From capture/desktop/ui/frontend, run npm run test:electron:targeted -- tests/notes/smoke.cjs. Prefix with xvfb-run -a on Linux. In the installed app, attach a multiline note and open the count from the recording pill."
       },
       "expectedEvidence": [
-        "The pill count opens a list displaying the attached text with its line breaks. Close and Escape dismiss it. Long lists scroll by keyboard.",
+        "The pill count opens a compact panel centered below the recording controls. It shows the attached text with its line breaks. The X and Escape dismiss it. Long lists scroll by keyboard.",
         "The Electron bridge rejects retired edit and delete requests. Finish produces a bundle containing the attached text."
       ],
       "limits": [
@@ -118,6 +138,26 @@
       ],
       "limits": [
         "Linux edge retention requires evdev access. Confirm macOS using the packaged app and native permissions."
+      ]
+    },
+    {
+      "id": "notes-child-exit-at-finish",
+      "description": "Verify recording completion when the Notes child exits without a Finish receipt.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Finish a screen recording after the Notes child exits before saving any note.",
+      "prerequisites": [
+        "A prepared root Rust test build. Use an isolated desktop and synthetic capture for native acceptance."
+      ],
+      "runner": {
+        "path": "capture/desktop/workflow/notes/lifecycle.rs",
+        "instructions": "Run cargo test --locked --bin apparent workflow::notes. For isolated native acceptance, start an owned capture, verify Notes is ready, terminate only its Notes child and finish the capture. Repeat with a note request already admitted."
+      },
+      "expectedEvidence": [
+        "EOF and child exit without admitted note work return the unavailable-before-admission receipt, allowing the bundle to publish.",
+        "Without a valid drain, an admitted request or uncertain exit retains the recording assets."
+      ],
+      "limits": [
+        "The Rust fixture replays lifecycle inputs. The isolated desktop run is required to verify a real saved bundle."
       ]
     },
     {
@@ -202,6 +242,25 @@
       ],
       "limits": [
         "The hosted Start score covers the Electron pill and the hosted Stop score covers packaged replay finalization. Native physical input and real capture require separate acceptance."
+      ]
+    },
+    {
+      "id": "record-performance-fixtures",
+      "description": "Verify Record recipe references and synthetic performance evidence.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Open the Record check on a pull request that changes the verification manifest or the audited performance tests.",
+      "prerequisites": [
+        "Node 22 and HTTPS access to the pinned Bend2 compiler."
+      ],
+      "runner": {
+        "path": "record/enablement/ci/performance/verify.ts",
+        "instructions": "From the repository root, run node --experimental-strip-types record/enablement/ci/performance/verify.ts."
+      },
+      "expectedEvidence": [
+        "The manifest has unique recipe IDs and resolves its runner files. Synthetic CPU accounting, trace parsing and score qualification tests pass."
+      ],
+      "limits": [
+        "Synthetic inputs exercise comparison and parsing. Use the manual benchmark for measured latency and installed Desktop acceptance for native behavior."
       ]
     },
     {

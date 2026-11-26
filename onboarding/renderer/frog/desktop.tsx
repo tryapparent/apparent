@@ -2,7 +2,11 @@ import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createRoot } from "react-dom/client";
 import { blend, FrogSprite, hop, hopDuration } from "./sprite";
 import lily from "./lily.png";
-import { FrogAccessory, type Accessory } from "./wardrobe/accessory";
+import {
+  accessoryNames,
+  FrogAccessory,
+  type Accessory,
+} from "./wardrobe/accessory";
 
 type Flight = {
   fromX: number;
@@ -20,7 +24,9 @@ type State = {
 type FrogBridge = {
   read(): Promise<State>;
   onShortcut(listener: (shortcut: string) => void): () => void;
-  onWardrobe(listener: (items: Accessory[]) => void): () => void;
+  onWardrobe(
+    listener: (items: Accessory[], achievement?: [number, Accessory]) => void,
+  ): () => void;
   start(): void;
   menu(): void;
   drag(phase: "begin" | "move" | "drop" | "cancel"): void;
@@ -72,19 +78,75 @@ function subscribeShortcut(changed: () => void) {
   });
 }
 
-let currentWardrobe: Accessory[] | undefined;
-const emptyWardrobe: Accessory[] = [];
-function subscribeWardrobe(changed: () => void) {
-  return window.desktopFrog.onWardrobe((items) => {
-    currentWardrobe = items;
-    changed();
-  });
+type WardrobeView = {
+  wardrobe: Accessory[];
+  reward?: { total: number; item: Accessory; revealed: boolean };
+};
+
+function wardrobeController(wardrobe: Accessory[]) {
+  let view: WardrobeView = { wardrobe };
+  return {
+    snapshot: () => view,
+    subscribe(notify: () => void) {
+      let reveal: ReturnType<typeof setTimeout> | undefined;
+      let dismiss: ReturnType<typeof setTimeout> | undefined;
+      const clear = () => {
+        clearTimeout(reveal);
+        clearTimeout(dismiss);
+      };
+      const publish = (next: WardrobeView) => {
+        view = next;
+        notify();
+      };
+      const unsubscribe = window.desktopFrog.onWardrobe(
+        (items, achievement) => {
+          if (!achievement) {
+            const reward = view.reward;
+            if (reward && !items.includes(reward.item)) {
+              clear();
+              publish({ wardrobe: items });
+            } else {
+              publish({ wardrobe: items, reward });
+            }
+            return;
+          }
+          clear();
+          const [total, item] = achievement;
+          const revealed = matchMedia(
+            "(prefers-reduced-motion: reduce)",
+          ).matches;
+          publish({ wardrobe: items, reward: { total, item, revealed } });
+          if (!revealed) {
+            reveal = setTimeout(() => {
+              publish({ ...view, reward: { total, item, revealed: true } });
+            }, 420);
+          }
+          dismiss = setTimeout(
+            () => publish({ wardrobe: view.wardrobe }),
+            3100,
+          );
+        },
+      );
+      return () => {
+        clear();
+        unsubscribe();
+      };
+    },
+  };
 }
 
 function DesktopFrog({ name, shortcut, equipped }: State) {
-  const wardrobe = useSyncExternalStore(
-    subscribeWardrobe,
-    () => currentWardrobe ?? equipped ?? emptyWardrobe,
+  const [controller] = useState(() => wardrobeController(equipped ?? []));
+  const { wardrobe, reward } = useSyncExternalStore(
+    controller.subscribe,
+    controller.snapshot,
+  );
+  const dressed = useMemo(
+    () =>
+      reward && !reward.revealed
+        ? wardrobe.filter((item) => item !== reward.item)
+        : wardrobe,
+    [wardrobe, reward],
   );
   const key = useSyncExternalStore(
     subscribeShortcut,
@@ -110,8 +172,12 @@ function DesktopFrog({ name, shortcut, equipped }: State) {
     [],
   );
   return (
-    <main className="desktop-frog" data-dragging={dragging || undefined}>
-      {wardrobe.includes("lily-pad") ? (
+    <main
+      className="desktop-frog"
+      data-dragging={dragging || undefined}
+      data-celebrating={!!reward || undefined}
+    >
+      {dressed.includes("lily-pad") ? (
         <span className="desktop-frog-lily desktop-frog-alternate-pad">
           <FrogAccessory item="lily-pad" />
         </span>
@@ -178,8 +244,27 @@ function DesktopFrog({ name, shortcut, equipped }: State) {
           if (event.detail === 0) setJumping(true);
         }}
       >
-        <FrogSprite motion={jumping ? motion : undefined} wardrobe={wardrobe} />
+        <FrogSprite motion={jumping ? motion : undefined} wardrobe={dressed} />
       </button>
+      {reward && (
+        <div
+          className="desktop-frog-streamers"
+          aria-hidden="true"
+          key={reward.total}
+        >
+          {Array.from({ length: 8 }, (_, index) => (
+            <i key={index} />
+          ))}
+        </div>
+      )}
+      <div className="desktop-frog-achievement" role="status">
+        {reward?.revealed && (
+          <>
+            <strong>{reward.total} recordings saved</strong>
+            <span>{accessoryNames[reward.item]} equipped</span>
+          </>
+        )}
+      </div>
       <button
         className="desktop-frog-record"
         type="button"

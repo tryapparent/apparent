@@ -320,58 +320,24 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await useShortcut.press('Enter');
   await expect.poll(()=>output).toContain('"action":"use-shortcut"');
   const beforeTrialAdvance=(output.match(/"action":"continue"/g)?.length??0);
-  send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
-  assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
-  await expect(page.locator('.native-setup')).toBeVisible();
-  await expect(page.locator('.native-coach')).toHaveCount(0);
-  await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
-  await expect(page.locator('.native-shortcut kbd')).toHaveText('⌃⌥⇧9');
-  await expect(page.locator('.native-shortcut kbd')).toHaveCSS('font-size','40px');
-  const pressFrame=async(time:number)=>page.locator('.native-shortcut kbd').evaluate((key,time)=>{
-    for(const animation of key.getAnimations()){animation.pause();animation.currentTime=time}
-    const style=getComputedStyle(key);return {transform:style.transform,background:style.backgroundColor};
-  },time);
-  const released=await pressFrame(0),pressed=await pressFrame(2000);
-  assert.equal(pressed.transform,'matrix(1, 0, 0, 1, 0, 3)');
-  assert.notEqual(pressed.background,released.background);
-  await pressFrame(0);
-  await page.evaluate(()=>document.getAnimations().filter(a=>a.effect?.getTiming().iterations!==Infinity).forEach(a=>a.finish()));
-  const heading=await page.getByRole('heading',{name:'One more time.',exact:true}).boundingBox();assert.ok(heading);
-  const keys=await page.locator('.native-shortcut kbd').boundingBox();assert.ok(keys);
-  assert.ok(Math.abs(heading.x+heading.width/2-(keys.x+keys.width/2))<2,'heading and shortcut share a centre');
-  assert.ok(Math.abs(keys.y-heading.y-heading.height-16)<=2);
-  if(process.env.APPARENT_ONBOARDING_EVIDENCE){
-    await fs.mkdir(process.env.APPARENT_ONBOARDING_EVIDENCE,{recursive:true});
-    for(const scheme of schemes){
-      await page.emulateMedia({colorScheme:scheme});
-      await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
-      await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-      await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-'+scheme+'.png'),animations:'disabled'});
-    }
-  }
-  assert.ok(Math.abs(keys.x+keys.width/2-380)<2,'keys are horizontally centered');
-  assert.ok(Math.abs(keys.y+keys.height/2-260)<60,'keys are vertically centered in the compact setup');
-  assert.equal(await page.locator('.native-setup section').evaluate(el=>el.scrollHeight>el.clientHeight),false);
-  await expect(page.getByRole('button',{name:'Try a capture',exact:true})).toHaveCount(0);
   send({step:'try-it',practice:'screen',platform:'linux',firstCaptureRequired:true});
   await expect(page.getByRole('heading', { name: 'Choose your display.' })).toBeVisible();
   await expect(page.locator('.native-setup')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Try a practice capture.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
   await page.setViewportSize({width:320,height:520});
   for(const scheme of schemes){
     await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
-    await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeInViewport();
-    await expect(page.locator('.native-shortcut kbd')).toBeInViewport();
+    await expect(page.getByRole('heading',{name:'Try a practice capture.',exact:true})).toBeInViewport();
+    await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
     assert.equal(await page.locator('.native-shortcut-prompt').evaluate(el=>getComputedStyle(el).animationName),'none');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.keyboard.press('Tab');
     await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
     await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-    if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'one-more-time-320-'+scheme+'.png'),animations:'disabled'});
+    if(process.env.APPARENT_ONBOARDING_EVIDENCE)await page.screenshot({path:path.join(process.env.APPARENT_ONBOARDING_EVIDENCE,'practice-entry-320-'+scheme+'.png'),animations:'disabled'});
   }
   await page.setViewportSize({width:760,height:520});
   const fnEditor={externallyManaged:false,suggestedFn:{keyCode:63,modifiers:0,key:'Fn'}};

@@ -80,7 +80,7 @@ async function measurePractice() {
       );
       assert.equal(
         await coach.evaluate('document.querySelector("h1").textContent'),
-        "One more time.",
+        "Try a practice capture.",
       );
       await phase("practice record");
       await stage("whiteboard");

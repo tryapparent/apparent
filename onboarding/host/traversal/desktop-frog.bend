@@ -33,5 +33,8 @@ def desktop_visible(adopted: Bool, unavailable: Bool) -> Bool:
     case False{}:
       adopted
 
+def clamp_offset(wanted: U32, extent: U32, +size: U32) -> U32:
+  U32.min(wanted, (U32.max(extent, size) - size : U32))
+
 def desktop_pause_ms() -> U32:
   3600000

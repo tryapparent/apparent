@@ -16,6 +16,7 @@
     "pill/soft-bloom.bend",
     "pill/doodle-ink.bend",
     "notes/double-shift.bend",
+    "notes/dropdown-layout.bend",
     "shortcuts/push-to-talk.bend",
     "transcription/src/caption-admission.bend",
     "transcription/src/final-stream.bend",
@@ -25,6 +26,7 @@
   ],
   "inputs": [
     "capture-request/",
+    "enablement/ci/capture-request/build.ts",
     "completion/",
     "media/",
     "settings/",

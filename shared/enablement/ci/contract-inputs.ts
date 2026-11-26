@@ -52,6 +52,7 @@ export function contractChecks(
   const release =
     sharedVerifier ||
     nativeBuild ||
+    paths.includes("record/enablement/ci/capture-request/build.ts") ||
     has(
       /^\.github\/(?:workflows|actions)\/|^composition\/enablement\/release\/|^composition\/enablement\/ci\/bend\/|^composition\/settings\/about\/|^enablement\/release_gate\.py$/,
     ) ||

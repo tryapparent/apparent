@@ -72,23 +72,28 @@ doodles. Live local transcription is opt-in. Older effect preferences are ignore
 ## Verification and rollback
 
 On Linux, the native parent selects XWayland when launching Electron, before
-Ozone initializes, and supplies its X11 scale. The
-Electron constructor selects the window's keyboard role at creation. Native
+Ozone initializes, and supplies its X11 scale. On Hyprland the X11 window
+starts with keyboard input support. Electron enables its activation when the
+current layout has a destination picker. Other Linux compositors select the
+keyboard role at window creation. Native
 compositor admission uses the window ID reported by Electron main after layout
 and before activation. Hyprland pins the exact child by process and XID-specific
 title, and prepares its scoped motion rule before mapping. The parent ignores
 hidden geometry for admission and retires and restarts Electron if compositor
 admission fails, even when the child reports a visible window.
-On Lua Hyprland, the native adapter also focuses the admitted keyboard picker
-once when it maps. Subsequent geometry updates preserve the user's focus.
-When the picker replaces the recording window, the host waits for the
-replacement's measured layout and native admission, hides the outgoing window,
-then shows the picker. Picker resizes stay mapped on XWayland. Keyboard
+On Lua Hyprland, the native adapter focuses the admitted keyboard picker when
+its layout is ready. The recording window stays mapped through Finish and the
+destination picker uses the same native window ID. Subsequent geometry updates
+preserve the user's focus. Keyboard
 selection scrolls the option list and keeps the pill's header in the viewport.
-On Hyprland the mapped picker keeps its native height when content collapses.
+On Hyprland the host uses the measured content height and rounded shape when
+the pill grows. A mapped picker keeps its native height when content collapses.
 The host updates its visible and clickable shape after the current layout paints.
 The Hyprland recording window fits the visible row when there are no saved
 notes. The first saved note adds the extension without moving the controls.
+The note count opens a compact read-only panel below the pill. Record's
+dropdown policy keeps it inside the display work area. Linux places the
+Electron panel through the existing native window adapter.
 
 If the count clips in an isolated Hyprland run, preserve the settled frame
 before manually resizing the pill. Compare the exact pill's XWayland width,

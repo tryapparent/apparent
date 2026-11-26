@@ -143,8 +143,14 @@ impl ApparentCoordinator {
         if self.is_recording() || self.source_is_stopping() {
             return;
         }
-        if !self.ready_to_record(prepared_source.is_some()) {
+        if let Err(admission) = self.recording_start_admission(prepared_source.is_some()) {
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            let request_id = self.agent_capture_id.clone();
             self.cancel_recording(cx);
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if let Some(id) = request_id {
+                self.agent_captures.fail_start_permissions(&id, admission);
+            }
             return;
         }
         let target = target(self.lab);
@@ -174,6 +180,12 @@ impl ApparentCoordinator {
             };
             self.agent_captures.begin(&id);
             self.agent_capture_id = Some(id);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let shortcut = self.telemetry.shortcut.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner).label.clone();
+            workflow::electron::desktop_frog::hide_for_capture(cx, &shortcut);
         }
         self.begin_playback();
         if let Ok(mut status) = CAPTURE_STATUS.lock() {

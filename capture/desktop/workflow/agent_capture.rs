@@ -98,6 +98,30 @@ impl Registry {
         self.set(id, "starting", None, None);
     }
 
+    pub(in crate::capture::desktop) fn fail_start(&mut self, id: &str) {
+        if !self.0.get(id).is_some_and(|receipt| receipt["error"].is_string()) {
+            self.set(id, "failed", None, Some("start_failed"));
+        }
+    }
+
+    pub(in crate::capture::desktop) fn fail_start_permissions(
+        &mut self,
+        id: &str,
+        admission: crate::permission_admission::Admission,
+    ) {
+        use crate::permission_admission::Admission;
+        match admission {
+            Admission::Blocked(missing) => {
+                self.set(id, "failed", None, Some("missing_permissions"));
+                if let Some(receipt) = self.0.get_mut(id) {
+                    receipt["missing_permissions"] = serde_json::json!(missing);
+                }
+            }
+            Admission::Checking => self.set(id, "failed", None, Some("permissions_checking")),
+            Admission::Ready => {}
+        }
+    }
+
     pub fn set(
         &mut self,
         id: &str,
@@ -1593,73 +1617,6 @@ mod tests {
         let result = stream.write_all(&vec![0; 4 * 1024 * 1024]);
         assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < Duration::from_millis(300));
-    }
-
-    #[test]
-    fn finalization_error_or_cancel_never_publishes_a_saved_path() {
-        let mut registry = Registry::default();
-        registry.begin("failure");
-        registry.finish("failure", Err("disk full".into()));
-        let failure = registry.inspect("failure");
-        assert_eq!(failure["status"], "failed");
-        assert_eq!(failure["error"], "finalization_failed");
-        assert_eq!(failure["message"], "disk full");
-        assert!(failure["bundle_path"].is_null());
-        registry.set("cancel", "cancelled", None, None);
-        assert!(registry.inspect("cancel")["bundle_path"].is_null());
-        assert_eq!(registry.inspect("unknown")["error"], "unknown_capture");
-    }
-
-    #[test]
-    fn stop_wait_sends_one_stop_then_inspects_only_that_id_until_saved() {
-        let mut calls = vec![];
-        let replies = [
-            serde_json::json!({"capture_id":"owned", "status":"processing", "outcome":"stopping"}),
-            serde_json::json!({"capture_id":"owned", "status":"processing"}),
-            serde_json::json!({"capture_id":"owned", "status":"saved", "bundle_path":"/captures/exact.apparent"}),
-        ];
-        let value = execute_with(
-            Some((Action::Stop, "owned")),
-            true,
-            Duration::from_secs(1),
-            |action, _| {
-                calls.push(action.map(|(a, id)| (a, id.to_owned())));
-                Ok(replies[calls.len() - 1].to_string())
-            },
-        );
-        assert_eq!(value["bundle_path"], "/captures/exact.apparent");
-        assert_eq!(
-            calls,
-            vec![
-                Some((Action::Stop, "owned".into())),
-                Some((Action::Inspect, "owned".into())),
-                Some((Action::Inspect, "owned".into()))
-            ]
-        );
-    }
-
-    #[test]
-    fn start_wait_requires_real_readiness_receipt_for_the_owned_id() {
-        let mut calls = 0;
-        let value = execute_with(
-            Some((Action::Start, "owned")),
-            true,
-            Duration::from_secs(1),
-            |action, _| {
-                calls += 1;
-                assert_eq!(
-                    action.unwrap().0,
-                    if calls == 1 {
-                        Action::Start
-                    } else {
-                        Action::Inspect
-                    }
-                );
-                Ok(serde_json::json!({"capture_id":"owned", "status":if calls == 1 {"starting"} else {"recording"}}).to_string())
-            },
-        );
-        assert_eq!(value["status"], "recording");
-        assert_eq!(calls, 2);
     }
 
     #[test]

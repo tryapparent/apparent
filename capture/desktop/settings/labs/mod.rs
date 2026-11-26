@@ -29,7 +29,7 @@ pub(in crate::capture::desktop) fn facts(path: &Path) -> serde_json::Value {
         "wisprSaved": saved("labs.onboardingWisprFlow"),
         "wisprSupported": cfg!(target_os = "macos"),
         "dictationFrogSaved": saved("labs.dictationFrog"),
-        "desktopFrogSaved": saved("labs.desktopFrog"),
+        "desktopFrogSaved": crate::capture::desktop::frog_wardrobe::desktop_preference(&value),
         "frogWardrobe": super::super::frog_wardrobe::facts(&value),
     })
 }
@@ -43,8 +43,8 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
         Some("pushToTalk") => Some(("labs.pushToTalk", true)),
         Some("wisprFlow") => Some(("labs.onboardingWisprFlow", cfg!(target_os = "macos"))),
         Some("dictationFrog") => Some(("labs.dictationFrog", cfg!(target_os = "macos"))),
-        Some("frogWardrobe") => Some((super::super::frog_wardrobe::PREFERENCE, cfg!(target_os = "macos"))),
-        Some("desktopFrog") => Some(("labs.desktopFrog", cfg!(target_os = "macos"))),
+        Some("frogWardrobe") => Some((super::super::frog_wardrobe::PREFERENCE, crate::capture::desktop::workflow::electron::desktop_frog::supported())),
+        Some("desktopFrog") => Some(("labs.desktopFrog", crate::capture::desktop::workflow::electron::desktop_frog::supported())),
         _ => None,
     }
 }

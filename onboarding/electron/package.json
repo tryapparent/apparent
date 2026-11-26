@@ -1,0 +1,11 @@
+{
+  "name": "@apparent/onboarding-electron",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./desktop-frog": "./desktop-frog/host.ts"
+  },
+  "peerDependencies": {
+    "electron": "45.2.1"
+  }
+}

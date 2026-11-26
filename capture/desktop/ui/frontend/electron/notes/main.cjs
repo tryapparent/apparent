@@ -31,6 +31,7 @@ let presentation = initialPresentation([frame[0] + frame[2] / 2, frame[1] + 80])
 const lifecycle = createNotesLifecycle();
 const send = (value) => process.stdout.write(JSON.stringify(value) + '\n');
 app.whenReady().then(() => {
+  const { default: dropdown, createNotesPlacement } = require('./dropdown-layout.mjs');
   if (process.platform === 'darwin') app.setActivationPolicy('accessory');
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, reply) => reply(false));
   session.defaultSession.setPermissionCheckHandler(() => false);
@@ -39,7 +40,7 @@ app.whenReady().then(() => {
     const win = new BrowserWindow({ title: 'Apparent notes', width: 332, height: 200, show: false, frame: false, transparent: true,
       resizable: false, skipTaskbar: true, alwaysOnTop: true, hasShadow: false,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true,
-        nodeIntegration: false, sandbox: true, spellcheck: false, webSecurity: true } });
+        nodeIntegration: false, sandbox: true, spellcheck: false, webSecurity: true, backgroundThrottling: false } });
     win.webContents.on('page-title-updated', event => event.preventDefault());
     win.removeMenu(); win.setAlwaysOnTop(true, 'floating');
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -55,33 +56,7 @@ app.whenReady().then(() => {
     return win;
   }
   popup = createPopup();
-  // Rust's Linux anchors are X11 root pixels; Electron window bounds are DIPs.
-  function desktopPoint(x, y) {
-    const point = { x: Math.round(x), y: Math.round(y) };
-    return process.platform === 'linux' ? screen.screenToDipPoint(point) : point;
-  }
-  const placed = new Map();
-  const requested = new Map();
-  function setRequestedBounds(win, bounds, opening) {
-    const key = JSON.stringify(bounds);
-    if (opening || requested.get(win) !== key) {
-      requested.set(win, key);
-      win.setBounds(bounds);
-    }
-  }
-  // Rust owns Linux placement. Chromium can report stale bounds after an XWayland
-  // override-redirect remap; send the requested rect rather than undoing the move.
-  function placeSurface(win, focus, force = false, bounds = win.getBounds()) {
-    if (process.platform !== 'linux') return;
-    const { x, y, width, height } = bounds;
-    const point = screen.dipToScreenPoint({ x, y });
-    const scale = screen.getDisplayMatching(bounds).scaleFactor;
-    const rect = [point.x, point.y, Math.round(width * scale), Math.round(height * scale)];
-    const key = JSON.stringify(rect);
-    if (!force && !focus && placed.get(win) === key) return;
-    placed.set(win, key);
-    send({ action: 'surface', id: win.getNativeWindowHandle().readUInt32LE(0), rect, focus });
-  }
+  const placement = createNotesPlacement(popup, screen, process.platform, send, popupBounds, dropdown.place);
   function validate(event) {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win !== popup || event.senderFrame !== event.sender.mainFrame ||
@@ -109,7 +84,7 @@ app.whenReady().then(() => {
     try {
       const state = JSON.parse(line);
       if (state.finishing === true && Object.keys(state).length === 1) {
-        lifecycle.requestFinish(); popup.hide();
+        lifecycle.requestFinish(); placement.hide();
         finishWhenReady();
         return;
       }
@@ -124,18 +99,10 @@ app.whenReady().then(() => {
       send({ action: 'presentation', revision: state.revision, active: projected.mode !== 'badge' });
       Object.assign(state, projected);
       latest = state;
-      const point = desktopPoint(...state.position);
-      if (state.mode !== 'badge') {
-        const work = screen.getDisplayNearestPoint(point).workArea;
-        const bounds = popupBounds(point, work, state.mode === 'list' ? 350 : 220);
-        const opening = !popup.isVisible();
-        setRequestedBounds(popup, bounds, opening);
-        if (opening) popup.show();
-        const focus = !previous || previous.focusRevision !== state.focusRevision;
-        if (focus) { popup.focus(); if (process.platform === 'linux') popup.webContents.focus(); }
-        placeSurface(popup, focus, opening, bounds);
-      } else { popup.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
       publish();
+      if (state.mode !== 'badge')
+        void placement.show(state, previous?.focusRevision !== state.focusRevision).catch(() => app.quit());
+      else { placement.hide(); if (previous && previous.mode !== 'badge') send({ action: 'hidden' }); }
     } catch { app.quit(); }
   });
   lines.on('close', () => app.quit());
@@ -144,5 +111,5 @@ app.whenReady().then(() => {
     send({ action: 'windows', ids }); send({ action: 'ready' });
     lifecycle.markReady(); finishWhenReady();
   }).catch(() => app.quit());
-});
+}).catch(() => app.quit());
 app.on('window-all-closed', () => app.quit());

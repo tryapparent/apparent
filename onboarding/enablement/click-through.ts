@@ -224,10 +224,16 @@ async function clickThrough(run: number) {
       );
       const use = ".shortcut-test-actions > button:last-child";
       await checkpoint("permissions-to-shortcut", shortcut, use);
-      const tryIt = await click(use, "Use shortcut", "use-shortcut", () =>
-        project("try-it", { practice: "start" }),
+      const confirmed = await click(use, "Use shortcut", "use-shortcut", () =>
+        project("done"),
       );
-      await checkpoint("shortcut-to-practice", tryIt, practice);
+      await checkpoint(
+        "shortcut-to-setup-completion",
+        confirmed,
+        "main.native-setup:has(.native-explain) h1",
+      );
+      project("try-it", { practice: "start" });
+      await visible(page, practice);
     }
 
     const { batch, scope } = practiceChannel(child, attempt);
