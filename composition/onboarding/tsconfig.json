@@ -6,7 +6,8 @@
     "strict": true,
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": { "electron": ["./node_modules/electron"] }
   },
   "include": ["src/*.ts"]
 }

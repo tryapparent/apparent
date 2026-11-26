@@ -67,6 +67,7 @@ await bendScratch(async (scratch) => {
     naming: [0, 0, 0, 0, 1, 2, 0, 0],
     name: [false, false, true, false, true, false, true, false, false, false],
     visible: [false, false, true, false],
+    clamp: [0, 0, 0, 0, 30, 32, 0, 30, 80],
     pauseMs: 3600000,
   });
   const dictation = dictationTable(production);

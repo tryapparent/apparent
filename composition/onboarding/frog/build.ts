@@ -10,7 +10,9 @@ export async function buildDesktopFrog(build: typeof esbuild) {
   const outdir = path("../dist/desktop-frog/");
   await Promise.all([
     build({
-      entryPoints: [path("./preload.ts")],
+      entryPoints: [
+        path("../../../onboarding/electron/desktop-frog/preload.ts"),
+      ],
       bundle: true,
       platform: "node",
       format: "cjs",
