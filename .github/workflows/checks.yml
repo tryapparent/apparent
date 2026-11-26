@@ -380,7 +380,7 @@ jobs:
     needs: select
     if: '!cancelled()'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 20 || 10 }}
     env:
       CHECK_ENGINEERING: ${{ needs.select.result != 'success' || needs.select.outputs.contract_engineering != 'false' }}
       CHECK_RELEASE: ${{ needs.select.result != 'success' || needs.select.outputs.contract_release != 'false' }}
