@@ -44,6 +44,35 @@ impl Drop for ProgressGuard {
     }
 }
 
+pub(super) fn safe_shares_error(message: &str) -> &'static str {
+    if message.starts_with("auth_required:") {
+        return "auth_required";
+    }
+    if message.starts_with("Hosted API temporarily unavailable") {
+        return "temporarily_unavailable";
+    }
+    if message.starts_with("Hosted transport failed") {
+        return "transport_failed";
+    }
+    if message.starts_with("Hosted response exceeds limit") {
+        return "response_limit";
+    }
+    if message.starts_with("Invalid hosted JSON response") {
+        return "invalid_json";
+    }
+    for code in [
+        "file_too_large", "manifest_conflict", "beta_required", "slow_down",
+        "quota_exceeded", "unauthorized", "forbidden", "expired", "rejected",
+        "not_found", "conflict", "authorization_pending", "device_expired",
+        "device_rejected", "reauthorization_required",
+    ] {
+        if message.contains(code) {
+            return code;
+        }
+    }
+    "request_failed"
+}
+
 pub(super) fn validate_share_url(server: &str, url: &str) -> Result<()> {
     ensure!(
         url.strip_prefix(&format!("{server}/s/"))
