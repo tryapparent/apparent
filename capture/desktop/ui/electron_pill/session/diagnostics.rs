@@ -109,7 +109,7 @@ pub(super) struct Observation {
     pub(super) reader_stop: Option<ReaderStop>,
     pub(super) writer_stop: Option<WriterStop>,
     last_state: Option<(&'static str, u64, Instant)>,
-    pub(super) first_recording_flush: Option<(String, Instant)>,
+    pub(super) recording_flush: Option<super::RecordingFlush>,
     queued: Cadence,
     flushed: Cadence,
 }

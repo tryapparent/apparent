@@ -138,6 +138,9 @@ impl ApparentCoordinator {
         let worker_cancellation = cancellation.clone();
         cx.spawn(async move |entity, cx| {
             let tracks = cx.background_executor().spawn(async move {
+                let source = crate::capture::engine::runtime::recording::recorder::PreparedSource::prepare_direct(
+                    &target, startup.clone(),
+                );
                 let preparation = match preparation.protect(&bundle_dir) {
                     Ok(preparation) => preparation,
                     Err(error) => return PendingScreenTracks::ProtectionFailed(error),
@@ -153,7 +156,7 @@ impl ApparentCoordinator {
                 workflow::performance::StartupPoint::TracksEnter.record_in(startup.as_ref());
                 PendingScreenTracks::Started(ScreenCaptureSession::start_tracks(
                     &target, &bundle_dir, &telemetry, microphone, stream_admission,
-                    preparation, None, startup.as_ref(),
+                    preparation, source.map(|source| source.admit()), startup.as_ref(),
                 ))
             }).await;
             let mut tracks = Some(tracks);

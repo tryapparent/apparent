@@ -43,6 +43,7 @@ pub(crate) struct RecordingPerformance {
     trace_ids: [String; 2],
     startup: Startup,
     pill_reported: bool,
+    red_pill_reported: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +51,10 @@ pub(crate) enum StartupPoint {
     Entry,
     ContextReady,
     TracksEnter,
+    AudioBegin,
     AudioReady,
+    VideoDispatch,
+    VideoDispatched,
     TracksReturn,
     NotesReady,
     PillRequested,
@@ -59,12 +63,17 @@ pub(crate) enum StartupPoint {
     PortalConnect,
     PortalCreate,
     PortalSelect,
+    PortalSourcesSelected,
     PortalStart,
     PortalResponse,
     PipewireRequest,
     PipewireOpen,
     VideoBuild,
     VideoInitialized,
+    FirstCandidate,
+    RedPillFlushed,
+    ScreenReadyObserved,
+    RedPillReported,
     VideoFirstFrame,
 }
 
@@ -81,19 +90,24 @@ impl StartupPoint {
 const STARTUP_STAGES: &[(&str, StartupPoint, StartupPoint)] = &[
     ("recording.start.admission", Entry, ContextReady),
     ("recording.start.prepare", ContextReady, TracksEnter),
-    ("recording.start.audio_setup", TracksEnter, AudioReady),
-    ("recording.start.video_dispatch", AudioReady, TracksReturn),
+    ("recording.start.audio_setup", AudioBegin, AudioReady),
+    ("recording.start.video_dispatch", VideoDispatch, VideoDispatched),
     ("recording.start.notes_and_publish", TracksReturn, NotesReady),
     ("recording.start.pill_acknowledge", PillRequested, PillReported),
     ("recording.start.pill_queue", PillRequested, PillStateFlushed),
     ("recording.start.pill_after_flush", PillStateFlushed, PillReported),
     ("recording.start.portal_connect", PortalConnect, PortalCreate),
     ("recording.start.portal_create_session", PortalCreate, PortalSelect),
-    ("recording.start.portal_select_sources", PortalSelect, PortalStart),
+    ("recording.start.portal_select_sources", PortalSelect, PortalSourcesSelected),
+    ("recording.start.portal_storage_gate", PortalSourcesSelected, PortalStart),
     ("recording.start.portal_start", PortalStart, PortalResponse),
     ("recording.start.pipewire_connect", PipewireRequest, PipewireOpen),
     ("recording.start.video_initialize", VideoBuild, VideoInitialized),
     ("recording.start.video_first_frame", VideoBuild, VideoFirstFrame),
+    ("recording.start.first_candidate", VideoBuild, FirstCandidate),
+    ("recording.start.candidate_to_coordinator", FirstCandidate, ScreenReadyObserved),
+    ("recording.start.red_pill_delivery", ScreenReadyObserved, RedPillFlushed),
+    ("recording.start.red_pill_acknowledge", RedPillFlushed, RedPillReported),
 ];
 
 #[derive(Clone, Default)]
@@ -198,6 +212,7 @@ impl RecordingPerformance {
             trace_ids,
             startup: Startup::default(),
             pill_reported: false,
+            red_pill_reported: false,
         })
     }
 
@@ -219,7 +234,18 @@ impl RecordingPerformance {
         self.startup.record_at(PillReported, reported);
     }
 
+    pub(crate) fn needs_red_pill(&self) -> bool {
+        !self.red_pill_reported
+    }
+
+    pub(crate) fn red_pill_reported(&mut self, flushed: Instant, reported: Instant) {
+        self.red_pill_reported = true;
+        self.startup.record_at(RedPillFlushed, flushed);
+        self.startup.record_at(RedPillReported, reported);
+    }
+
     pub(crate) fn live(&mut self) {
+        self.startup.record(ScreenReadyObserved);
         self.ready = Some(Timing::measure("recording.start.duration", self.start));
     }
 

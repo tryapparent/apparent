@@ -282,34 +282,48 @@ export async function observeShortcut(
     started: () => number,
     predicate: (frame: Frame) => boolean,
     observed: string,
+    after?: (frame: Frame) => boolean,
   ) => {
     const end = performance.now() + 5000;
     while (!started() && performance.now() < end) await sleep(4);
     if (!started()) throw Error("Native action was not sent");
     let prior = started();
-    let first:
-      | {
-          at: number;
-          ms: number;
-          sampleGapMs: number;
-          frame: Frame;
-          sha256: string;
-        }
-      | undefined;
+    type Sample = {
+      at: number;
+      ms: number;
+      sampleGapMs: number;
+      frame: Frame;
+      sha256: string;
+    };
+    let first: Sample | undefined;
+    let confirmed: Sample | undefined;
+    let subsequent: Sample | undefined;
     while (performance.now() < end && stage() === "scenario") {
       signal.throwIfAborted();
       const frame = await dump();
-      if (predicate(frame.observation)) {
-        if (first) return first;
-        first = {
-          at: frame.at,
-          ms: frame.at - started(),
-          sampleGapMs: Math.max(1, Math.round(frame.at - prior)),
-          frame: frame.observation,
-          sha256: frame.digest(),
-        };
-      } else {
+      const sample = () => ({
+        at: frame.at,
+        ms: frame.at - started(),
+        sampleGapMs: Math.max(1, Math.round(frame.at - prior)),
+        frame: frame.observation,
+        sha256: frame.digest(),
+      });
+      if (!confirmed && predicate(frame.observation)) {
+        if (first) {
+          confirmed = first;
+          if (!after) return confirmed;
+        } else {
+          first = sample();
+        }
+      } else if (!confirmed) {
         first = undefined;
+      }
+      if (after?.(frame.observation)) {
+        if (subsequent && confirmed)
+          return { ...confirmed, redFinish: subsequent };
+        subsequent ??= sample();
+      } else {
+        subsequent = undefined;
       }
       prior = frame.at;
       await sleep(12, undefined, { signal });
@@ -358,7 +372,10 @@ export async function observeShortcut(
           observe(
             () => keyDown,
             (frame) => pillVisible(before, frame),
-            "recording pill",
+            "recording pill and red Finish",
+            (frame) =>
+              frame.recordingRed >= before.recordingRed + 12 &&
+              !pickerVisible(frame),
           ),
           media?.finished,
           shortcut(),
