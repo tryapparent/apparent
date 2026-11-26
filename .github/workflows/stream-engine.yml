@@ -9,6 +9,7 @@ on:
       - "!engine/diagnostics/**"
       - "!engine/recording/**"
       - "!engine/native/input/**"
+      - "!engine/native/desktop/**"
       - "!engine/native/macos/desktop/**"
       - "!engine/**/*.md"
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
@@ -20,6 +21,7 @@ on:
       - "!engine/diagnostics/**"
       - "!engine/recording/**"
       - "!engine/native/input/**"
+      - "!engine/native/desktop/**"
       - "!engine/native/macos/desktop/**"
       - "!engine/**/*.md"
   workflow_dispatch:

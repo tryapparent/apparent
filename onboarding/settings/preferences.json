@@ -23,7 +23,7 @@
     "kind": "boolean",
     "default": false,
     "apply": "live",
-    "platforms": ["macos"],
+    "platforms": ["macos", "linux"],
     "legacy": { "path": "experiments.desktopFrog", "lenient": true }
   },
   {
@@ -32,6 +32,6 @@
     "kind": "boolean",
     "default": false,
     "apply": "live",
-    "platforms": ["macos"]
+    "platforms": ["macos", "linux"]
   }
 ]

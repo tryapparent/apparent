@@ -48,6 +48,7 @@ on:
       - "engine/diagnostics/**"
       - "engine/recording/**"
       - "engine/native/input/**"
+      - "engine/native/desktop/**"
       - "engine/native/macos/desktop/**"
       - "capture/**"
       - "record/**"
@@ -119,6 +120,7 @@ on:
       - "engine/diagnostics/**"
       - "engine/recording/**"
       - "engine/native/input/**"
+      - "engine/native/desktop/**"
       - "engine/native/macos/desktop/**"
       - "capture/**"
       - "record/**"
@@ -213,7 +215,8 @@ jobs:
     needs: [select, reuse, record-media]
     if: >-
       !cancelled() && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') &&
-      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false))
+      (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+        (github.event_name == 'workflow_dispatch' && needs.select.outputs.frogRenderer == 'true'))
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.linux != 'true'
     uses: ./.github/workflows/verification-platform.yml
@@ -258,6 +261,7 @@ jobs:
     if: >-
       !cancelled() && needs.contracts.result == 'success' && (needs['record-media'].result == 'success' || needs['record-media'].result == 'skipped') && (needs.portable.result == 'success' || needs.portable.result == 'skipped') &&
       github.event_name == 'workflow_dispatch'
+      && (needs.select.result != 'success' || needs.select.outputs.frogRenderer != 'true')
       && (needs.select.result != 'success' || needs.select.outputs.macos != 'false' || needs.select.outputs.mac_rust == 'false')
       && (needs.select.result != 'success' || needs.select.outputs.platform != 'false')
       && needs.reuse.outputs.macos != 'true'
@@ -276,6 +280,7 @@ jobs:
       macos: ${{ steps.paths.outputs.macos }}
       mac_rust: ${{ steps.paths.outputs.mac_rust }}
       fixtureMac: ${{ steps.paths.outputs.fixtureMac }}
+      frogRenderer: ${{ steps.paths.outputs.frogRenderer }}
       public: ${{ steps.paths.outputs.public }}
       updater: ${{ steps.paths.outputs.updater }}
       platform: ${{ steps.paths.outputs.platform }}
@@ -405,7 +410,7 @@ jobs:
     needs: select
     if: '!cancelled()'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && 20 || 10 }}
     env:
       CHECK_ENGINEERING: ${{ needs.select.result != 'success' || needs.select.outputs.contract_engineering != 'false' }}
       CHECK_RELEASE: ${{ needs.select.result != 'success' || needs.select.outputs.contract_release != 'false' }}

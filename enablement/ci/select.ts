@@ -13,6 +13,8 @@ import {changes, matchesRegularBlob, workflowControlPaths} from './inputs.ts';
 
 import {routingProblems, onboardingInput, onboardingPureInputs, onboardingWisprInputs, retiredOnboardingInputs, routeDecision, documentationOnlyPath, linuxDrivers, suitePlan, unownedPaths} from './routing/consumers.ts';
 export {documentationOnlyPath} from './routing/consumers.ts';
+import {frogRendererRange} from '../../shared/enablement/ci/desktop/frog-renderer.ts';
+import {macPlatformDecision, portableSettings} from '../../shared/enablement/ci/desktop/platform.ts';
 
 export function needsPlatform(paths: string[] | null): boolean {
   const plan = suitePlan(paths);
@@ -24,11 +26,6 @@ export function select(paths: string[] | null): {public: boolean; updater: boole
   return {public: publicSelected, updater};
 }
 
-const portableSettings = new Set([
-  'storage.tsx', 'retention.tsx', 'connect-settings.tsx',
-  'error-reporting.tsx', 'reference.tsx',
-].map(name => 'capture/desktop/ui/frontend/src/' + name));
-
 export const presentationInputs = new Set([
   ...portableSettings,
   'capture/desktop/ui/frontend/src/style.css',
@@ -39,26 +36,8 @@ export function requiresMacRust(paths: string[] | null, unsupported: string[] | 
     paths.filter(path => {const plan = suitePlan([path]); return plan.root || plan.engine || plan.client;}).some(path => !presentationInputs.has(path));
 }
 
-const portal = 'capture/desktop/linux/capture/portal.rs';
-const linuxAdapters = new Set(['capture/desktop/linux/integration/appearance.rs']);
-const linuxDoc = 'capture/desktop/docs/linux/linux.md';
-
 export function macDecision(paths: string[] | null, nonModifications: string[] | null = []) {
-  if (paths === null || nonModifications === null) return {macos: true, reasons: ['mac:unknown-history']};
-  if (!paths.length) return {macos: true, reasons: ['mac:empty-delta']};
-  const reasons = paths.map(path => {
-    if (nonModifications.includes(path)) return 'mac:unsupported-change:' + path;
-    if (documentationOnlyPath(path)) return 'docs:reviewed-prose:' + path;
-    if (!needsPlatform([path])) return 'owner:portable:' + path;
-    if (linuxAdapters.has(path)) return 'linux:reviewed-adapter:' + path;
-    if (linuxDrivers.has(path)) return 'linux:reviewed-test-driver:' + path;
-    if (portableSettings.has(path)) return 'linux:reviewed-settings:' + path;
-    // Audited cfg(linux) module and guide; no Mac build/package consumer.
-    if (path === portal || path === linuxDoc) return 'linux:reviewed-portal-input:' + path;
-    return 'mac:unproven-input:' + path;
-  });
-  for (const path of nonModifications) if (!paths.includes(path)) reasons.push('mac:unsupported-change:' + path);
-  return {macos: reasons.some(reason => reason.startsWith('mac:')), reasons};
+  return macPlatformDecision(paths, nonModifications, {documentationOnlyPath, needsPlatform, linuxDrivers});
 }
 
 export function requiresMac(paths: string[] | null, nonModifications: string[] | null = []): boolean {
@@ -170,11 +149,18 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
   const {plan} = routing;
   const mac = macDecision(effective?.filter(path => !qualifiedTooling.includes(path)) ?? null, delta?.filter(change => unsupported(change) && !qualifiedTooling.includes(change.path) && needsPlatform([change.path])).map(change => change.path) ?? null);
   if (effective?.length && effective.every(path => qualifiedTooling.includes(path))) {mac.macos = false; mac.reasons = [];}
+  const frogRenderer = frogRendererRange(effective, delta, path => [
+    git(['show', base + ':' + path], cwd), git(['show', head + ':' + path], cwd),
+  ]);
+  if (frogRenderer) {
+    mac.macos = false;
+    mac.reasons = ['linux:reviewed-desktop-frog-renderer'];
+  }
   const fixtureMac = fixtureMacRequired(qualifiedFixtures) || !!effective?.some(path =>
     ['enablement/local-tests/run.ts', 'enablement/ci/select.ts', '.github/workflows/checks.yml'].includes(path) ||
     path.startsWith('enablement/ci/routing/fixture-portability/') || path.startsWith('enablement/ci/install-contracts/'));
   const platform = plan.root || plan.engine || plan.desktop || plan.client;
-  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, fixtureMac, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers, platform, plan,
+  return {...routing, paths: paths ?? [], historyKnown: paths !== null, inputProofKnown: paths !== null && !unsafe, workflowControls, ...mac, frogRenderer, fixtureMac, qualifiedFixtures, qualifiedCiTests, qualifiedStorageControllers, platform, plan,
     hermes: plan.hermes, portable: plan.browser || plan.service || plan.tools || plan.foreground,
     reasons: [...routing.reasons,
       ...(!admissionKnown ? ['fallback:admission-product-consumer'] : []),
@@ -188,6 +174,7 @@ export function selectRange(base: string, head: string, cwd = process.cwd(), con
 export function requiresMacRustRange(base: string, head: string): boolean {
   const decision = selectRange(base, head);
   if (!decision.inputProofKnown) return true;
+  if (decision.frogRenderer) return false;
   let delta: Change[] | null = null;
   try {
     delta = changes(resolveCommit(base), resolveCommit(head));
@@ -207,7 +194,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const {reasons, plan, ...result} = decision;
   const mac_rust = requiresMacRustRange(process.env.BASE_SHA ?? '', process.env.GITHUB_SHA ?? '');
-  const macEnabled = result.macos || !mac_rust;
+  const macEnabled = !result.frogRenderer && (result.macos || !mac_rust);
   const macPlan = {...plan, root: plan.root && mac_rust && macEnabled, engine: plan.engine && mac_rust && macEnabled,
     desktop: plan.desktop && macEnabled, client: plan.client && macEnabled};
   const classified = process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch' && result.inputProofKnown && !unownedPaths(result.paths).length;

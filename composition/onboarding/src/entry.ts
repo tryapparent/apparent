@@ -9,7 +9,9 @@ import {
 import { install } from "./reporting.ts";
 import { reportException } from "./exception.ts";
 import { start } from "./host.ts";
-import { startDesktopFrog } from "../frog/host.ts";
+import frogPolicy from "@apparent/onboarding/desktop-frog";
+import { startDesktopFrog } from "../../../onboarding/electron/desktop-frog/host.ts";
+import { frogPlatform } from "../frog/platform.ts";
 
 const index = process.argv.indexOf("--assets-root");
 if (
@@ -21,7 +23,7 @@ if (
 const home = homedir();
 install(app, (kind) => reportException(home, kind));
 if (process.argv.includes("--desktop-frog"))
-  startDesktopFrog(process.argv[index + 1]);
+  startDesktopFrog(process.argv[index + 1], frogPlatform, frogPolicy);
 else
   start({
     assets: process.argv[index + 1],

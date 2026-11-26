@@ -114,7 +114,8 @@ button:focus-visible {
 .desktop-frog-tip {
   position: absolute;
   top: -21px;
-  right: 6px;
+  right: -4px;
+  max-width: 140px;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -137,6 +138,8 @@ button:focus-visible {
 .desktop-frog-tip kbd {
   font: inherit;
   padding-inline: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   border: 1px solid currentColor;
   border-radius: 3px;
   background: light-dark(#f5f0e8, #201c24);

@@ -1,5 +1,5 @@
 mod frog_wardrobe {
-    include!("../../native/macos/desktop/frog_wardrobe.rs");
+    include!("../../native/desktop/frog_wardrobe.rs");
 }
 
 struct ActiveRecording {

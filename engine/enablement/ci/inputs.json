@@ -6,6 +6,7 @@
     "engine/diagnostics/",
     "engine/recording/",
     "engine/native/input/",
+    "engine/native/desktop/",
     "engine/native/macos/desktop/"
   ]
 }

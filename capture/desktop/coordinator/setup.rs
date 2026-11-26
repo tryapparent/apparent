@@ -759,7 +759,6 @@ impl ApparentCoordinator {
                 self.sync_onboarding_editor(false);
             }
             Effect::Close | Effect::Settings => {
-                #[cfg(target_os = "macos")]
                 if let Some(takeoff) = self.onboarding.as_mut().and_then(|session| session.take_frog_takeoff()) {
                     workflow::electron::land_desktop_frog(cx, takeoff);
                 }

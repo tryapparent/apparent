@@ -20,6 +20,7 @@ export function desktopFrogTable(directory: string) {
       naming: flags.flatMap(active => flags.flatMap(named => flags.map(revealed => policy.naming_stage(active, named, revealed)))),
       name: [0, 1, 23, 24, 25].flatMap(length => flags.map(control => policy.accept_name(control, length))),
       visible: flags.flatMap(adopted => flags.map(unavailable => policy.desktop_visible(adopted, unavailable))),
+      clamp: [0, 32, 128].flatMap(wanted => [10, 50, 100].map(extent => policy.clamp_offset(wanted, extent, 20))),
       pauseMs: policy.desktop_pause_ms()
     }));
   `,
@@ -41,6 +42,6 @@ if (import.meta.main) {
       visible.every((value: boolean) => typeof value === "boolean"),
   );
   process.stdout.write(
-    `pub(super) const NAMING: [u8; 8] = [${naming.join(", ")}];\n#[cfg(target_os = "macos")]\npub(in crate::capture::desktop) const VISIBLE: [bool; 4] = [${visible.join(", ")}];\n`,
+    `pub(super) const NAMING: [u8; 8] = [${naming.join(", ")}];\npub(in crate::capture::desktop) const VISIBLE: [bool; 4] = [${visible.join(", ")}];\n`,
   );
 }
