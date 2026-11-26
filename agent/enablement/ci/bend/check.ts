@@ -7,6 +7,7 @@ import {
   proofOptions,
 } from "../../../../shared/enablement/bend/build.ts";
 import { assembleHandoffLine, assembleZoom, root } from "./build.ts";
+import { traceAdmission } from "./trace.ts";
 import { assembleVideo } from "./video.ts";
 
 await bendScratch(async (directory) => {
@@ -16,6 +17,17 @@ await bendScratch(async (directory) => {
     directory,
     proofOptions(process.argv.slice(2)),
   );
+
+  assert.deepEqual(traceAdmission(directory), [
+    "Disabled",
+    "Begin",
+    "Disabled",
+    "Closed",
+    "Disabled",
+    "Full",
+    "Disabled",
+    "Closed",
+  ]);
 
   assembleVideo(directory);
   const videoCheck = execFileSync(

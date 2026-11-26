@@ -16,6 +16,7 @@ import {
   type FrogNudgePreferenceProps,
 } from "../../../onboarding/renderer/frog-nudge/preview";
 import { DesktopFrogWithWardrobe } from "./labs/frog-wardrobe";
+import { VideoTracing } from "../../../agent/settings/video-tracing";
 import { SpeakingStyle } from "../../../agent/settings/speaking-style";
 import { OpenRouterExperiment } from "../../../record/settings/renderer/openrouter-experiment";
 import { About, type AboutBridge } from "./about";
@@ -92,6 +93,7 @@ declare module "react" {
           pushToTalkExperiment?: ComponentType<PushToTalkProps>;
           openRouterExperiment?: typeof OpenRouterExperiment;
           speakingStyleExperiment?: typeof SpeakingStyle;
+          videoTracingExperiment?: typeof VideoTracing;
           desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
           frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
           agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
@@ -260,6 +262,7 @@ function Settings() {
               current === "Labs"
                 ? {
                     speakingStyleExperiment: SpeakingStyle,
+                    videoTracingExperiment: VideoTracing,
                     pushToTalkExperiment: PushToTalk,
                     openRouterExperiment: OpenRouterExperiment,
                     agentContextExperiment: AgentContextPreference,

@@ -1,6 +1,25 @@
 {
   "scenarios": [
     {
+      "id": "cli-workflow-trace",
+      "description": "Verify the installed CLI trace command and content-free local report against a synthetic video.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Enable CLI workflow tracing in Settings → Labs, run apparent trace start, pass --trace to video inspect, then run apparent trace report.",
+      "prerequisites": [
+        "Apparent CLI, Node 22, FFmpeg and a private scratch directory."
+      ],
+      "runner": {
+        "path": "agent/trace/verify.ts",
+        "instructions": "agent/trace/README.md#verification"
+      },
+      "expectedEvidence": [
+        "A successful inspection and controlled failure with distinct outcomes, no paths in the report, and an enforced default-off preference."
+      ],
+      "limits": [
+        "The runner writes an isolated CLI preference. The Settings toggle uses the shared Electron Labs roundtrip. The runner never opens a recorder."
+      ]
+    },
+    {
       "id": "local-inspect-performance",
       "description": "Measure a real apparent inspect on synthetic bundles with independent text and image verification.",
       "platforms": ["linux"],

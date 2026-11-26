@@ -2,7 +2,8 @@
   "name": "@apparent/agent-settings",
   "private": true,
   "exports": {
-    "./speaking-style": "./speaking-style.tsx"
+    "./speaking-style": "./speaking-style.tsx",
+    "./video-tracing": "./video-tracing.tsx"
   },
   "dependencies": {
     "@apparent/ui": "file:../../shared/ui",

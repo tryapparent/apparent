@@ -23,6 +23,7 @@ export type PreferenceValues = {
   "labs.recordingPerformance": boolean;
   "labs.agentContext": boolean;
   "labs.speakingStyle": boolean;
+  "labs.videoTracing": boolean;
   "labs.onboardingWisprFlow": boolean;
   "labs.dictationFrog": boolean;
   "labs.desktopFrog": boolean;

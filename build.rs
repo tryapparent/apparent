@@ -42,6 +42,8 @@ fn main() {
     compile_embedded_policy("agent/context/build.ts", &[
         "agent/context", "agent/enablement/ci/bend",
     ], "agent-handoff-line.mjs");
+    println!("cargo:rerun-if-changed=agent/enablement/ci/bend/modules.json");
+    emit_native_policy("agent", "trace", "trace/admission.bend");
     compile_video_worker();
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();

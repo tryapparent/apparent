@@ -63,6 +63,19 @@ try {
   await expect(
     page.getByRole("switch", { name: /^(Recording pill doodles|Soft Bloom)$/ }),
   ).toHaveCount(0);
+  const tracing = page.getByRole("switch", { name: "CLI workflow tracing" });
+  await expect(tracing).toBeEnabled();
+  await expect(tracing).not.toBeChecked();
+  for (const on of [true, false]) {
+    await tracing.focus();
+    await page.keyboard.press("Space");
+    await expect(tracing).toHaveAttribute("aria-checked", String(on));
+    await expect(tracing).toBeFocused();
+    const saved = JSON.parse(await fs.readFile(process.argv[2], "utf8"));
+    assert.equal(saved.labs.videoTracing, on);
+    assert.equal(saved.experiments.other, true);
+    assert.equal(saved.secret, "private");
+  }
   const agentContext = page.getByRole("switch", {
     name: "Recording context for agents",
   });

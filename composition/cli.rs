@@ -1,6 +1,10 @@
 #[path = "../engine/native/movie_import/mod.rs"]
 mod movie_import;
 
+#[path = "../engine/diagnostics/workflow_trace_cli.rs"]
+mod trace_cli;
+pub(super) use trace_cli::run_cli;
+
 use std::os::unix::fs::DirBuilderExt;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -52,18 +56,11 @@ use crate::shared::model::{CaptureMode, InteractionEvent, Shape, parse_clock_ms}
     about = "Shortcut-triggered screen, voice, and drawing capture for agents"
 )]
 pub(super) struct Cli {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[arg(long, global = true, value_name = "TRACE_ID", help = "Record a supported command in a private workflow trace")]
+    trace: Option<String>,
     #[command(subcommand)]
     command: Option<Command>,
-}
-
-impl Cli {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    pub(super) fn reads_capture(&self) -> bool {
-        matches!(
-            self.command,
-            Some(Command::Inspect(_) | Command::Fetch(_) | Command::Frames { .. } | Command::Zoom { .. })
-        )
-    }
 }
 
 /// `apparent hex status`: connection, models and what the next recording would use.
@@ -182,6 +179,12 @@ enum LabCommand {
 
 #[derive(Subcommand)]
 enum Command {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[command(about = "Record private timings and outcomes for local video workflows")]
+    Trace {
+        #[command(subcommand)]
+        command: trace_cli::TraceCommand,
+    },
     Settings(super::preferences::Settings),
     /// Connect the recording destination picker to an unmodified T3 Code server.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -792,21 +795,10 @@ fn setup_hermes(check: bool, json: bool, profile: Option<PathBuf>, package: Opti
     std::process::exit(status.code().unwrap_or(1));
 }
 
-pub(super) fn run_cli(cli: Cli) -> Result<()> {
-    let command = match cli.command {
-        Some(command) => command,
-        None if cfg!(any(target_os = "macos", target_os = "linux"))
-            && std::io::IsTerminal::is_terminal(&std::io::stdin()) =>
-        {
-            <Cli as clap::CommandFactory>::command().print_help()?;
-            return Ok(());
-        }
-        None => Command::App {
-            record: false,
-            iphone: false,
-        },
-    };
+fn dispatch(command: Command) -> Result<()> {
     match command {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        Command::Trace { command } => trace_cli::manage(command),
         Command::Settings(args) => super::preferences::run(args),
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         Command::T3 { command } => t3_command(command),
