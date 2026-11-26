@@ -9,6 +9,8 @@ On the target macOS or Linux host run `node capture/agent/scripts/provision-narr
 
 When approved private listening is supported, listen to the full final narration in sync with the video. Check intelligibility, pronunciation, pacing, clipping and caption alignment.
 
+For narration-only edits and A/B review cuts, use one synchronized narration track. If the source carries the same narration on both stereo channels, convert to mono before delaying, or apply the same delay to every channel (FFmpeg `adelay=700:all=1`, for example). Verify speech onset by channel after any delay and check audio against the visual cue after each splice. Matching stream durations alone can miss a delayed channel.
+
 Check stream timing on the final narrated MP4 (`movie`), including direct FFmpeg renders:
 
 ```sh

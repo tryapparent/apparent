@@ -62,6 +62,8 @@ Open on one recognizable situation. Use the full screen and one mark to show wha
 
 When a red circle, underline, or box locates something on screen, keep the whole source screen visible. Leave the mark on the same target across a cut when that target remains visible, so the viewer can follow it without searching again. Mark the evidence where it appears in the original UI. Check the cut at the intended player size for readability, and keep captions clear of the marked detail.
 
+When narration walks through a chart, keep the whole chart visible and move one highlight to the row or mark being discussed. Include its label and value in the highlight. Time the change to the spoken phrase so the viewer can find it as they hear it. Verify the transitions against the final audio and leave enough contrast for the surrounding data.
+
 During review, show one timestamp or short range and ask one focused question about what the viewer noticed or understood. Use that answer to choose the next review moment. If work stops until the viewer authorizes a proposed step, ask for that decision explicitly in the ending.
 
 Point at the claim, not every click. For a visual comparison, hold the same full-screen framing before and after. Use a sparse callout when the viewer might otherwise miss the changed region. Measure positions from the settled UI rather than guessing coordinates; recheck marks after scrolling or layout changes. Keep captions in empty space, and never cover the result they describe. Do not add arrows, measurements or captions merely to make the video look produced.
