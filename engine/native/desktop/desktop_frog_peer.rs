@@ -1,5 +1,8 @@
 use crate::capture::desktop::frog_wardrobe::Achievement;
 
+#[cfg(target_os = "linux")]
+static FROG_SANDBOX_FAILURE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
 pub(crate) struct DesktopFrogHost {
     child: Option<crate::capture::ui_process::UiChild>,
     input: pipe::Input,
@@ -15,6 +18,8 @@ impl DesktopFrogHost {
             process::Stdio,
             sync::mpsc,
         };
+        #[cfg(target_os = "linux")]
+        anyhow::ensure!(FROG_SANDBOX_FAILURE.get().is_none(), "frog sandbox unavailable");
         let (assets, runtime) = super::presentation::onboarding_assets()
             .map_err(|error| anyhow::anyhow!("{}", error.stage()))?;
         let mut command = super::presentation::onboarding_command(runtime.clone(), assets);
@@ -23,12 +28,25 @@ impl DesktopFrogHost {
             command.arg("--ozone-platform=x11");
             crate::capture::desktop::workflow::electron::configure_sandbox(&mut command, &runtime)?;
         }
-        let mut child = command
+        command
             .arg("--desktop-frog")
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stdout(Stdio::piped());
+        #[cfg(target_os = "linux")]
+        command.stderr(Stdio::piped());
+        #[cfg(not(target_os = "linux"))]
+        command.stderr(Stdio::null());
+        let mut child = command.spawn()?;
+        #[cfg(target_os = "linux")]
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || observe_frog_sandbox(stderr, || {
+                if FROG_SANDBOX_FAILURE.set(()).is_ok() {
+                    crate::capture::engine::runtime::apparent_log(
+                        "Desktop frog: Linux Electron sandbox unavailable. Repair the sandbox or installation, then restart Apparent."
+                    );
+                }
+            }));
+        }
         let stdin = child
             .stdin
             .take()
@@ -113,6 +131,75 @@ impl DesktopFrogHost {
 
     pub(crate) fn settle_record_request(&mut self) -> bool {
         self.send(serde_json::json!({"type": "record-settled"}))
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn observe_frog_sandbox(mut stderr: impl std::io::Read, report: impl FnOnce()) {
+    const FATAL: &[u8] = b"] No usable sandbox!";
+    const OVERLAP: usize = FATAL.len() - 1;
+    let mut bytes = [0; 4096 + OVERLAP];
+    let mut retained = 0;
+    loop {
+        let read = match stderr.read(&mut bytes[retained..retained + 4096]) {
+            Ok(0) => return,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) => return,
+        };
+        let end = retained + read;
+        if bytes[..end].windows(FATAL.len()).any(|window| window == FATAL) {
+            report();
+            let _ = std::io::copy(&mut stderr, &mut std::io::sink());
+            return;
+        }
+        retained = end.min(OVERLAP);
+        bytes.copy_within(end - retained..end, 0);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod frog_sandbox_tests {
+    use super::observe_frog_sandbox;
+
+    #[test]
+    fn reports_the_sandbox_failure_once_and_drains_stderr() {
+        let mut stderr = vec![b'x'; 4095];
+        stderr.extend_from_slice(b"] No usable sandbox! /private/synthetic\n");
+        stderr.extend_from_slice(b"] No usable sandbox! unrelated output\n");
+        let mut stderr = stderr.as_slice();
+        let mut reported = 0;
+        observe_frog_sandbox(&mut stderr, || reported += 1);
+        assert_eq!(reported, 1);
+        assert!(stderr.is_empty());
+    }
+
+    #[test]
+    fn unrelated_stderr_keeps_the_diagnostic_quiet() {
+        observe_frog_sandbox(&b"Renderer closed unexpectedly\n"[..], || {
+            panic!("unrelated renderer output was classified as a sandbox failure");
+        });
+    }
+
+    #[test]
+    fn recognizes_the_fatal_diagnostic_from_a_signaled_child() {
+        use std::{os::unix::process::ExitStatusExt, process::{Command, Stdio}};
+        let mut child = Command::new("sh")
+            .args(["-c", "ulimit -c 0; printf '%s\\n' '[FATAL:zygote] No usable sandbox! /private/synthetic' >&2; kill -TRAP $$"])
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut observed = false;
+        observe_frog_sandbox(child.stderr.take().unwrap(), || observed = true);
+        assert!(child.wait().unwrap().signal().is_some());
+        assert!(observed);
+    }
+
+    #[test]
+    fn confirmed_failure_refuses_another_launch() {
+        let _ = super::FROG_SANDBOX_FAILURE.set(());
+        let failure = super::DesktopFrogHost::open("Synthetic", None).err().unwrap();
+        assert_eq!(failure.to_string(), "frog sandbox unavailable");
     }
 }
 
