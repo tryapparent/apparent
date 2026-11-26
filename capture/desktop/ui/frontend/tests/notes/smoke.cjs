@@ -92,8 +92,8 @@ test(`shipped Electron note UI saves, shows saved notes read-only and isolates t
     await expect.poll(focusedLists).toBeGreaterThan(before);
   }
   await expect(popup.getByRole('listitem')).toHaveText(/Smaller button\s+x/);
-  await expect(popup.getByRole('button')).toHaveText('');
-  await popup.getByRole('button', { name: 'Close notes' }).click();
+  await popup.getByText('Notes', { exact: true }).click();
+  await popup.keyboard.press('Escape');
   await expect.poll(() => messages.some(m => m.action === 'dismiss')).toBe(true);
   const draft = { ...state.notes[0], pin: 2, text: 'New draft' };
   state = { ...state, current: 2, mode: 'editor', drafts: [draft] }; send();

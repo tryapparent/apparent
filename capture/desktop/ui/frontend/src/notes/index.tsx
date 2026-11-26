@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
 import { X } from 'lucide-react';
+import { bindNotesEscape } from '../../../../../../record/notes/escape';
 import './notes.css';
 
 type Note = { pin: number; t: number; x: number; y: number; text: string };
@@ -38,10 +39,8 @@ export function CaptureNotes() {
   }
   const dismiss = () => { void command({ action: 'dismiss' }); };
   if (!state) return <div className="capture-notes" role="status">Connecting notes…</div>;
-  return <main className="capture-notes" onClick={e => {
+  return <main className="capture-notes" ref={element => bindNotesEscape(element, state.mode, dismiss)} onClick={e => {
     if (e.target === e.currentTarget) void dismiss();
-  }} onKeyDown={e => {
-    if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }
   }}>
     {state.mode === 'list' ? <section className="note-list" role="dialog" aria-label="Notes">
       <header><strong>Notes</strong><Button variant="ghost" size="icon" aria-label="Close notes" onClick={dismiss}><X aria-hidden="true" /></Button></header>
