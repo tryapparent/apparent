@@ -15,6 +15,7 @@ import { repairTable } from "./permission-table.ts";
 import { admissionSource, buildAdmission } from "./build.ts";
 import { checkCaptureAdmission } from "./capture-request/check.ts";
 import { assemblePill } from "./pill.ts";
+import { checkDropdown } from "../../../notes/check-dropdown.ts";
 
 import { checkGesture, gestureTable, gestureTablePath } from "./note-gesture.ts";
 
@@ -39,6 +40,7 @@ await bendScratch(async (scratch) => {
   );
   const proofOutput = join(scratch, "proof");
   await buildBend(root, "record", proofOutput, options);
+  await checkDropdown(proofOutput);
   checkActionTables(root, proofOutput);
   assert.deepEqual(movieRouteTable(proofOutput), [0, 1, 1, 1]);
   copyFileSync(

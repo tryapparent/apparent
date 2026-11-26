@@ -80,7 +80,7 @@
     },
     {
       "id": "read-only-recording-notes",
-      "description": "Verify that the recording pill opens a read-only list of attached notes.",
+      "description": "Verify that the recording pill opens its read-only Notes dropdown.",
       "platforms": ["linux", "macos"],
       "userEntryPoint": "During a recording, attach a typed note, open the count on the recording pill, and close the Notes list before finishing.",
       "prerequisites": [
@@ -92,7 +92,7 @@
         "instructions": "From capture/desktop/ui/frontend, run npm run test:electron:targeted -- tests/notes/smoke.cjs. Prefix with xvfb-run -a on Linux. In the installed app, attach a multiline note and open the count from the recording pill."
       },
       "expectedEvidence": [
-        "The pill count opens a list displaying the attached text with its line breaks. Close and Escape dismiss it. Long lists scroll by keyboard.",
+        "The pill count opens a compact panel centered below the recording controls. It shows the attached text with its line breaks. The X and Escape dismiss it. Long lists scroll by keyboard.",
         "The Electron bridge rejects retired edit and delete requests. Finish produces a bundle containing the attached text."
       ],
       "limits": [

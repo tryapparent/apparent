@@ -335,6 +335,7 @@ export function PillSurface({
               className="pill-extension pill-notes"
               variant="ghost"
               aria-label={`${view.noteCount} saved ${view.noteCount === 1 ? "note" : "notes"}. Open notes`}
+              aria-haspopup="dialog"
               disabled={
                 pending ||
                 !view.actions.some((a) => a.id === "notes" && a.enabled)

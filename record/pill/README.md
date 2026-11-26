@@ -89,6 +89,9 @@ On Hyprland the mapped picker keeps its native height when content collapses.
 The host updates its visible and clickable shape after the current layout paints.
 The Hyprland recording window fits the visible row when there are no saved
 notes. The first saved note adds the extension without moving the controls.
+The note count opens a compact read-only panel below the pill. Record's
+dropdown policy keeps it inside the display work area. Linux places the
+Electron panel through the existing native window adapter.
 
 If the count clips in an isolated Hyprland run, preserve the settled frame
 before manually resizing the pill. Compare the exact pill's XWayland width,
