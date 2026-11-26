@@ -135,19 +135,9 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
         worker.is_file()
             && cache.join("model.onnx").is_file()
             && cache.join("voices/bm_fable.bin").is_file(),
-        "[NARRATION_SETUP] Local narrator is not provisioned. Run python3 capture/agent/scripts/provision-narrator.py from the Apparent source checkout. Export never downloads models or falls back to recorded audio."
+        "[NARRATION_SETUP] Local narrator is not provisioned. Run capture/agent/scripts/provision-narrator.py from the Apparent source checkout."
     );
-    // An exclusive private directory outside the bundle; all cue files disappear on failure too.
-    let directory =
-        std::env::temp_dir().join(format!("apparent-narration-{}", crate::shared::ids::make_bundle_id()));
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        fs::DirBuilder::new().mode(0o700).create(&directory)?;
-    }
-    let rendered = Rendered { directory };
-    let mut pcm = vec![0i16; (duration * u64::from(RATE)).div_ceil(1000) as usize];
-    for (index, cue) in script.cues.iter().enumerate() {
+    render_cues(script, duration, |rendered, index, cue| {
         let text = rendered.directory.join("cue.txt");
         let wav = rendered.directory.join("cue.wav");
         fs::write(&text, &cue.text)?;
@@ -200,6 +190,42 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
         let samples = reader
             .samples::<i16>()
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        fs::remove_file(wav)?;
+        Ok(samples)
+    }).map(|rendered| {
+        eprintln!("Narration: local Kokoro bm_fable, {} cues from {}. Source bundle unchanged.", script.cues.len(), path.display());
+        rendered
+    })
+}
+
+pub(super) fn render_hosted(path: &Path, duration: u64, model: &str, voice: &str) -> Result<Rendered> {
+    ensure!(
+        crate::shared::handoff::experiment("exportNarration"),
+        "[NARRATION_DISABLED] Export narration is disabled by experiments.exportNarration=false"
+    );
+    let script = read_script(path, duration)?;
+    render_cues(&script, duration, |_, index, cue| {
+        crate::capture::engine::bundle::bundle_processing::openrouter::speech(model, voice, &cue.text)
+            .with_context(|| format!("OpenRouter narration failed on cue {}", index + 1))
+    })
+}
+
+fn render_cues(
+    script: &Script,
+    duration: u64,
+    mut synthesize: impl FnMut(&Rendered, usize, &Cue) -> Result<Vec<i16>>,
+) -> Result<Rendered> {
+    let directory =
+        std::env::temp_dir().join(format!("apparent-narration-{}", crate::shared::ids::make_bundle_id()));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        fs::DirBuilder::new().mode(0o700).create(&directory)?;
+    }
+    let rendered = Rendered { directory };
+    let mut pcm = vec![0i16; (duration * u64::from(RATE)).div_ceil(1000) as usize];
+    for (index, cue) in script.cues.iter().enumerate() {
+        let samples = synthesize(&rendered, index, cue)?;
         ensure!(
             !samples.is_empty(),
             "[NARRATION_SYNTHESIS] Cue {} returned an empty WAV",
@@ -215,7 +241,6 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
             cue.end_ms - cue.start_ms
         );
         pcm[start..start + samples.len()].copy_from_slice(&samples);
-        fs::remove_file(wav)?;
     }
     let mut writer = hound::WavWriter::create(
         rendered.path(),
@@ -230,11 +255,6 @@ fn synthesize(script: &Script, path: &Path, duration: u64, cache: &Path) -> Resu
         writer.write_sample(sample)?;
     }
     writer.finalize()?;
-    eprintln!(
-        "Narration: local Kokoro 82M int8, bm_fable, speed 1, CPU/3 threads; 9.6kHz notch; script {} ({} cues). Recorded audio replaced only in export; source bundle unchanged.",
-        path.display(),
-        script.cues.len()
-    );
     Ok(rendered)
 }
 
@@ -316,7 +336,6 @@ mod tests {
             writer.write_sample(1000i16).unwrap();
         }
         writer.finalize().unwrap();
-        // Exercise orchestration deterministically; real Kokoro/mux proof is separate.
         let worker = root.join("apparent-narrator");
         fs::write(&worker, "#!/bin/sh\ncp \"$1/fixture.wav\" \"$3\"\n").unwrap();
         fs::set_permissions(&worker, fs::Permissions::from_mode(0o700)).unwrap();
@@ -379,5 +398,29 @@ mod tests {
         ] {
             assert!(parse(bad.as_bytes(), 1000).is_err(), "{bad}");
         }
+    }
+}
+
+
+pub(super) fn render_policy(
+    policy: &super::AudioPolicy,
+    out: &Path,
+    duration: u64,
+) -> Result<Option<Rendered>> {
+    let script = match policy {
+        super::AudioPolicy::Narration(script) | super::AudioPolicy::HostedNarration { script, .. } => script,
+        _ => return Ok(None),
+    };
+    if out.exists() {
+        ensure!(
+            fs::canonicalize(out)? != fs::canonicalize(script)
+                .with_context(|| format!("[NARRATION_SCRIPT] Read {}", script.display()))?,
+            "Export output cannot replace narration script"
+        );
+    }
+    match policy {
+        super::AudioPolicy::HostedNarration { model, voice, .. } =>
+            render_hosted(script, duration, model, voice).map(Some),
+        _ => render(script, duration).map(Some),
     }
 }

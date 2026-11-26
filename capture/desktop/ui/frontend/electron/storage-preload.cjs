@@ -4,12 +4,13 @@ contextBridge.exposeInMainWorld('apparentSettingsRoute', callback => {
   let live = true, received = false;
   const listener = (_event, pane) => { received = true; if (live) callback(pane); };
   ipcRenderer.on('apparent:settings-route', listener);
-  // A parent can select a pane before this document's preload is attached.
   void ipcRenderer.invoke('apparent:settings-route').then(pane => {
     if (live && !received && ['general', 'agents', 'about', 'labs', 'recording', 'handoff', 'permissions', 'storage'].includes(pane)) callback(pane);
   }).catch(() => {});
   return () => { live = false; ipcRenderer.removeListener('apparent:settings-route', listener); };
 });
+
+contextBridge.exposeInMainWorld('apparentOpenRouter', action => ipcRenderer.invoke('apparent:openrouter-preference', action));
 
 contextBridge.exposeInMainWorld('apparentLabs', Object.freeze({
   read: () => ipcRenderer.invoke('apparent:labs-preference'),

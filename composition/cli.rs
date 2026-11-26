@@ -325,6 +325,13 @@ enum Command {
         /// Path to `.apparent` bundle directory or `latest`.
         bundle: PathBuf,
     },
+    #[command(about = "Manage the shared OpenRouter API key for this Apparent profile")]
+    OpenrouterKey {
+        #[arg(long, conflicts_with = "remove", help = "Read the key from private stdin")]
+        stdin: bool,
+        #[arg(long, help = "Remove the saved key and disable the Desktop transcription experiment")]
+        remove: bool,
+    },
     #[command(about = "Import a local MP4 or MOV as an Apparent bundle")]
     Import {
         movie: PathBuf,
@@ -351,6 +358,8 @@ enum Command {
         #[arg(long, value_parser = parse_engine)]
         transcriber:
             Option<crate::capture::engine::runtime::audio::transcription::transcribe::Engine>,
+        #[arg(long, value_name = "MODEL", conflicts_with_all = ["transcriber", "bench"], help = "Send the bundle WAV to the selected OpenRouter model")]
+        openrouter_stt: Option<String>,
         /// Turn an experiment on for this run, as `"experiments"` in `config.json` would
         /// (e.g. `agentContext`). Repeatable.
         #[arg(long = "experiment", value_name = "NAME")]
@@ -479,6 +488,10 @@ enum Command {
         /// Replace recorded audio with local Kokoro bm_fable speech from a timed JSON script.
         #[arg(long, conflicts_with = "no_audio")]
         narration: Option<PathBuf>,
+        #[arg(long, value_name = "MODEL", requires_all = ["narration", "openrouter_voice"], help = "Send narration cues to the selected OpenRouter model")]
+        openrouter_tts: Option<String>,
+        #[arg(long, value_name = "VOICE", requires = "openrouter_tts", help = "Preset voice ID for the selected OpenRouter model")]
+        openrouter_voice: Option<String>,
         /// Deliberately omit all audio, even when a recorded track exists.
         #[arg(long)]
         no_audio: bool,
@@ -1091,12 +1104,15 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 anyhow::bail!("No speech model yet; try again once it has downloaded")
             }
         }
+        Command::OpenrouterKey { stdin, remove } =>
+            crate::capture::engine::bundle::bundle_processing::openrouter::key(stdin, remove),
         Command::Reprocess {
             bundle,
             out,
             bench,
             live_speed,
             transcriber,
+            openrouter_stt,
             experiments,
         } => {
             if let Some(engine) = transcriber {
@@ -1260,6 +1276,14 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             ensure!(!out.exists(), "{} already exists", out.display());
+            let saved_transcript = match openrouter_stt {
+                Some(model) => {
+                    ensure!(!movie_bundle, "OpenRouter reprocessing requires a desktop recording bundle");
+                    let audio = old.audio.as_ref().context("Bundle WAV is required for OpenRouter transcription")?;
+                    Some(crate::capture::engine::bundle::bundle_processing::openrouter::transcribe_file(&dir, audio, &model)?)
+                }
+                None => saved_transcript,
+            };
             std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&out)?;
             let copied = out.join(video.file_name().context("Bad video name")?);
             std::fs::copy(&video, &copied)?;
@@ -1527,6 +1551,8 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
             hevc,
             fps,
             narration,
+            openrouter_tts,
+            openrouter_voice,
             no_audio,
         } => {
             let (dir, loaded) = handoff::load_bundle(&bundle)?;
@@ -1541,9 +1567,10 @@ pub(super) fn run_cli(cli: Cli) -> Result<()> {
                 hevc,
                 fps,
                 background: false,
-                audio: match (narration, no_audio) {
-                    (Some(script), false) => export::AudioPolicy::Narration(script),
-                    (None, true) => export::AudioPolicy::Silent,
+                audio: match (narration, openrouter_tts.zip(openrouter_voice), no_audio) {
+                    (Some(script), Some((model, voice)), false) => export::AudioPolicy::HostedNarration { script, model, voice },
+                    (Some(script), None, false) => export::AudioPolicy::Narration(script),
+                    (None, _, true) => export::AudioPolicy::Silent,
                     _ => export::AudioPolicy::Recorded,
                 },
             };
@@ -1777,122 +1804,5 @@ fn copy_confirmation(dir: &std::path::Path) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn hermes_receiver_setup_preserves_explicit_activation_boundaries() {
-        let parsed = Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--enable", "--verify-runtime", "--hermes-executable", "/synthetic/hermes"]).unwrap();
-        assert!(matches!(parsed.command, Some(Command::Setup { command: SetupCommand::Hermes { receiver: true, enable: true, verify_runtime: true, .. } })));
-        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver"]).is_err());
-        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--enable"]).is_err());
-        assert!(Cli::try_parse_from(["apparent", "setup", "hermes", "--receiver", "--profile", "/synthetic/profile", "--check", "--verify-runtime"]).is_err());
-    }
-
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    #[test]
-    fn trusted_hermes_record_and_background_launch_are_separate_cli_contracts() {
-        assert!(matches!(
-            Cli::try_parse_from(["apparent", "hermes", "record", "0123456789abcdef0123456789abcdef/45000"]).unwrap().command,
-            Some(Command::Hermes { command: HermesCommand::Record { .. } })
-        ));
-        assert!(matches!(
-            Cli::try_parse_from(["apparent", "launch", "--background"]).unwrap().command,
-            Some(Command::Launch { background: true, url: None })
-        ));
-        assert!(Cli::try_parse_from(["apparent", "launch", "--background", "apparent://open"]).is_err());
-    }
-
-    #[test]
-    fn passive_screen_permission_command_is_distinct_from_capture_probe() {
-        assert!(matches!(
-            Cli::try_parse_from(["apparent", "screen-permission-status"]).unwrap().command,
-            Some(Command::ScreenPermissionStatus)
-        ));
-        assert!(Cli::try_parse_from(["apparent", "screen-permission-status", "--watch", "1"]).is_err());
-        let help = Cli::try_parse_from(["apparent", "--help"]).err().unwrap().to_string();
-        assert!(!help.contains("screen-permission-status"));
-    }
-
-    #[test]
-    fn copy_confirmation_does_not_imply_visuals_reached_the_agent() {
-        let confirmation = copy_confirmation(std::path::Path::new("/captures/example.apparent"));
-        assert!(confirmation.contains("contact-sheet.png"), "{confirmation}");
-        assert!(confirmation.contains("Paste"), "{confirmation}");
-        assert!(confirmation.contains("check the draft"), "{confirmation}");
-    }
-
-    #[test]
-    fn export_cli_requires_explicit_audio_choices_to_be_unambiguous() {
-        for args in [
-            vec!["apparent", "export", "capture.apparent", "--no-audio"],
-            vec![
-                "apparent",
-                "export",
-                "capture.apparent",
-                "--narration",
-                "cues.json",
-            ],
-        ] {
-            assert!(Cli::try_parse_from(args).is_ok());
-        }
-        for args in [
-            vec!["apparent", "export", "--narration"],
-            vec![
-                "apparent",
-                "export",
-                "--no-audio",
-                "--narration",
-                "cues.json",
-            ],
-            vec!["apparent", "export", "--no-audio=false"],
-        ] {
-            assert!(Cli::try_parse_from(args).is_err());
-        }
-    }
-
-    #[test]
-    fn export_cli_speedup_defaults_on_and_can_be_disabled() {
-        for (args, expected) in [
-            (vec!["apparent", "export", "capture.apparent"], false),
-            (vec!["apparent", "export", "capture.apparent", "--no-speedup"], true),
-        ] {
-            let cli = Cli::try_parse_from(args).unwrap();
-            let Some(Command::Export { no_speedup, .. }) = cli.command else { panic!("export"); };
-            assert_eq!(no_speedup, expected);
-        }
-    }
-
-    #[test]
-    fn export_cli_zooms_by_default_and_no_zoom_opts_out() {
-        for (args, expected) in [
-            (vec!["apparent", "export", "capture.apparent"], true),
-            (
-                vec!["apparent", "export", "capture.apparent", "--no-zoom"],
-                false,
-            ),
-        ] {
-            let cli = Cli::try_parse_from(args).unwrap();
-            let Some(Command::Export { zoom, crop, .. }) = cli.command else {
-                panic!("expected export command");
-            };
-            assert_eq!(zoom, expected);
-            assert_eq!(crop, export::crop::CropArg::Full);
-        }
-        assert!(Cli::try_parse_from(["apparent", "export", "capture.apparent", "--zoom"]).is_err());
-        use clap::CommandFactory;
-        let mut command = Cli::command();
-        let help = command
-            .find_subcommand_mut("export")
-            .unwrap()
-            .render_long_help()
-            .to_string();
-        assert!(help.contains("--no-zoom"));
-        assert!(
-            !help.contains("--zoom"),
-            "retired flag must not appear in help: {help}"
-        );
-    }
-
-}
+#[path = "../engine/diagnostics/cli_tests.rs"]
+mod tests;
