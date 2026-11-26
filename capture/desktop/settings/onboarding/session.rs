@@ -334,8 +334,7 @@ impl Session {
         }
         let input = match action {
             "continue" if !self.electron_shortcut_step() => Input::Continue,
-            "use-shortcut" if self.electron_shortcut_step() && self.flow.shortcut_tested
-                && self.shortcut_policy() == ShortcutPolicy::Trial => Input::Continue,
+            "use-shortcut" => return self.confirm_shortcut(),
             "back" => Input::Back,
             "later" => Input::Later,
             "close" => Input::Closed,

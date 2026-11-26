@@ -31,26 +31,14 @@ export function ShortcutTest({
           ? "Choose a different shortcut."
           : "Test your recording shortcut."}
       </h1>
-      <p id="shortcut-instructions">
-        {editing ? (
-          "Press the keys you want to use."
-        ) : shortcut ? (
-          <>
-            Press and release <strong>{shortcut}</strong>.
-          </>
-        ) : (
-          "Choose a shortcut to test."
-        )}
-      </p>
+      {!editing && !shortcut && <p>Choose a shortcut to test.</p>}
       <div
         className="shortcut-test-stage"
         ref={editing ? recorderRef : undefined}
         {...(editing ? recorderEvents : {})}
-        role={editing ? "group" : undefined}
-        aria-label={editing ? "Shortcut recorder" : undefined}
-        aria-describedby={
-          editing ? "shortcut-instructions shortcut-status" : undefined
-        }
+        role={editing ? "group" : shortcut ? "img" : undefined}
+        aria-label={editing ? "Shortcut recorder" : shortcut || undefined}
+        aria-describedby={editing ? "shortcut-status" : undefined}
         tabIndex={editing ? 0 : undefined}
       >
         <div className="shortcut-test-keys" aria-hidden="true">

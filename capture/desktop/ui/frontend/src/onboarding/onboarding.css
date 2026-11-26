@@ -176,10 +176,6 @@ html.native-onboarding-shell:has(.native-setup) .apparent-build-identity { top: 
 
 .native-held-keys + .native-shortcut-choices {margin-top:8px;}
 
-.native-shortcut-suggestions {width:400px;max-width:100%;}
-.native-shortcut .native-shortcut-suggestions p {font-size:1rem;line-height:1.5;margin:0 0 8px;}
-.native-shortcut-suggestions .apparent-disclosure {max-width:100%;}
-.native-shortcut-suggestions .disclosure-panel {top:auto;bottom:calc(100% + 8px);left:50%;right:auto;transform:translateX(-50%);width:280px;max-width:calc(100vw - 64px);max-height:30vh;overflow-y:auto;background:var(--apparent-surface);color:var(--apparent-foreground);border-color:var(--apparent-border);}
 .native-setup[data-shortcut-state=true] section {justify-content:safe center;}
 .native-setup[data-shortcut-state=true] section > h1,.native-setup[data-shortcut-state=true] .native-shortcut {flex-shrink:0;}
 

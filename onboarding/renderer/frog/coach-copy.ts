@@ -7,7 +7,7 @@ export function coachCopy(
     string,
     { title: string; text: string; button?: string; action?: string }
   > = {
-    start: { title: "One more time.", text: "" },
+    start: { title: "Try a practice capture.", text: "" },
     screen: {
       title: "Choose your display.",
       text: "Choose a display in the system sharing dialog.",

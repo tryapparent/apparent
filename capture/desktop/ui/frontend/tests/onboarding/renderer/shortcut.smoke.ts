@@ -68,26 +68,26 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
     }
   }
   send('macos');
-  await expect(page.locator('.shortcut-test kbd')).toHaveText('fn');
   await expect(confirm).toBeDisabled();
-  await expect(page.getByRole('button',{name:'Later',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('progressbar')).toHaveCount(0);
-  assert.equal(output,'','opening setup must not enable shortcut recording');
+  await expect(page.getByText('Press and release', {exact:false})).toHaveCount(0);
+  await expect(page.locator('.shortcut-test-pebble')).toHaveCSS('background-color','rgb(60, 52, 65)');
   await capture('waiting');
   send('macos',{shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('status')).toHaveText('Shortcut detected.');
   await expect(confirm).toBeEnabled();
+  await expect(page.locator('.shortcut-test-pebble')).toHaveCSS('background-color','rgb(122, 88, 199)');
   await capture('detected');
   assert.equal(output,'','native detection must not advance setup');
   await confirm.press('Enter');
   await expect.poll(()=>output).toContain('"action":"use-shortcut"');
+  assert.equal(output.trim(),'{"action":"use-shortcut"}');
 
   output='';await change.press('Enter');
   await expect.poll(()=>output).toContain('"action":"change-shortcut"');
   send('macos',{shortcutEditor:{recording:true}});
   await expect(recorder).toBeFocused();
   await expect(page.getByRole('heading')).toHaveText('Choose a different shortcut.');
-  await expect(page.getByText('Press the keys you want to use.')).toBeVisible();
+  await expect(page.getByText('Press the keys you want to use.')).toHaveCount(0);
   await expect(page.getByRole('button',{name:'Show suggestions'})).toHaveCount(0);
   await capture('editing');
   await page.keyboard.press('Escape');
@@ -148,7 +148,7 @@ test('shortcut composition waits for modifiers and preserves Fn/cancel recovery'
   await expect(confirm).toBeEnabled();
   await capture('changed');
   send('macos',{shortcut:'⌥R',shortcutChosen:true,shortcutTested:true,step:'try-it',practice:'start'});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Try a practice capture.',exact:true})).toBeVisible();
   output='';await back.click();
   await expect.poll(()=>output).toContain('"action":"back"');
   output='';send('macos',{shortcut:'⌥R',shortcutChosen:true,shortcutTested:true});
