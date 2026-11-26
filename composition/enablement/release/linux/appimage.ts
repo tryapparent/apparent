@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { appendFile, copyFile, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const [arch] = process.argv.slice(2);
 if (arch !== "x86_64" && arch !== "aarch64")
@@ -14,10 +15,23 @@ if (!version || !GITHUB_OUTPUT)
 if (TAG && TAG !== `v${version}`)
   throw Error(`Tag ${TAG} does not match Cargo.toml ${version}`);
 
+const deferEncoderCheck =
+  process.env.GITHUB_ACTIONS === "true" &&
+  fileURLToPath(import.meta.url) ===
+    resolve(
+      ".release-control/composition/enablement/release/linux/appimage.ts",
+    );
+
 execFileSync(
   "./capture/desktop/scripts/linux/appimage/appimage.sh",
   ["target/release/apparent"],
-  { stdio: "inherit" },
+  {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      APPARENT_APPIMAGE_ENCODER_CHECK_IN_DIST: deferEncoderCheck ? "1" : "0",
+    },
+  },
 );
 
 const name = `Apparent-${version}-linux-${arch}.AppImage`;
