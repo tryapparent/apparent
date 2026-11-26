@@ -1,13 +1,16 @@
 ## Use Apparent's local narrator
 
-Use Apparent's installed Kokoro narrator (`bm_fable`). Report setup or synthesis failures before proposing another voice. Keep Flite, espeak, cloud TTS and transcription models out of this route.
+Use Apparent’s local Kokoro narrator (`bm_fable`). Run `apparent --version` to record the build revision, then run `apparent video --help` to check availability. If the CLI reports an unrecognized subcommand, use the standalone narrator path below. Development builds can share a version number, so use the revision and help output to identify the installed capability.
 
+When the command is available, `apparent video narrator` probes the same offline worker used by render. A setup or synthesis failure needs the documented recovery step or an explicit blocker. Using Flite, espeak, Edge TTS or another voice requires explicit approval.
+
+- **Edited walkthrough:** if `apparent video --help` succeeds, use `apparent video inspect --help` to prepare source sheets and a starter plan, then `apparent video render --help` to compose excerpts, comparisons, captions and local narration. Use the review sheet to check scene boundaries, then watch the final movie. Reuse unchanged voice cues when the installed render help offers a private voice cache.
 - **Bundle export:** check `apparent export --help`, then use `apparent export "$bundle" --narration "$cues" --out "$movie" --fps 30` with private absolute paths. Follow the [cue schema](../../../../capture/engine/docs/export-and-retention.md#local-narration) in exported-video milliseconds. Shorten text or extend slots as needed. Respect `experiments.exportNarration: false` and preserve the source bundle and config.
 - **Explainer without a bundle:** render the diagrams with a local editor or renderer and synthesize each plain-text cue with the separately provisioned [standalone narrator](../../../../capture/agent/narrator/README.md#worker-protocol-and-offline-behavior). The installed Apparent CLI has no `trace` subcommand. Run the narrator readiness check below, then synthesize to a fresh private path and validate each WAV before aligning visuals and captions to it.
 
-On the target macOS or Linux host run `node capture/agent/scripts/provision-narrator.ts --check` from the checkout. Require validated pinned assets and a synthetic WAV. Follow the [provisioning steps](../../../../capture/agent/narrator/README.md#provision-explicitly) for missing assets or a missing worker, within existing network and build authority. Synthesis is offline after setup.
+For pinned-asset validation and setup diagnosis on macOS or Linux, run `node capture/agent/scripts/provision-narrator.ts --check` from the checkout. This is also the readiness check for older builds. Follow the [provisioning steps](../../../../capture/agent/narrator/README.md#provision-explicitly) for missing assets or a missing worker, within existing network and build authority. Synthesis is offline after setup.
 
-When approved private listening is supported, listen to the full final narration in sync with the video. Check intelligibility, pronunciation, pacing, clipping and caption alignment.
+Before sharing, identify the voice from the render receipt and MP4 metadata or from the standalone worker used for the cues. Listen privately to the full final narration in sync when supported. Check intelligibility, pronunciation, pacing, clipping and caption alignment. If listening is unavailable, disclose that limit separately from the decode and timing checks.
 
 For narration-only edits and A/B review cuts, use one synchronized narration track. If the source carries the same narration on both stereo channels, convert to mono before delaying, or apply the same delay to every channel (FFmpeg `adelay=700:all=1`, for example). Verify speech onset by channel after any delay and check audio against the visual cue after each splice. Matching stream durations alone can miss a delayed channel.
 

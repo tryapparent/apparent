@@ -24,6 +24,26 @@
       ]
     },
     {
+      "id": "linux-appimage-frontend-staging",
+      "description": "Verify that AppImage packaging stages Settings and popup assets from one fresh frontend build.",
+      "platforms": ["linux"],
+      "userEntryPoint": "Run capture/desktop/scripts/linux/appimage/appimage.sh with a built Apparent binary.",
+      "prerequisites": [
+        "Node 22, Bash and the standard Linux command-line tools for the synthetic routing test."
+      ],
+      "runner": {
+        "path": "composition/enablement/release/test/linux-routing.test.ts",
+        "scenario": "AppImage encoder proof: standalone",
+        "instructions": "composition/enablement/release/README.md"
+      },
+      "expectedEvidence": [
+        "The packaging script calls the synthetic Settings producer once and stages fresh Settings and popup assets in their AppDir paths."
+      ],
+      "limits": [
+        "The fixture substitutes the frontend build and linuxdeploy. Hosted packaging and the public AppImage verify the real payload."
+      ]
+    },
+    {
       "id": "agents-settings-video-proof",
       "description": "Verify the Agents pane after retirement of the video-proof preference.",
       "platforms": ["linux", "macos"],

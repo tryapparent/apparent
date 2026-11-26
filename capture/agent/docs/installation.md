@@ -1,8 +1,8 @@
 # Install the official CLI for a recipient agent
 
-Install the CLI to run `apparent inspect` or `apparent fetch` on a headless machine.
-Installing an agent skill does **not** install the CLI.
-For Amazon Linux 2023 x86-64, use the [headless ZIP](../../../composition/enablement/release/README.md#amazon-linux-cli).
+Install the CLI separately from agent skills. On Amazon Linux 2023 x86-64,
+use the [headless ZIP](../../../composition/enablement/release/README.md#amazon-linux-cli)
+for `inspect` and `fetch`. Use the full AppImage below for `zoom`.
 
 ## Linux AppImage (Ubuntu 24.04+, x86_64 or aarch64)
 
@@ -100,9 +100,8 @@ and publishes the complete bundle; open its contact sheet and frames visually
 before acting. Service availability, authorization and sandbox network policy
 remain separate from installation. See [Connect instructions](../../../connect/docs/hosted-client.md).
 
-Other commands have different dependencies: `zoom`, `frames` and video export
-need media processing; clipboard and desktop capture need platform services.
-For recording and desktop setup see [Linux](../../desktop/docs/linux/linux.md).
+See [Linux desktop setup](../../desktop/docs/linux/linux.md) for capture and
+clipboard dependencies. `frames` and video export need media processing.
 
 ## macOS and skills
 

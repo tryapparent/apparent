@@ -50,7 +50,7 @@ Show one concrete example moving through the mechanism: parts doing something to
 
 During the final review, ask whether a viewer can explain who was affected, what changed for them or still happens, and how we know. If impact is unknown, the viewer should be able to tell what evidence is missing. Watch the ending on its own and confirm that the viewer can tell what is available, whether they need to act, and what happens next or whether the work is complete.
 
-Every mode needs timed, plain-spoken explanation, readable burned captions and editable timed text so the story works muted. Add synchronized generated voice by default unless the user requests silence or suitable narration already exists; disclose generated narration. Never play it through speakers during capture. Use only authorized speech services: do not send private text online or incur charges without permission. If narration is unavailable, report that production blocker; do not silently replace it with silence. An explicitly silent scenario can use captions alone, disclosed in the video and handoff.
+Every mode needs timed, plain-spoken explanation, readable burned captions and editable timed text so the story works muted. Use local Kokoro `bm_fable` for synchronized generated narration by default. Preserve suitable live speech or honor a request for silence. Verify and disclose the narrator identity. Never play narration through speakers during capture. If Kokoro cannot synthesize, report the exact blocker. A different voice or online service requires explicit approval. An explicitly silent scenario can use captions alone, disclosed in the video and handoff.
 
 ## Point out the claim
 

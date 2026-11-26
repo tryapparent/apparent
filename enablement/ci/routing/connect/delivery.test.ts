@@ -154,6 +154,7 @@ test("Connect diffs keep hosted and Desktop CI", { timeout: 15_000 }, () => {
     );
   try {
     git("init", "-q");
+    git("config", "--local", "maintenance.auto", "false");
     git("config", "core.hooksPath", join(cwd, ".git", "hooks"));
     git("config", "user.name", "Synthetic");
     git("config", "user.email", "synthetic@example.invalid");
