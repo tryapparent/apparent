@@ -199,23 +199,25 @@ test("trusted practice host drives the real renderer without accepting renderer 
     shortcutEditor: { recording: true },
   });
   await expect(
-    page.getByRole("heading", { name: "Choose your shortcut.", exact: true }),
+    page.getByRole("heading", {
+      name: "Choose a different shortcut.",
+      exact: true,
+    }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Skip shortcut practice" })).toHaveCount(0);
-  await capture("shortcut");
-  setup({
+  await capture("shortcut-editor");
+  const shortcut = {
     step: "shortcut",
     shortcut: "Option",
     shortcutChosen: true,
-    shortcutSelectionReleased: true,
-    firstCaptureRequired: true,
-  });
-  await expect.poll(() => output).toContain("accept-shortcut-choice:Option");
-  const skipShortcut = page.getByRole("button", { name: "Skip shortcut practice" });
-  await skipShortcut.focus();
-  await page.keyboard.press("Enter");
-  await expect.poll(() => output).toContain('"action":"skip-shortcut-trial"');
-  await capture("shortcut-optional");
+  };
+  setup(shortcut);
+  const useShortcut = page.getByRole("button", { name: "Use shortcut" });
+  await expect(useShortcut).toBeDisabled();
+  setup({ ...shortcut, shortcutTested: true });
+  await expect(page.getByRole("status")).toHaveText("Shortcut detected.");
+  await capture("shortcut-detected");
+  await useShortcut.press("Enter");
+  await expect.poll(() => output).toContain('"action":"use-shortcut"');
   send({
     type: "state",
     step: "try-it",

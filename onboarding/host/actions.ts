@@ -10,7 +10,7 @@ const actions = new Set([
   "use-desktop-shortcut",
   "skip",
   "skip-pen",
-  "skip-shortcut-trial",
+  "use-shortcut",
   "watched",
   "practiced",
   "reset-shortcut",

@@ -1305,11 +1305,6 @@ mod adapter_regressions {
         let generation = session.transport_generation();
         session.transport = Session::spawn_renderer_transport(&mut command, generation,
             move |event| { let _ = tx.send(event); }).unwrap();
-        session.send(&serde_json::json!({"type":"state", "step":"shortcut", "ready":true, "rows":[],
-            "shortcut":"Test", "shortcutChosen":true, "shortcutSelectionReleased":true, "firstCaptureRequired":true}));
-        let event = rx.recv_timeout(std::time::Duration::from_secs(15)).expect("host receipt");
-        assert!(matches!(event.for_current_transport(Some(generation)),
-            Some(Event::Action(action)) if action=="accept-shortcut-choice:Test"));
         session.practice=Some(super::super::practice::Practice::default());
         let apply=|session:&mut Session,stage:&str| {
             let event=rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();

@@ -219,15 +219,13 @@ async function clickThrough(run: number) {
         footer,
         "Choose recording shortcut",
         "continue",
-        () => project("shortcut", { shortcutChosen: true }),
+        () =>
+          project("shortcut", { shortcutChosen: true, shortcutTested: true }),
       );
-      const skip = ".native-shortcut > button:last-child";
-      await checkpoint("permissions-to-shortcut", shortcut, skip);
-      const tryIt = await click(
-        skip,
-        "Skip shortcut practice",
-        "skip-shortcut-trial",
-        () => project("try-it", { practice: "start" }),
+      const use = ".shortcut-test-actions > button:last-child";
+      await checkpoint("permissions-to-shortcut", shortcut, use);
+      const tryIt = await click(use, "Use shortcut", "use-shortcut", () =>
+        project("try-it", { practice: "start" }),
       );
       await checkpoint("shortcut-to-practice", tryIt, practice);
     }

@@ -16,7 +16,6 @@ import {
   record,
   type Projection,
 } from "@apparent/onboarding/projection";
-import { completedSelection } from "@apparent/onboarding/selection";
 import {
   WisprOnboarding,
   type WisprProvider,
@@ -360,8 +359,6 @@ export function start(capabilities: Capabilities) {
           )
             wispr.close();
           state = next;
-          const accepted = completedSelection(next);
-          if (accepted) channel.send(accepted);
           present();
         }
       }
