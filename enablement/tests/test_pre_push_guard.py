@@ -31,12 +31,12 @@ class PrePushGuardTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.repo = Path(self.tmp.name) / "repo"
         self.repo.mkdir()
-        run("git", "init", "-q", str(self.repo), cwd=self.repo)
+        run("git", "init", "-q", cwd=self.repo)
+        run("git", "config", "--local", "maintenance.autoDetach", "false", cwd=self.repo).check_returncode()
         run("git", "config", "user.name", "Test", cwd=self.repo)
         run("git", "config", "user.email", "test@example.invalid", cwd=self.repo)
         (self.repo / "file").write_text("original\n")
-        (self.repo / "enablement").mkdir()
-        (self.repo / "enablement" / "tests").mkdir()
+        (self.repo / "enablement" / "tests").mkdir(parents=True)
         # The driver runs tests as well as Cargo. Keep this fixture finite:
         # copying the real hook tests here would recursively invoke itself.
         fixture_test = "import unittest\nclass Fixture(unittest.TestCase):\n    def test_fixture(self):\n        self.assertTrue(True)\n"
@@ -56,7 +56,6 @@ class PrePushGuardTests(unittest.TestCase):
             shutil.copy2(SELECTOR.parents[1] / "shared/ui/scripts" / name, theme / name)
         run("git", "add", ".", cwd=self.repo)
         run("git", "commit", "-qm", "original", cwd=self.repo)
-        self.head = run("git", "rev-parse", "HEAD", cwd=self.repo).stdout.strip()
         self.bin = Path(self.tmp.name) / "bin"
         self.bin.mkdir()
         self.log = Path(self.tmp.name) / "commands"

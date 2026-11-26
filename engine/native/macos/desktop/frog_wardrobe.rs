@@ -263,19 +263,24 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"labs":{"desktopFrog":true,"frogWardrobe":true},"onboarding":{"frogAdopted":true,"frogName":"Pip"}}"#).unwrap();
+        let first_write = std::sync::Barrier::new(3);
         std::thread::scope(|scope| {
             scope.spawn(|| {
+                first_write.wait();
                 for n in 0..15 {
                     credit(&path, &format!("a-{n}")).unwrap();
                 }
             });
             scope.spawn(|| {
+                first_write.wait();
                 for n in 0..15 {
                     credit(&path, &format!("b-{n}")).unwrap();
                 }
             });
-            scope
-                .spawn(|| handoff::set_config_value_in(&path, "unrelated", json!("kept")).unwrap());
+            scope.spawn(|| {
+                first_write.wait();
+                handoff::set_config_value_in(&path, "unrelated", json!("kept")).unwrap();
+            });
         });
         let saved = handoff::read_preferences(&path).unwrap();
         assert_eq!(receipts(store(&saved)).unwrap().len(), 30);

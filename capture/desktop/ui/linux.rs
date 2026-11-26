@@ -682,7 +682,7 @@ thread_local! {
 pub(in crate::capture::desktop) fn install_status_bar() -> Option<flume::Receiver<MenuAction>> {
     if let Some(warning) = linux::media::encoder_warning() {
         crate::capture::engine::runtime::apparent_log(&warning);
-        linux::shell::notify("Apparent setup: H.264 encoder missing", &warning);
+        linux::shell::notify("Apparent: H.264 preflight failed", &warning);
     }
     if let Some(warning) = linux::media::decoder_warning() {
         crate::capture::engine::runtime::apparent_log(&warning);

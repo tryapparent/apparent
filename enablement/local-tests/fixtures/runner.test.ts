@@ -30,7 +30,7 @@ test('fixture source closure follows a new nested import without copying real te
   put(source, 'onboarding/enablement/ci/inputs.json', readFileSync(new URL('../../../onboarding/enablement/ci/inputs.json', import.meta.url), 'utf8'));
   put(source, 'enablement/local-tests/run.ts', "export {value} from '../ci/new/helper.ts';\n");
   put(source, 'enablement/ci/new/helper.ts', 'export const value = 42;\n');
-  put(source, 'public/enablement/cd/ci/inputs.ts', 'export const publicInput = true;\n');
+  put(source, 'shared/enablement/ci/public-inputs.ts', 'export const publicInput = true;\n');
   put(source, 'connect/enablement/ci/local/service.ts', 'export const service = true;\n');
   put(source, 'enablement/timing/command.ts', 'export const timing = true;\n');
   put(source, 'record/enablement/ci/media.ts', 'export const media = true;\n');

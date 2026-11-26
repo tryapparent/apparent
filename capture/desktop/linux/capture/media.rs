@@ -25,6 +25,10 @@ use crate::capture::engine::runtime::recording::recorder::{fd_path, file_matches
 use crate::linux_candidate::CandidateBranch;
 use crate::shared::model::{CaptureMode, RgbaFrame};
 
+#[path = "../../../../engine/recording/linux_media/encoder_preflight.rs"]
+mod encoder_preflight;
+pub use encoder_preflight::{encode_check_movie, encoder_warning};
+
 const FPS: u32 = 30;
 const RECOVERABLE_MUX: &str =
     "mp4mux fragment-duration=1000 fragment-mode=first-moov-then-finalise ! filesink buffer-mode=unbuffered";
@@ -89,17 +93,6 @@ pub fn can_record_video() -> bool {
     init().is_ok() && encoder().is_some()
 }
 
-fn encoder_repair_for(distro: &str) -> &'static str {
-    match distro {
-        "arch" | "archarm" | "omarchy" | "manjaro" | "endeavouros" => {
-            "sudo pacman -S gst-plugins-ugly"
-        }
-        "ubuntu" | "debian" | "linuxmint" | "pop" => "sudo apt install gstreamer1.0-plugins-ugly",
-        "fedora" => "sudo dnf install gstreamer1-plugins-ugly",
-        _ => "Install your distribution's GStreamer H.264 encoder (often gst-plugins-ugly)",
-    }
-}
-
 fn host_distro() -> String {
     let os_release = std::fs::read_to_string("/etc/os-release").unwrap_or_default();
     os_release
@@ -108,138 +101,6 @@ fn host_distro() -> String {
         .unwrap_or_default()
         .trim_matches('"')
         .to_owned()
-}
-
-/// Check before starting a screen capture, including the CLI path. Never install packages here.
-pub fn encoder_warning() -> Option<String> {
-    static CHECK: OnceLock<std::result::Result<(), String>> = OnceLock::new();
-    let result = CHECK.get_or_init(|| {
-        init().map_err(|error| error.to_string())?;
-        let selected = encoder().ok_or("No H.264 encoder plugin is installed")?;
-        let directory = preflight_directory().map_err(|error| error.to_string())?;
-        let movie = directory.join("encoder-check.mp4");
-        let result = encode_synthetic(&movie, selected, true).map_err(|error| error.to_string());
-        let _ = std::fs::remove_file(&movie);
-        let _ = std::fs::remove_dir(directory);
-        result
-    });
-    result.as_ref().err().map(|reason| {
-        encoder_diagnostic(
-            reason,
-            std::env::var_os("APPIMAGE").is_some(),
-            &host_distro(),
-        )
-    })
-}
-
-/// Exclusively create a private directory before GStreamer's filesink opens its output.
-fn preflight_directory() -> Result<PathBuf> {
-    for attempt in 0..16 {
-        let directory = std::env::temp_dir().join(format!(
-            "apparent-encoder-check-{}-{}-{attempt}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)?
-                .as_nanos()
-        ));
-        match std::fs::DirBuilder::new().mode(0o700).create(&directory) {
-            Ok(()) => return Ok(directory),
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
-        }
-    }
-    bail!("Could not create a private H.264 encoder-check directory")
-}
-
-fn encoder_diagnostic(reason: &str, packaged: bool, distro: &str) -> String {
-    if packaged {
-        format!(
-            "H.264 encoder failed in this Apparent AppImage ({reason}). Install a fresh Apparent AppImage; host GStreamer packages cannot repair its bundled runtime. No recording was started."
-        )
-    } else {
-        format!(
-            "H.264 encoder failed ({reason}). Install: {}. Restart Apparent, then retry. No recording was started.",
-            encoder_repair_for(distro)
-        )
-    }
-}
-
-/// Exercise capture's encoder in the packaged process. Composition must verify
-/// the resulting movie through the published decoder used by real consumers.
-pub fn encode_check_movie(movie: &Path) -> Result<()> {
-    init()?;
-    let selected = encoder().ok_or_else(|| anyhow!("No H.264 encoder plugin is installed"))?;
-    encode_synthetic(movie, selected, false)
-}
-
-fn encode_synthetic(movie: &Path, selected: &str, diagnose: bool) -> Result<()> {
-    let output = movie_output();
-    let launch = format!(
-        "videotestsrc num-buffers=12 ! video/x-raw,width=160,height=90,framerate=10/1 ! videoconvert ! video/x-raw,format=I420 ! {selected} ! h264parse ! {output} name=encoder_output"
-    );
-    let pipeline = gst::parse::launch(&launch)?
-        .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow!("Not a pipeline"))?;
-    pipeline
-        .by_name("encoder_output")
-        .context("Encoder pipeline has no output sink")?
-        .set_property("location", movie.to_string_lossy().as_ref());
-    let result = (|| {
-        pipeline.set_state(gst::State::Playing)?;
-        let bus = pipeline.bus().context("Encoder pipeline has no bus")?;
-        match bus.timed_pop_filtered(
-            gst::ClockTime::from_seconds(10),
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        ) {
-            Some(message) => match message.view() {
-                gst::MessageView::Eos(..) => Ok(()),
-                gst::MessageView::Error(error) => {
-                    if diagnose {
-                        let detail = error.debug().unwrap_or_default();
-                        let debug = safe_encoder_debug(&detail, movie);
-                        let domain = error.error().domain().as_str();
-                        let code = error.error().code();
-                        let source = error
-                            .src()
-                            .map(|source| safe_encoder_field(&source.name()))
-                            .unwrap_or_else(|| "unknown".to_owned());
-                        crate::capture::engine::runtime::apparent_log(format!(
-                            "H.264 encoder preflight failed stage=synthetic_encode domain={domain} code={code} source={source} debug={debug} output=encoder-check.mp4"
-                        ));
-                    }
-                    bail!("H.264 encoding failed: {error}");
-                }
-                _ => unreachable!(),
-            },
-            None => bail!("H.264 encoding timed out"),
-        }
-    })();
-    let _ = pipeline.set_state(gst::State::Null);
-    result?;
-    ensure!(
-        std::fs::metadata(movie)?.len() > 1024,
-        "H.264 movie is empty"
-    );
-    Ok(())
-}
-
-fn safe_encoder_field(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| if ch.is_control() { ' ' } else { ch })
-        .take(160)
-        .collect()
-}
-
-fn safe_encoder_debug(value: &str, movie: &Path) -> String {
-    let mut safe = value.to_owned();
-    if let Some(parent) = movie.parent() {
-        safe = safe.replace(&parent.to_string_lossy().to_string(), "<private-temp>");
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        safe = safe.replace(&home.to_string_lossy().to_string(), "<home>");
-    }
-    safe_encoder_field(&safe)
 }
 
 /// Check this process's registry, not the host's gst-inspect executable.
@@ -583,84 +444,6 @@ mod tests {
         assert_eq!(decoder_repair_for("ubuntu"), "sudo apt install gstreamer1.0-libav");
         assert_eq!(decoder_repair_for("fedora"), "sudo dnf install gstreamer1-plugin-libav");
         assert!(decoder_repair_for("other").contains("distribution"));
-    }
-
-    #[test]
-    fn encoder_repair_names_the_host_package_without_installing_it() {
-        assert_eq!(
-            encoder_repair_for("arch"),
-            "sudo pacman -S gst-plugins-ugly"
-        );
-        assert_eq!(
-            encoder_repair_for("omarchy"),
-            "sudo pacman -S gst-plugins-ugly"
-        );
-        assert_eq!(
-            encoder_repair_for("ubuntu"),
-            "sudo apt install gstreamer1.0-plugins-ugly"
-        );
-        assert_eq!(
-            encoder_repair_for("fedora"),
-            "sudo dnf install gstreamer1-plugins-ugly"
-        );
-        assert!(encoder_repair_for("other").contains("distribution"));
-        assert!(
-            encoder_diagnostic("not found", false, "omarchy")
-                .contains("sudo pacman -S gst-plugins-ugly")
-        );
-        let packaged = encoder_diagnostic("not found", true, "omarchy");
-        assert!(packaged.contains("fresh Apparent AppImage"));
-        assert!(!packaged.contains("sudo pacman"));
-    }
-
-    #[test]
-    fn encoder_preflight_uses_a_private_directory() {
-        use std::os::unix::fs::PermissionsExt;
-        let directory = preflight_directory().unwrap();
-        assert_eq!(
-            std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
-            0o700
-        );
-        assert!(!directory.join("encoder-check.mp4").exists());
-        std::fs::remove_dir(directory).unwrap();
-    }
-
-    #[test]
-    fn synthetic_encoder_preflight_classifies_a_missing_output_parent() {
-        if init().is_err() {
-            return;
-        }
-        let Some(selected) = encoder() else {
-            return;
-        };
-        let nonce = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let movie = std::env::temp_dir().join(format!(
-            "apparent-dev-encoder-diagnostics-{}-{nonce}/missing/encoder-check.mp4",
-            std::process::id()
-        ));
-        let result = encode_synthetic(&movie, selected, true);
-        assert!(result.is_err(), "filesink must refuse an output whose parent is missing");
-        assert!(!movie.exists());
-    }
-
-    #[test]
-    fn encoder_debug_redacts_private_output_and_home_paths() {
-        let movie = std::env::temp_dir().join("private/output.mp4");
-        let detail = format!(
-            "Could not write {} under {}",
-            movie.display(),
-            std::env::var("HOME").unwrap_or_default()
-        );
-        let safe = safe_encoder_debug(&detail, &movie);
-        assert!(!safe.contains("private/output.mp4"));
-        if let Ok(home) = std::env::var("HOME") {
-            assert!(!safe.contains(&home));
-        }
-        assert!(safe.contains("<private-temp>"));
-        assert!(safe.chars().count() <= 160);
     }
 
     #[test]
