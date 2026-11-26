@@ -44,12 +44,12 @@ function measureContents(contents,limit,reserve){
    if (${reserve} !== null && element.dataset.phase==='recording')
      document.documentElement.style.setProperty('--pill-recording-reserve', '${reserve}px');
    const rect=element.getBoundingClientRect();
-   const live = document.querySelector('.pill[data-live=true]');
-   const background=document.querySelector('.pill-background-layer');
+   const extended = document.querySelector('.pill[data-live=true],.pill-background-layer');
    const row=element.dataset.phase==='recording'?document.querySelector('.pill-row')?.getBoundingClientRect():null;
    const notes=row?document.querySelector('.pill-notes-layer')?.getBoundingClientRect():null;
-   const selector = live || background ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail' : '.destination-assembly,.destination-notification,.public-share-confirmation';
-   const regions=live || background || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
+   const completion = document.querySelector('.pill-completion-notification');
+   const selector = extended ? '.pill-row,.live-caption,.pill-notes-layer,.pill-background-layer,.pill-background-detail' : '.pill:has(.pill-completion-notification) .pill-row,.destination-assembly,.destination-notification,.public-share-confirmation';
+   const regions=extended || completion || document.querySelector('.destination-assembly')?[...document.querySelectorAll(selector)].map(element=>{
      const r=element.getBoundingClientRect(),style=getComputedStyle(element);
      return {x:r.x-rect.x,y:r.y-rect.y,width:r.width,height:r.height,radius:parseFloat(style.borderTopLeftRadius)||0,rightRadius:parseFloat(style.borderTopRightRadius)||0};
    }):[];

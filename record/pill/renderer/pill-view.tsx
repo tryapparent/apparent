@@ -112,6 +112,10 @@ export function PillSurface({
   const uploading = view.shareIndicator === "uploading";
   const uploadStopped = view.shareIndicator === "retry";
   const recording = view.phase === "recording";
+  const compactCompletion = view.phase === "completed" && !view.warning &&
+    view.actions.length === 3 &&
+    !view.actions.some((action) => action.id === "copy-link") &&
+    (view.copyFailed || ["Saved", "Copied", "Saved · copied", "Saved · paste dispatched"].includes(view.label));
   const microphoneInput = recording ? view.inputWaveform : null;
   const finish = recording ? view.actions.find((action) => action.id === "finish") : undefined;
   const starting = finish?.enabled === false;
@@ -133,6 +137,7 @@ export function PillSurface({
       className="pill apparent-theme"
       aria-label={view.phase === "selecting" ? view.label : undefined}
       data-phase={view.phase}
+      data-compact-completion={compactCompletion || undefined}
       data-reduced={view.reducedMotion || reduced}
       data-warning={view.warning !== null}
       data-live={view.phase === "recording" && !!view.transcript}
@@ -164,7 +169,8 @@ export function PillSurface({
                   void onBeginDrag?.().catch(() => {});
               }}
             >
-              <span className={`indicator-slot ${view.phase}`}>
+              <span className={`indicator-slot ${view.phase}`}
+                title={compactCompletion ? view.copyFailed ? "Saved" : view.label : undefined}>
                 {!practiceExample && microphoneInput !== null && (
                   <InputMeter
                     input={microphoneInput}
@@ -215,6 +221,8 @@ export function PillSurface({
               </span>
               {recording ? (
                 <span className="sr-only" role="status">{view.label}</span>
+              ) : compactCompletion ? (
+                <span className="sr-only" role="status">{view.copyFailed ? "Saved" : view.label}</span>
               ) : (
                 <span className="clock" role={view.phase === "completed" ? "status" : undefined}>
                   {view.phase === "processing" ? "Processing…" : view.label}
@@ -249,7 +257,7 @@ export function PillSurface({
                   action.id === "copy-link" && uploading
                     ? X
                     : actionIcons[action.id];
-                const iconOnly = recording || isClose(action.id);
+                const iconOnly = recording || compactCompletion || isClose(action.id);
                 return (
                   <Button
                     key={action.id}

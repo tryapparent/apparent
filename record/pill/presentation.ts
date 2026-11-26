@@ -52,6 +52,7 @@ export type Surface =
         share: Share;
         copy: Tag<CompletionCopy>;
         audio_problem: boolean;
+        copy_failed: boolean;
       }
     >;
 
@@ -87,6 +88,7 @@ export type Presentation = Readonly<{
   noteCount: number;
   noWords: boolean;
   completedWarning: boolean;
+  copyFailed: boolean;
   draggable: boolean;
   shareIndicator: ShareIndicator;
 }>;
@@ -103,6 +105,7 @@ export function presentation(
     noteCount: 0,
     noWords: false,
     completedWarning: false,
+    copyFailed: false,
     draggable: false,
     shareIndicator: "none" as ShareIndicator,
   };
@@ -182,6 +185,7 @@ export function presentation(
         phase: "completed",
         label,
         completedWarning: surface.audio_problem,
+        copyFailed: surface.copy_failed,
         warning: surface.audio_problem ? label : result.warning,
       };
     }
