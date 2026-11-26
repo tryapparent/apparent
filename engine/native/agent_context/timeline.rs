@@ -3,61 +3,53 @@ use super::handoff::{
     open_handoff_policy, render_context_line, window_near_mark,
 };
 use super::{
-    DragRun, EmbeddedPolicy, Item, SCRUB_MS, Timed, changed_regions, click_anchor, drag_text,
+    DragRun, Item, SCRUB_MS, Timed, changed_regions, click_anchor, drag_text,
     event_context_kind, event_text, frame_is_flagged, frame_starts, interleave, interleave_unsplit,
     marks_on, one_line, settled_events, window_changes, without_positions,
 };
 use crate::shared::model::{ActionKind, ApparentBundle, InteractionEvent, KeyframeReason, WordTiming};
 use crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX;
 
-fn append_word(text: &mut String, word: &WordTiming) {
-    let unit = word.text.trim();
-    let attached = unit.starts_with([',', '.', '!', '?', ';', ':', '’', '\'', ')', ']', '”']);
-    let open = text.ends_with(['(', '[', '“']);
-    if !text.is_empty() && !attached && !open {
-        text.push(' ');
-    }
-    text.push_str(unit);
-}
-
 pub(super) fn join_words(words: &[&WordTiming]) -> String {
     let mut text = String::new();
     for word in words {
-        append_word(&mut text, word);
+        let unit = word.text.trim();
+        let attached = unit.starts_with([',', '.', '!', '?', ';', ':', '’', '\'', ')', ']', '”']);
+        let open = text.ends_with(['(', '[', '“']);
+        if !text.is_empty() && !attached && !open {
+            text.push(' ');
+        }
+        text.push_str(unit);
     }
     text
 }
 
-fn frame_words<'a>(
-    policy: &EmbeddedPolicy,
-    bundle: &'a ApparentBundle,
-) -> Option<Vec<Vec<&'a WordTiming>>> {
-    let mut words: Vec<_> = bundle
+fn frame_words(bundle: &ApparentBundle) -> Option<Vec<Vec<&WordTiming>>> {
+    let mut words: Vec<&WordTiming> = bundle
         .transcript
         .words
         .iter()
-        .filter(|word| !word.text.trim().is_empty())
+        .filter(|w| !w.text.trim().is_empty())
         .collect();
     if words.is_empty() {
         return None;
     }
-    words.sort_by_key(|word| word.t0);
-    let mut next = 0;
-    let mut frames = Vec::with_capacity(bundle.keyframes.len());
+    words.sort_by_key(|w| w.t0);
+    let mut words = words.into_iter();
+    let mut out = Vec::with_capacity(bundle.keyframes.len());
     for frame in &bundle.keyframes {
-        let target = frame.said.as_deref().unwrap_or("").trim();
-        let start = next;
-        let mut text = String::new();
-        while text.len() < target.len() {
-            append_word(&mut text, words.get(next)?);
-            next += 1;
+        let target: String = frame.said.as_deref().unwrap_or("").split_whitespace().collect();
+        let mut remaining = target.as_str();
+        let mut taken = Vec::new();
+        while !remaining.is_empty() {
+            let word = words.next()?;
+            let token: String = word.text.split_whitespace().collect();
+            remaining = remaining.strip_prefix(&token)?;
+            taken.push(word);
         }
-        if !target.is_empty() && policy.call("speechMatches", (target, text)).ok()? != "yes" {
-            return None;
-        }
-        frames.push(words[start..next].to_vec());
+        out.push(taken);
     }
-    (next == words.len()).then_some(frames)
+    words.next().is_none().then_some(out)
 }
 
 pub(super) fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<Vec<FrameText>> {
@@ -66,7 +58,7 @@ pub(super) fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<V
         return None;
     }
     let policy = open_handoff_policy()?;
-    let words = frame_words(&policy, bundle);
+    let words = frame_words(bundle);
     let clicks: Vec<_> = frames
         .iter()
         .map(|frame| click_anchor(frame, &bundle.events))

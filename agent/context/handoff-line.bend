@@ -38,9 +38,6 @@ def compact_line(+kind: LineKind, clock: String, number: String, text: String) -
 def keep_frame_head(compact: Bool, scene: Bool, empty: Bool) -> Bool:
   Bool.and(empty, Bool.not(Bool.and(compact, scene)))
 
-def speech_matches(expected: String, rendered: String) -> Bool:
-  String.eq(expected, rendered)
-
 def all_on_page(+url: String, pages: List<&2, String>) -> Bool:
   match pages:
     case []: True{}

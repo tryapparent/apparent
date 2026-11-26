@@ -62,9 +62,6 @@ export function nearbyWindow(observations, keepTitle = false) {
 export function keepFrameHead(compact, scene, empty) {
   return kernel.keep_frame_head(compact, scene, empty) ? "yes" : "";
 }
-export function speechMatches(expected, rendered) {
-  return kernel.speech_matches(expected, rendered) ? "yes" : "";
-}
 export function agreedPage(pages) {
   return kernel.agreed_page(list(JSON.parse(pages)));
 }
