@@ -1,3 +1,5 @@
+use crate::capture::desktop::frog_wardrobe::Achievement;
+
 #[cfg(target_os = "linux")]
 static FROG_SANDBOX_FAILURE: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
@@ -6,7 +8,7 @@ pub(crate) struct DesktopFrogHost {
     input: pipe::Input,
     requests: std::sync::mpsc::Receiver<u32>,
     revision: u32,
-    last: Option<(bool, String, Vec<&'static str>)>,
+    last: Option<(bool, String, Vec<&'static str>, Option<Achievement>)>,
 }
 
 impl DesktopFrogHost {
@@ -95,11 +97,11 @@ impl DesktopFrogHost {
         self.input.send(format!("{state}\n").into_bytes())
     }
 
-    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str]) -> Option<bool> {
+    pub(crate) fn tick(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str], achievement: Option<Achievement>) -> Option<bool> {
         if !matches!(self.child.as_mut()?.try_wait(), Ok(None)) {
             return None;
         }
-        self.project(visible, shortcut, equipped)?;
+        self.project(visible, shortcut, equipped, achievement)?;
         let Ok(revision) = self.requests.try_recv() else { return Some(false); };
         let start = crate::capture::desktop::settings::onboarding::frog_policy::VISIBLE[
             usize::from(visible) * 2 + usize::from(revision != self.revision)
@@ -108,21 +110,21 @@ impl DesktopFrogHost {
         Some(start)
     }
 
-    pub(crate) fn project(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str]) -> Option<()> {
+    pub(crate) fn project(&mut self, visible: bool, shortcut: &str, equipped: &[&'static str], achievement: Option<Achievement>) -> Option<()> {
         if !self
             .last
             .as_ref()
-            .is_some_and(|(was_visible, was_shortcut, was_equipped)| {
-                *was_visible == visible && was_shortcut == shortcut && was_equipped == equipped
+            .is_some_and(|(was_visible, was_shortcut, was_equipped, was_achievement)| {
+                *was_visible == visible && was_shortcut == shortcut && was_equipped == equipped && *was_achievement == achievement
             })
         {
             if self.last.as_ref().is_none_or(|(was_visible, ..)| *was_visible != visible) {
                 self.revision = self.revision.wrapping_add(1);
             }
-            if !self.send(serde_json::json!({"visible": visible, "revision": self.revision, "shortcut": shortcut, "equipped": equipped})) {
+            if !self.send(serde_json::json!({"visible": visible, "revision": self.revision, "shortcut": shortcut, "equipped": equipped, "achievement": achievement})) {
                 return None;
             }
-            self.last = Some((visible, shortcut.to_owned(), equipped.to_vec()));
+            self.last = Some((visible, shortcut.to_owned(), equipped.to_vec(), achievement));
         }
         Some(())
     }

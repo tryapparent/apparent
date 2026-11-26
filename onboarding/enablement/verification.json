@@ -4,7 +4,7 @@
       "id": "desktop-frog-electron",
       "description": "Drive the production desktop frog renderer, preload and stdio peer under sandboxed Linux Electron.",
       "platforms": ["linux-x11-xvfb"],
-      "userEntryPoint": "After adopting a frog, focus its Record control and start a recording.",
+      "userEntryPoint": "After adopting a frog, start a recording from the frog and save an eligible milestone recording.",
       "prerequisites": [
         "The built Desktop frontend, its locked Electron runtime, Xvfb, a working Electron sandbox and xwininfo."
       ],
@@ -14,7 +14,8 @@
       },
       "expectedEvidence": [
         "The frog renders its name and updates the displayed shortcut.",
-        "A hidden frog cannot start capture. Starting from a visible frog unmaps the window before the start intent, and the current parent projection determines when it returns."
+        "A hidden frog cannot start capture. Starting from a visible frog unmaps the window before the start intent, and the current parent projection determines when it returns.",
+        "New achievements announce 10, 30 and 60 saved recordings, equip the new accessory, and fit in the desktop frog window. Equipment-only updates do not replay the celebration. Reduce Motion keeps the achievement and accessory visible and hides streamers."
       ],
       "limits": [
         "The coordinator is a fixture. A real Xorg or Hyprland desktop, installed package and native Record action require separate acceptance."

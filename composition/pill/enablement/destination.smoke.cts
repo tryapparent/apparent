@@ -36,13 +36,12 @@ test("real pill keeps Paste by default, then selects during processing and dispa
       HYPRLAND_INSTANCE_SIGNATURE: "focus-test",
     },
   });
-  let page = await app.firstWindow();
+  const page = await app.firstWindow();
   const initialWindowId = await app.evaluate(({ BrowserWindow }) =>
     Number(BrowserWindow.getAllWindows()[0].getMediaSourceId().split(":")[1]),
   );
 
-  let parentBuffer = "",
-    holdActivation = false;
+  let parentBuffer = "";
   const readyIds = [],
     releasedIds = [];
   const activate = (id) =>
@@ -64,7 +63,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
         const message = JSON.parse(line);
         if (message.ready) {
           readyIds.push(message.windowId);
-          if (!holdActivation) void activate(message.windowId).catch(() => {});
+          void activate(message.windowId).catch(() => {});
         }
         if (message.releaseFocus) releasedIds.push(message.releaseFocus);
       } catch {}
@@ -84,7 +83,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
           const r = document.querySelector("main")!.getBoundingClientRect();
           return (
             innerWidth === Math.ceil(r.width) &&
-            innerHeight >= Math.max(58, Math.ceil(r.height))
+            innerHeight >= Math.ceil(r.height)
           );
         }),
       )
@@ -166,10 +165,20 @@ test("real pill keeps Paste by default, then selects during processing and dispa
       )
       .toBe(true);
   }
-  holdActivation = process.platform === "linux";
-  const oldPage = page;
-  const pickerWindow =
-    process.platform === "linux" ? app.waitForEvent("window") : null;
+  if (process.platform === "linux")
+    await app.evaluate(({ BrowserWindow }) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      window.pickerReshapes = [];
+      window.handoffHidden = false;
+      window.once("hide", () => {
+        window.handoffHidden = true;
+      });
+      const setShape = window.setShape.bind(window);
+      window.setShape = (rectangles) => {
+        window.pickerReshapes.push(rectangles.length);
+        setShape(rectangles);
+      };
+    });
   await f.save(true);
   frame = {
     ...frame,
@@ -183,51 +192,6 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     },
   };
   await publish();
-  if (pickerWindow) page = await pickerWindow;
-  if (pickerWindow) {
-    await expect.poll(() => readyIds.length).toBe(2);
-    const replacementWindowId = readyIds[1];
-    await activate(initialWindowId);
-    assert.equal(
-      await app.evaluate(
-        ({ BrowserWindow }, id) =>
-          BrowserWindow.getAllWindows()
-            .find((w) => Number(w.getMediaSourceId().split(":")[1]) === id)
-            .isVisible(),
-        replacementWindowId,
-      ),
-      false,
-      "stale activation cannot expose the replacement",
-    );
-    await app.evaluate(({ BrowserWindow }, id) => {
-      const picker = BrowserWindow.getAllWindows().find(
-        (w) => Number(w.getMediaSourceId().split(":")[1]) === id,
-      );
-      const focus = picker.focus.bind(picker);
-      const show = picker.show.bind(picker);
-      picker.show = () => {
-        picker.overlapped = BrowserWindow.getAllWindows().some(
-          (w) => w !== picker && w.isVisible(),
-        );
-        show();
-      };
-      picker.focus = () => {
-        if (!picker.isVisible()) throw Error("Focus before native admission");
-        focus();
-      };
-    }, replacementWindowId);
-    await page.evaluate(() => window.apparentPill.destinationFocus(true));
-    await activate(replacementWindowId);
-    assert.equal(
-      await app.evaluate(
-        ({ BrowserWindow }) => BrowserWindow.getFocusedWindow()?.overlapped,
-      ),
-      false,
-      "the replacement maps after the outgoing window is hidden",
-    );
-    holdActivation = false;
-    await expect.poll(() => oldPage.isClosed()).toBe(true);
-  }
   const trigger = page.getByRole("combobox");
   const search = page.getByRole("combobox", { name: "Search threads" });
   const list = page.getByRole("listbox"),
@@ -236,6 +200,33 @@ test("real pill keeps Paste by default, then selects during processing and dispa
   await expect(trigger).toBeEnabled();
   await expect(trigger).toBeFocused();
   await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+  if (process.platform === "linux") {
+    await expect
+      .poll(() => readyIds.slice(0, 2))
+      .toEqual([initialWindowId, initialWindowId]);
+    assert.deepEqual(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows().map((window) => ({
+          id: Number(window.getMediaSourceId().split(":")[1]),
+          hiddenDuringHandoff: window.handoffHidden,
+          focusable: window.isFocusable(),
+        })),
+      ),
+      [{ id: initialWindowId, hiddenDuringHandoff: false, focusable: true }],
+    );
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const size = document.querySelector("main")!.getBoundingClientRect();
+          return innerHeight === Math.ceil(size.height);
+        }),
+      )
+      .toBe(true);
+    const masks = await app.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].pickerReshapes,
+    );
+    assert.ok(masks.length > 0 && masks.every((rows) => rows > 1));
+  }
   await proofThemes("processing-keyboard-focus");
   await page.keyboard.press("ArrowDown");
   await expect(search).toBeFocused();
@@ -485,9 +476,7 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     }),
     true,
   );
-  const reads = f.reads,
-    returning =
-      process.platform === "linux" ? app.waitForEvent("window") : null;
+  const reads = f.reads;
   await f.save(false);
   frame = {
     ...frame,
@@ -495,13 +484,12 @@ test("real pill keeps Paste by default, then selects during processing and dispa
     view: { ...frame.view, revision: 6 },
   };
   await publish();
-  if (returning) page = await returning;
   await expect(
     page.getByRole("button", { name: "Paste", exact: true }),
   ).toBeVisible();
   await expect.poll(() => app.windows().length).toBe(1);
   assert.equal(f.reads, reads);
-  if (returning)
+  if (process.platform === "linux")
     assert.equal(
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].isFocusable(),

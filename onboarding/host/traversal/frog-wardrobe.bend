@@ -5,11 +5,11 @@ def threshold(item: U32) -> U32:
     case 0:
       10
     case 1:
-      20
-    case 2:
       30
+    case 2:
+      60
     case other:
-      31
+      61
 
 def adds_credit(enabled: Bool, eligible: Bool, duplicate: Bool, count: U32) -> Bool:
   match enabled:
@@ -24,51 +24,45 @@ def adds_credit(enabled: Bool, eligible: Bool, duplicate: Bool, count: U32) -> B
             case True{}:
               False{}
             case False{}:
-              (count < 30 : U32)
+              (count < threshold(2) : U32)
 
-def item_action(unlocked: Bool, state: U32) -> U32:
-  match unlocked:
+def award_if_earned(earned: Bool) -> U32:
+  match earned:
+    case True{}:
+      2
     case False{}:
       0
-    case True{}:
-      match state:
-        case 0:
-          1
-        case 1:
-          2
-        case 2:
-          3
-        case other:
-          0
 
-def available_action(item: U32, count: U32, state: U32) -> U32:
-  match item:
+def earned_state(item: U32, count: U32, state: U32) -> U32:
+  match state:
     case 0:
-      item_action((threshold(0) <= count : U32), state)
+      award_if_earned((threshold(item) <= count : U32))
+    case other:
+      state
+
+def state_action(state: U32) -> U32:
+  match state:
     case 1:
-      item_action((threshold(1) <= count : U32), state)
+      1
     case 2:
-      item_action((threshold(2) <= count : U32), state)
+      2
     case other:
       0
+
+def available_action(item: U32, count: U32, state: U32) -> U32:
+  state_action(earned_state(item, count, state))
 
 def apply_if_equal(action: U32, expected: U32) -> U32:
   match action:
     case 1:
       match expected:
         case 1:
-          1
+          2
         case other:
           0
     case 2:
       match expected:
         case 2:
-          2
-        case other:
-          0
-    case 3:
-      match expected:
-        case 3:
           1
         case other:
           0
