@@ -11,6 +11,40 @@ pub(crate) mod preferences {
     use anyhow::{Result, ensure};
     use serde_json::{Value, json};
 
+    use super::handoff::{AGENT_CONTEXT, Config};
+
+    pub(crate) const AGENT_CONTEXT_PREFERENCE: &str = "labs.agentContext";
+
+    pub(crate) fn sdk_context_enabled_in(config: &Config) -> bool {
+        config.experiments.get(AGENT_CONTEXT) == Some(&true)
+    }
+
+    pub(crate) fn experiment_preference_in(config: &Config, id: &str) -> bool {
+        let Some(entry) = preference(id) else { return false };
+        entry["legacy"]["path"]
+            .as_str()
+            .and_then(|path| path.strip_prefix("experiments."))
+            .and_then(|name| config.experiments.get(name).copied())
+            .or_else(|| entry["default"].as_bool())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
+        if name == AGENT_CONTEXT {
+            return experiment_preference_in(config, AGENT_CONTEXT_PREFERENCE);
+        }
+        config
+            .experiments
+            .get(name)
+            .copied()
+            .unwrap_or(matches!(
+                name,
+                "copyCaptureId" | "connectSettings" | "nativeLaunch"
+                    | "movableRecordingControls" | "exportNarration" | "onboardingFirstCapture" | "hostedEncryption"
+                    | "autoPasteDraft"
+            ))
+    }
+
     pub(crate) fn preferences() -> &'static [Value] {
         static CATALOG: std::sync::OnceLock<Vec<Value>> = std::sync::OnceLock::new();
         CATALOG.get_or_init(|| {

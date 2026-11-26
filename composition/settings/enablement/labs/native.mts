@@ -76,21 +76,9 @@ try {
     assert.equal(saved.experiments.other, true);
     assert.equal(saved.secret, "private");
   }
-  const agentContext = page.getByRole("switch", {
-    name: "Recording context for agents",
-  });
-  await expect(agentContext).toHaveAttribute("aria-checked", "false");
-  for (const on of [true, false]) {
-    await agentContext.click();
-    await expect(agentContext).toHaveAttribute("aria-checked", String(on));
-    const saved = JSON.parse(await fs.readFile(process.argv[2], "utf8"));
-    assert.equal(saved.labs.agentContext, on);
-    assert.equal(saved.experiments.other, true);
-    assert.equal(saved.secret, "private");
-    await page.reload();
-    await expect(agentContext).toBeEnabled();
-    await expect(agentContext).toHaveAttribute("aria-checked", String(on));
-  }
+  await expect(
+    page.getByRole("switch", { name: "Recording context for agents" }),
+  ).toHaveCount(0);
   await expect(
     page.getByText("Compact recording prompts", { exact: true }),
   ).toHaveCount(0);

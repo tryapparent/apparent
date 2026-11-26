@@ -79,6 +79,7 @@ under the pin, its branch is read before browser chrome. The producer reads
 accessible names and skips editable, password, and terminal subtrees. It does
 not query text or value interfaces. The saved summary and clipboard show up to
 four named elements alongside the matching pin and label them as app data.
+Controls with reported states such as disabled or checked appear first.
 Inspect `actionContext[].pinWindow` in the bundle for the rest.
 
 On macOS the worker matches the accessibility window under the pin to the
@@ -95,8 +96,8 @@ points. Allow Accessibility in Privacy & Security before recording.
    text. Match the pin number and timestamp. Expect Save's disabled and
    Auto-save's checked states even though neither control was clicked. The
    password value should be absent from the accessibility observation.
-3. Repeat with the lab disabled. The ordinary pin and images still save and
-   the new recording contains no `pinWindow` data. With the lab on, repeat
+3. Repeat with the preference off. The ordinary pin and images still save and
+   the new recording contains no `pinWindow` data. With the preference on, repeat
    against a window that supplies no accessibility tree. The recording and pin
    still finish.
 4. On macOS, repeat the enabled case in Safari with the Dock visible and

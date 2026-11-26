@@ -26,7 +26,7 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    const field=setting==='wisprFlow'?'wisprSaved':setting?`${setting}Saved`:'saved';
    saved[field]=message.enabled;
   }
-  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,agentContextAccess:'approval_required',wisprSupported:process.platform==='darwin'}})+'\n');
+  application.stdin.write(JSON.stringify({type:'labs-result',request:message.request,facts:fail?{error:'config_write_failed'}:{...saved,wisprSupported:process.platform==='darwin'}})+'\n');
  };
  createInterface({input:application.stdout}).on('line',line=>{
   try{const value=JSON.parse(line);messages.push(value);if(value.action==='agents-preference'){application.stdin.write(JSON.stringify({type:'agents-result',request:value.request,facts:{t3Saved:false,t3Configured:false}})+'\n');}if(value.action==='labs-preference'){if(hold)held=value;else reply(value);}}catch{}
@@ -45,19 +45,12 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
   const toggle=page.getByRole('switch',{name:'Live local transcription'});
   await expect(page.getByText('Compact recording prompts',{exact:true})).toHaveCount(0);
   await expect(page.getByText('Transcript-only handoff',{exact:true})).toHaveCount(0);
-  const agentContext=page.getByRole('switch',{name:'Recording context for agents'});
+  await expect(page.getByRole('switch',{name:'Recording context for agents'})).toHaveCount(0);
   await expect(page.getByRole('switch',{name:/^(Recording pill doodles|Soft Bloom)$/})).toHaveCount(0);
   await expect(page.getByRole('switch',{name:'Label circled items'})).toHaveCount(0);
-  await expect(agentContext).toBeDisabled();
-  await expect(agentContext).toHaveAccessibleDescription(/local dev page using the Apparent SDK/);
   await expect(toggle).toBeDisabled();await expect.poll(()=>Boolean(held)).toBe(true);
   reply(held!);hold=false;await expect(toggle).toBeEnabled();await expect(toggle).toHaveAttribute('aria-checked','false');
-  await expect(agentContext).toHaveAttribute('aria-checked','false');
-  await agentContext.focus();await page.keyboard.press('Space');
-  await expect(agentContext).toHaveAttribute('aria-checked','true');await expect(agentContext).toBeFocused();
-  await expect(page.locator('#agent-context-access')).toContainText('Allow Apparent');
   await page.reload();
-  await expect(agentContext).toBeChecked();
   assert.equal(await toggle.locator('.apparent-switch-track').evaluate(el=>getComputedStyle(el).backgroundColor),'rgb(229, 229, 234)');
   const track=toggle.locator('.apparent-switch-track');
   await expect(track).toHaveCSS('width','51px');
@@ -143,15 +136,15 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
     await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`labs-${theme}-${width}-bottom.png`)});
     await toggle.scrollIntoViewIfNeeded();
    }
-   for(const id of ['speaking-style-help','agent-context-limits','local-stream-ready','public-sharing-limits','wispr-lab-help']){
+   for(const id of ['speaking-style-help','local-stream-ready','public-sharing-limits','wispr-lab-help']){
     const guidance=page.locator(`#${id}`);await guidance.evaluate(el=>el.scrollIntoView({block:'center'}));await expect(guidance).toBeInViewport();
-    if(['agent-context-limits','speaking-style-help'].includes(id) && process.env.APPARENT_LIVE_PROOF)
+    if(id==='speaking-style-help' && process.env.APPARENT_LIVE_PROOF)
      await page.screenshot({path:path.join(process.env.APPARENT_LIVE_PROOF,`${id}-${theme}-${width}.png`)});
    }
    await cdp.detach();
   }
   const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setDeviceMetricsOverride',{width:640,height:530,deviceScaleFactor:1,mobile:false});
-  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['agentContext',agentContext],['speakingStyle',speaking]];
+  const recoveries: [string,typeof toggle][]=[['streaming',toggle],['speakingStyle',speaking]];
   recoveries.push(['sharing',sharing]);
   if(process.platform==='darwin')recoveries.push(['wisprFlow',wispr]);
   for(const [setting,control] of recoveries){
@@ -166,7 +159,6 @@ test('Labs uses parent acknowledgements, persists its switch, and recovers from 
    await expect(control).toHaveAttribute('aria-checked','true');await expect(control).toBeFocused();
   }
   await cdp.detach();
-  await agentContext.click();await expect(agentContext).toHaveAttribute('aria-checked','false');
   await toggle.click();await expect(toggle).toHaveAttribute('aria-checked','false');
   await expect(sharing).toHaveAttribute('aria-checked','true');
   await sharing.click();await expect(sharing).toHaveAttribute('aria-checked','false');

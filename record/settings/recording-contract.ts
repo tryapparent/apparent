@@ -28,6 +28,10 @@ export type RecordingState = {
     error?: string;
   };
   playback: { enabled: boolean; level: number } | null;
+  context: {
+    enabled: boolean;
+    access: "enabled" | "approval_required" | "disabled" | "unavailable" | null;
+  };
   mediaWarnings: string[];
 };
 
@@ -37,6 +41,8 @@ export type RecordingChange = {
 
 type RecordingValues = {
   microphone: string;
+  agentContext: PreferenceValues["labs.agentContext"];
+  contextAccessibility: true;
   transcriber: PreferenceValues["recording.transcriber"];
   appleLocale: PreferenceValues["recording.appleLocale"];
   hexModel: PreferenceValues["recording.hexModel"];

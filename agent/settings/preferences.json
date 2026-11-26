@@ -1,9 +1,10 @@
 [
   {
     "id": "labs.agentContext",
+    "pane": "recording",
     "label": "Recording context for agents",
     "kind": "boolean",
-    "default": false,
+    "default": true,
     "apply": "next-capture",
     "legacy": { "path": "experiments.agentContext", "lenient": true },
     "effect": "agentContext"

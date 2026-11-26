@@ -2,7 +2,8 @@ pub(crate) mod connect;
 mod agents;
 pub(crate) use agents::persist_t3_connection;
 pub(in crate::capture::desktop) mod labs;
-pub(crate) use labs::desktop_access;
+pub(crate) use crate::recording_preferences::desktop_access;
+use crate::recording_preferences::recording_key;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_window;
 pub(crate) mod settings;
@@ -133,16 +134,6 @@ fn update_failure(error: &anyhow::Error) -> Option<UpdateFailure> {
     }
 }
 
-fn recording_key(key: &str, value: &serde_json::Value) -> bool {
-    match key {
-        "lowerPlayback" => cfg!(target_os = "macos") && value.is_boolean(),
-        "playbackLevel" => cfg!(target_os = "macos") && value.as_u64().is_some_and(|level| level <= 100),
-        "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
-            value.as_str().is_some_and(|value| value.len() <= 16_384),
-        _ => false,
-    }
-}
-
 enum RecordingMeter {
     #[cfg(not(target_os = "macos"))]
     Local(std::sync::mpsc::Sender<()>),
@@ -201,16 +192,11 @@ impl Drop for RecordingMeter {
 }
 
 fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, inputs: Option<&crate::capture::engine::runtime::audio::mic::Inputs>) -> anyhow::Result<Effect> {
-    let value = if key == "microphone" {
-        serde_json::json!({"id": value})
-    } else {
-        value.clone()
-    };
-    crate::recording_preferences::save(path, &format!("recording.{key}"), Some(&value), inputs)?;
+    crate::recording_preferences::save_from_ui(path, key, value, inputs)?;
     Ok(if key == "appleLocale" { Effect::SpeechModel } else { Effect::None })
 }
 
-fn recording_state(view: View) -> serde_json::Value {
+fn recording_state(view: View, host: &dyn Host) -> serde_json::Value {
     use crate::capture::engine::runtime::audio::transcription::speech_model;
     let speech = speech_model::current();
     if view.transcriber.engine == "apple" && speech.state == speech_model::State::Unknown {
@@ -227,6 +213,7 @@ fn recording_state(view: View) -> serde_json::Value {
         "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
         "playback":cfg!(target_os = "macos").then(|| serde_json::json!({"enabled":view.lower_playback,"level":view.playback_level})),
+        "context":crate::recording_preferences::context_state(&host.config_path()),
         "mediaWarnings":warnings
     }})
 }

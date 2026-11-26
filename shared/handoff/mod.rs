@@ -19,7 +19,8 @@ pub use config_store::log_dir;
 pub(crate) use config_store::{update_config_in, update_config_allowed_in, update_onboarding_progress_in};
 pub(crate) use config_store::{edit_preference, write_preference};
 pub(crate) use super::preferences::{preference_state, preference_value, preferences, read_preferences};
-use super::preferences::{experiment_boolean, preference};
+use super::preferences::{experiment_boolean, preference, sdk_context_enabled_in};
+pub(crate) use super::preferences::{AGENT_CONTEXT_PREFERENCE, experiment_enabled_in, experiment_preference_in};
 #[cfg(test)]
 pub(crate) use config_store::set_config_write_hook;
 #[cfg(test)]
@@ -926,6 +927,11 @@ pub fn experiment(name: &str) -> bool {
     experiment_enabled_in(&config(), name)
 }
 
+pub(crate) fn sdk_context_enabled() -> bool {
+    experiment_overridden(AGENT_CONTEXT)
+        || (!cfg!(test) && sdk_context_enabled_in(&config()))
+}
+
 pub(crate) fn experiment_preference(id: &str) -> bool {
     let overridden = experiment_preference_overridden(id);
     if overridden || cfg!(test) {
@@ -939,29 +945,6 @@ pub(crate) fn experiment_preference_overridden(id: &str) -> bool {
         .and_then(|entry| entry["legacy"]["path"].as_str())
         .and_then(|path| path.strip_prefix("experiments."))
         .is_some_and(experiment_overridden)
-}
-
-pub(crate) fn experiment_preference_in(config: &Config, id: &str) -> bool {
-    let Some(entry) = preference(id) else { return false };
-    entry["legacy"]["path"]
-        .as_str()
-        .and_then(|path| path.strip_prefix("experiments."))
-        .and_then(|name| config.experiments.get(name).copied())
-        .or_else(|| entry["default"].as_bool())
-        .unwrap_or(false)
-}
-
-pub(crate) fn experiment_enabled_in(config: &Config, name: &str) -> bool {
-    config
-        .experiments
-        .get(name)
-        .copied()
-        .unwrap_or(matches!(
-            name,
-            "copyCaptureId" | "connectSettings" | "nativeLaunch"
-                | "movableRecordingControls" | "exportNarration" | "onboardingFirstCapture" | "hostedEncryption"
-                | "autoPasteDraft"
-        ))
 }
 
 pub fn load_config_from(path: &Path) -> Config {

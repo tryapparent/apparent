@@ -312,11 +312,11 @@
     },
     {
       "id": "browser-context-handoff",
-      "description": "Verify extension-free page URLs for clicks and Shift circles in the recording handoff.",
+      "description": "Verify extension-free browser site attribution for clicks and Shift circles in the recording handoff.",
       "platforms": ["linux-hyprland", "macos"],
-      "userEntryPoint": "Enable Recording context for agents in Labs, then click and circle a control during a screen recording.",
+      "userEntryPoint": "Use Recording context for agents in Settings → Recording, then click and circle a control during a screen recording.",
       "prerequisites": [
-        "An installed candidate, a disposable native desktop and two local browser pages with the same title and distinct paths.",
+        "An installed candidate, a disposable native desktop and two local browser pages on distinct origins with the same title and distinct paths.",
         "Desktop accessibility, screen recording permission and a browser exposing page URLs to accessibility."
       ],
       "runner": {
@@ -324,22 +324,22 @@
         "instructions": "record/settings/renderer/README.md#verify-browser-handoff-on-a-native-desktop"
       },
       "expectedEvidence": [
-        "The clipboard groups successive clicks and circles under one verified page URL with their action times.",
+        "The clipboard groups successive clicks and circles under one verified site origin with their action times.",
         "Three completed circles around distinct items with less than 1.2 seconds between them remain three marks with separate timestamps and labels.",
         "The clipboard retains marks with missing labels and shows only a short nearby location when needed, with no unknown-window or unidentified-target placeholders.",
         "The saved summary retains individual browser page observations at their original times.",
-        "The synthetic query and fragment are absent from the full handoff, including interaction labels.",
-        "The next recording omits browser URLs after disabling the lab."
+        "The synthetic path, query and fragment are absent from the full handoff, including interaction labels.",
+        "The next recording omits browser site observations after disabling recording context."
       ],
       "limits": [
-        "The browser must publish its accessibility tree. This checks page URLs for clicks and Shift ink on the browsers and versions exercised."
+        "The browser must publish its accessibility tree. This checks site attribution for clicks and Shift ink on the browsers and versions exercised."
       ]
     },
     {
       "id": "pin-window-context",
       "description": "Verify bounded native accessibility context and clipboard text for a pin.",
       "platforms": ["linux-hyprland", "macos"],
-      "userEntryPoint": "Enable Recording context for agents in Labs and place a pin during a Screen recording.",
+      "userEntryPoint": "Use Recording context for agents in Settings → Recording and place a pin during a Screen recording.",
       "prerequisites": [
         "A candidate running in an isolated macOS or Omarchy desktop and a synthetic app exposing accessible controls.",
         "Desktop accessibility and live screen recording available."
@@ -350,7 +350,7 @@
       },
       "expectedEvidence": [
         "A disabled button and checked checkbox appear in the pinWindow observation and the relevant keyframe handoff.",
-        "The password value is absent. The pin still saves with the lab off or when the target has no accessibility tree.",
+        "The password value is absent. The pin still saves with recording context off or when the target has no accessibility tree.",
         "On macOS, Safari pins capture both control states with the cursor at the pin and the Dock either visible or hidden."
       ],
       "limits": [

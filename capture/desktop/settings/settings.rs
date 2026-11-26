@@ -866,7 +866,7 @@ impl Session {
                 Effect::None
             }
             Event::Action(Action::PermissionAction { request, intent }) => {
-                if self.presents_permissions()
+                if self.pane == Some(Pane::Permissions)
                     && let Some(Outcome::Reply(request, error)) = self.permissions.begin(request, intent, &host.config_path())
                 {
                     self.sync_permissions(host);
@@ -1021,10 +1021,6 @@ impl Session {
         }
     }
 
-    fn presents_permissions(&self) -> bool {
-        self.pane == Some(Pane::Permissions)
-    }
-
     pub(crate) fn note_grants(&mut self, grants: Grants, changed: bool) -> Option<Event> {
         if changed || self.permissions.waiting() {
             Some(Event::Grants(grants))
@@ -1068,7 +1064,7 @@ impl Session {
                 Some((id.to_owned(), meter))
             });
         }
-        self.send_state(super::recording_state(view));
+        self.send_state(super::recording_state(view, host));
     }
 
     fn send_state(&mut self, message: serde_json::Value) {

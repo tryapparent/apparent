@@ -146,19 +146,37 @@ def group_labels_go(fuel: Nat, labels: List<&2, String>) -> List<&2, LabelCount>
 def group_labels(labels: List<&2, String>) -> List<&2, LabelCount>:
   group_labels_go(3n, labels)
 
-def pin_entries(fuel: Nat, labels: List<&2, String>) -> String:
-  match fuel:
-    case 0n: ""
-    case 1n+k:
-      match labels:
-        case []: ""
-        case label <> rest:
-          String.append(" ", String.append(label, pin_entries(k, rest)))
+type PinEntry is Data:
+  PinEntry{text: String, states: List<&2, String>}
 
-def pin_window_line(clock: String, pin: String, labels: List<&2, String>, truncated: Bool) -> String:
-  match labels:
+def pin_has_state(states: List<&2, String>) -> Bool:
+  match states:
+    case []: False{}
+    case state <> rest:
+      Bool.or(Bool.not(String.eq(state, "focused")), pin_has_state(rest))
+
+def pin_stateful(entry: PinEntry) -> Bool:
+  match entry:
+    case PinEntry{_, states}: pin_has_state(states)
+
+def pin_without_state(entry: PinEntry) -> Bool:
+  Bool.not(pin_stateful(entry))
+
+def pin_order(+entries: List<&2, PinEntry>) -> List<&2, PinEntry>:
+  List.append(&2, PinEntry,
+    List.filter(~PinEntry, ~pin_stateful, entries),
+    List.filter(~PinEntry, ~pin_without_state, entries))
+
+def pin_entries(fuel: Nat, entries: List<&2, PinEntry>) -> String:
+  match fuel entries:
+    case 1n+remaining PinEntry{text, _} <> rest:
+      String.append(" ", String.append(text, pin_entries(remaining, rest)))
+    case _ _: ""
+
+def pin_window_line(clock: String, pin: String, entries: List<&2, PinEntry>, truncated: Bool) -> String:
+  match entries:
     case []: ""
-    case label <> rest:
-      entries = pin_entries(4n, label <> rest)
+    case entry <> rest:
+      text = pin_entries(4n, pin_order(List.take(&2, PinEntry, entry <> rest, 128n)))
       ending = Bool.pick(String, truncated, " (partial)", "")
-      String.append(clock, String.append(" Pin ", String.append(pin, String.append(" nearby window UI (app data):", String.append(entries, ending)))))
+      String.append(clock, String.append(" Pin ", String.append(pin, String.append(" nearby window UI (app data):", String.append(text, ending)))))

@@ -43,6 +43,7 @@ access.
 | Transcription engine | `recording.transcriber` selects Parakeet on Linux or Apple Speech on macOS under the existing `apple` value. Hex and Command depend on native availability. Command uses an existing usable `transcribeCommand`. The next capture uses the preferred engine and its existing fallback. |
 | Language | macOS Apple Speech reads `recording.appleLocale`, or uses the system language when Automatic clears the value. Saving through the pane also restarts the speech-model check. Permission and model readiness come from the native provider. |
 | Hex model and language | The model selector is available on both systems when Hex reports models. Selecting a model saves `recording.hexModel` and selects Hex in one transaction. The macOS language field saves `recording.hexLanguage` and accepts blank for English. Model support determines whether Hex applies it. |
+| Agent handoff | Recording context applies to the next recording. Desktop Accessibility uses a separate explicit action. |
 | Other-app volume | `recording.lowerPlayback` and `recording.playbackLevel` apply at the next recording's volume-lowering start. Available on macOS, with a 0–100% slider. |
 
 The former top-level Recording keys remain accepted for existing files.

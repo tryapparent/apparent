@@ -1,61 +1,75 @@
+import { Button } from "@apparent/ui/button";
 import { Switch } from "@apparent/ui/switch";
-
-export type AgentContextPreferenceProps = {
-  id: string;
-  checked: boolean;
-  disabled: boolean;
-  saving: boolean;
-  access?: "enabled" | "approval_required" | "disabled" | "unavailable";
-  onCheckedChange: (value: boolean) => void;
-};
+import { bindPreference } from "../../../shared/settings/binding";
+import type { RecordingChange, RecordingState } from "../recording-contract";
 
 export function AgentContextPreference({
-  id,
-  checked,
-  disabled,
-  saving,
-  access,
-  onCheckedChange,
-}: AgentContextPreferenceProps) {
+  context,
+  mac,
+  pending,
+  save,
+}: {
+  context: RecordingState["context"];
+  mac: boolean;
+  pending: RecordingChange | undefined;
+  save: (change: RecordingChange) => void;
+}) {
+  const { enabled, access } = context;
   return (
-    <section className="agent-preference">
-      <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="agent-context-label">
-          Recording context for agents
-        </h2>
-        <Switch
-          id={id}
-          className="agent-switch"
-          checked={checked}
-          disabled={disabled}
-          aria-busy={saving}
-          aria-labelledby="agent-context-label"
-          aria-describedby="agent-context-help agent-context-limits agent-context-access"
-          onCheckedChange={onCheckedChange}
-        />
+    <>
+      <div className="recording-group">
+        <div className="recording-row">
+          <label htmlFor="recording-agent-context">
+            Recording context for agents
+          </label>
+          <Switch
+            id="recording-agent-context"
+            className="recording-switch"
+            aria-describedby="recording-context-help"
+            checked={enabled}
+            disabled={!!pending}
+            aria-busy={pending?.key === "agentContext" || undefined}
+            onCheckedChange={bindPreference(
+              "recording",
+              "labs.agentContext",
+              (value) => save({ key: "agentContext", value }),
+            )}
+          />
+        </div>
       </div>
-      <p id="agent-context-help">
-        Add click details, page URLs, and labels for circled items to your
-        handoff when available. Circle recognition runs on this device. Applies
-        to your next recording.
+      <p id="recording-context-help" className="recording-note">
+        Add labels for circled items on this device. With desktop accessibility,
+        include available control details and browser sites. Applies to your
+        next recording.
       </p>
-      <p id="agent-context-limits">
-        On Linux, this enables desktop accessibility. It stays on when you turn
-        this switch off. Some apps may need a restart. On macOS, approve
-        Apparent in System Settings. Component and source details require a
-        local dev page using the Apparent SDK.
-      </p>
-      <p
-        id="agent-context-access"
-        role="status"
-        hidden={!checked || access === undefined || access === "enabled"}
-      >
-        {access === "approval_required"
-          ? "Allow Apparent under Privacy & Security → Accessibility to name controls."
-          : access === "disabled" || access === "unavailable"
-            ? "Desktop accessibility is off or unavailable. Visual marks still work."
-            : null}
-      </p>
-    </section>
+      {enabled && (
+        <>
+          <p
+            id="recording-context-access"
+            className="recording-note"
+            role="status"
+          >
+            {access === "enabled"
+              ? "Desktop accessibility is on."
+              : access === "unavailable"
+                ? "Desktop accessibility is unavailable. Circle recognition is still available."
+                : mac
+                  ? "Allow Apparent in System Settings under Privacy & Security → Accessibility."
+                  : "This enables desktop accessibility system-wide. It stays on if you turn off recording context. Some apps may need a restart."}
+          </p>
+          {(access === "approval_required" || access === "disabled") && (
+            <Button
+              id="recording-context-enable"
+              variant="outline"
+              disabled={!!pending}
+              aria-describedby="recording-context-access"
+              onClick={() => save({ key: "contextAccessibility", value: true })}
+            >
+              Enable desktop accessibility
+            </Button>
+          )}
+        </>
+      )}
+    </>
   );
 }

@@ -79,10 +79,13 @@ export function pageHeading(url, scope) {
 }
 export function pinWindowLine(clock, pin, elements, truncated) {
   const nodes = JSON.parse(elements);
-  const labels = nodes.filter(node => node.name).map(node =>
-    JSON.stringify({ role: node.role, name: node.name, ...(node.states?.length ? { states: node.states } : {}) })
-      .replaceAll("<", String.fromCharCode(92) + "u003c").replaceAll(">", String.fromCharCode(92) + "u003e"));
-  return kernel.pin_window_line(clock, pin, list(labels), truncated);
+  const entries = nodes.filter(node => node.name).map(node => ({
+    $: "PinEntry",
+    text: JSON.stringify({ role: node.role, name: node.name, ...(node.states?.length ? { states: node.states } : {}) })
+      .replaceAll("<", String.fromCharCode(92) + "u003c").replaceAll(">", String.fromCharCode(92) + "u003e"),
+    states: list(node.states ?? []),
+  }));
+  return kernel.pin_window_line(clock, pin, list(entries), truncated);
 }
 export function pageLine(clock, text, heading) {
   return heading === "" ? kernel.page_line(clock, text) : kernel.single_page_line(clock, text, heading);

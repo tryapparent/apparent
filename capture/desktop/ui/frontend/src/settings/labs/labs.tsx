@@ -10,19 +10,17 @@ declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(...command: [value: boolean, setting?: LabsSetting] | [value: undefined, setting: undefined, intent: unknown]): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', videoTracing: 'video-tracing-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', speakingStyle: 'speaking-style-toggle', videoTracing: 'video-tracing-toggle', recordingPerformance: 'recording-performance-toggle'};
 type LabsExperiment = React.ComponentType<{
   id: string; checked: boolean; disabled: boolean; saving: boolean;
-  access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
 type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, videoTracingExperiment: VideoTracing, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
+export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment: SpeakingStyle, videoTracingExperiment: VideoTracing, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, pushToTalkExperiment: PushToTalk}: {
   speakingStyleExperiment?: LabsExperiment;
   videoTracingExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
-  agentContextExperiment?: LabsExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
 } & {openRouterExperiment?: React.ComponentType}) {
   const [facts, setFacts] = useState<LabsFacts>();
@@ -72,8 +70,6 @@ export function Labs({openRouterExperiment: OpenRouter, speakingStyleExperiment:
     saving: busy && setting === name,
   });
   return <section className="settings-labs" aria-label="Experimental features">
-    {AgentContext && <AgentContext {...switchProps('agentContext', facts?.agentContextSaved)}
-      access={facts?.agentContextAccess} onCheckedChange={bindPreference('labs', 'labs.agentContext', value => void request(value, 'agentContext'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="local-stream-label" tabIndex={-1}>Live local transcription</h2>
         <Switch id={controls.streaming} className="agent-switch" checked={on ?? false} aria-labelledby="local-stream-label" aria-describedby="local-stream-help local-stream-ready" aria-busy={busy && setting === 'streaming'}

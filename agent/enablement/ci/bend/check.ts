@@ -86,11 +86,11 @@ console.log(JSON.stringify({
   headings: headings.map(pair => nearbyWindow(JSON.stringify(pair))),
   frames: frames.map(args => keepFrameHead(...args)),
   pinWindow: pinWindowLine("0:05", "2", JSON.stringify([
+    {role: "heading", name: "Recording context"},
+    {role: "button", name: "Review", states: ["focused"]},
+    {role: "static", name: "Outside excerpt"},
     {role: "button", name: "<Save>", states: ["disabled"]},
     {role: "check box", name: "Auto-save", states: ["checked"]},
-    {role: "label", name: "Status"},
-    {role: "button", name: "Cancel"},
-    {role: "button", name: "Outside excerpt"},
   ]), true),
   pages: [
     agreedPage(JSON.stringify([url, url])),
@@ -168,7 +168,12 @@ console.log(JSON.stringify({
   assert.ok(pinWindow.startsWith("0:05 Pin 2 nearby window UI (app data):"));
   assert.ok(pinWindow.includes(String.raw`\u003cSave\u003e`));
   assert.ok(pinWindow.includes('"states":["disabled"]'));
-  assert.ok(pinWindow.includes('"Cancel"'));
+  assert.ok(pinWindow.includes('"name":"Auto-save","states":["checked"]'));
+  assert.ok(
+    pinWindow.indexOf('"name":"Auto-save"') <
+      pinWindow.indexOf('"name":"Recording context"'),
+  );
+  assert.ok(pinWindow.includes('"name":"Review","states":["focused"]'));
   assert.ok(!pinWindow.includes("Outside excerpt"));
   assert.ok(pinWindow.endsWith(" (partial)"));
   assert.deepEqual(lines, [

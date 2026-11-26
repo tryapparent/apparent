@@ -1,10 +1,8 @@
 // Desktop owns which trials are exposed. Native persists only this allowlist.
-export type LabsSetting = 'streaming' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'frogWardrobe' | 'agentContext' | 'speakingStyle' | 'videoTracing' | 'recordingPerformance';
-type AgentContextAccess = 'enabled' | 'approval_required' | 'disabled' | 'unavailable';
-const savedFlags = ['pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'desktopFrogSaved', 'agentContextSaved', 'speakingStyleSaved', 'videoTracingSaved', 'recordingPerformanceSaved'] as const;
+export type LabsSetting = 'streaming' | 'pushToTalk' | 'sharing' | 'wisprFlow' | 'dictationFrog' | 'desktopFrog' | 'frogWardrobe' | 'speakingStyle' | 'videoTracing' | 'recordingPerformance';
+const savedFlags = ['pushToTalkSaved', 'sharingSaved', 'wisprSaved', 'dictationFrogSaved', 'desktopFrogSaved', 'speakingStyleSaved', 'videoTracingSaved', 'recordingPerformanceSaved'] as const;
 type Preferences = Partial<Record<(typeof savedFlags)[number], boolean | null>> & {
   saved: boolean | null;
-  agentContextAccess?: AgentContextAccess;
   pushToTalkSupported?: boolean;
   wisprSupported?: boolean;
   frogWardrobe?: unknown;
@@ -19,8 +17,6 @@ export function facts(value: unknown): LabsFacts {
   if (input.error === 'config_read_failed' || input.error === 'config_write_failed') return {error: input.error};
   if (!savedFlag(input.saved)) throw Error('Invalid Labs preference');
   const result: Preferences = {saved: input.saved, ...(input.frogWardrobe == null ? {} : {frogWardrobe: input.frogWardrobe})};
-  const access = input.agentContextAccess;
-  if (access === 'enabled' || access === 'approval_required' || access === 'disabled' || access === 'unavailable') result.agentContextAccess = access;
   for (const key of savedFlags) {
     if (input[key] === undefined) continue;
     if (!savedFlag(input[key])) throw Error('Invalid Labs preference');
@@ -48,7 +44,7 @@ export class LabsPreferences {
     return this.sendRequest(value, setting, wardrobe);
   }
   private sendRequest(value: unknown, setting: LabsSetting, wardrobe?: unknown): Promise<LabsFacts> {
-    if (value !== undefined && typeof value !== 'boolean' || !['streaming','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','frogWardrobe','agentContext','speakingStyle','videoTracing','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
+    if (value !== undefined && typeof value !== 'boolean' || !['streaming','pushToTalk','sharing','wisprFlow','dictationFrog','desktopFrog','frogWardrobe','speakingStyle','videoTracing','recordingPerformance'].includes(setting) || this.pending) return Promise.reject(Error('Invalid or pending Labs request'));
     const request = ++this.next;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {this.pending = undefined; reject(Error('Labs acknowledgement timed out'));}, 3500);
