@@ -8,9 +8,9 @@ The welcome tour is optional. **Later** and window close save its place and
 silence startup. A successful recording keeps future launches quiet. Open
 **Resume setup** in Settings → About to pick up a saved tour or **Show welcome
 tour** to replay a finished one. Electron setup tests the effective Record
-shortcut and waits for **Use shortcut** before advancing. **Change shortcut**
-opens the existing native shortcut editor. Recording entry points use the effective Record shortcut
-or visible capture controls and surface permission repair for actual blockers.
+shortcut. **Use shortcut** completes regular setup. **Change shortcut** opens
+the native shortcut editor. Recording entry points use the effective Record shortcut or visible
+capture controls and surface permission repair for actual blockers.
 
 The desktop build compiles the TypeScript launch policy for use before a
 renderer starts. Electron and the native fallback share the Rust adapter and
@@ -109,8 +109,9 @@ existing onboarding experience.
 ## Desktop frog trial
 
 Enable **Settings → Labs → Desktop frog** on macOS or a supported Linux
-session, then open **Show welcome tour** from About. The second shortcut
-prompt leads to the frog naming step and then the platform’s guided capture. The guided practice uses the existing capture,
+session, then open **Show welcome tour** from About. Confirm the shortcut to
+reach the frog naming step. Naming the frog leads to the platform’s guided
+capture. The guided practice uses the existing capture,
 annotation, save and handoff actions. A completed practice recording and
 **Finish setup** commit the frog to the profile before it lands on the desktop.
 

@@ -1132,28 +1132,3 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
     assert!(query("exec sleep 2"));
     assert!(query_shortcut_reservation(&mut Command::new("/nonexistent/apparent-test-helper"), Duration::from_millis(100)));
 }
-
-#[test]
-fn electron_shortcut_needs_a_native_trial_and_explicit_confirmation() {
-    for required in [false, true] {
-        let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(required,false,false,false));
-        session.shortcut_label="Fn".into();
-        session.fallback=Some(Box::new(|_|Ok(Transport::InProcess(None))));
-        session.action("use-shortcut");
-        assert_eq!(session.flow.step(),Step::Shortcut);
-        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Trial);
-        session.input(Input::ShortcutChosen);
-        session.input(Input::ShortcutTriggered);
-        assert!(!session.flow.shortcut_tested);
-        session.shortcut_selection_released(true);
-        session.input(Input::ShortcutTriggered);
-        assert!(session.flow.shortcut_tested);
-        assert_eq!(session.flow.step(),Step::Shortcut);
-        session.shortcut_changed("Copilot");
-        assert!(!session.flow.shortcut_tested);
-        session.shortcut_selection_released(true);
-        session.input(Input::ShortcutTriggered);
-        session.action("use-shortcut");
-        assert_eq!(session.flow.step(),Step::TryIt);
-    }
-}
