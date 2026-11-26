@@ -60,6 +60,7 @@
 
 .pill .warning,.pill .notice,.pill-row [role=alert] { max-width:300px;font-size:16px;line-height:22px;padding:4px 8px;overflow-wrap:anywhere; }
 .pill .warning { color:var(--apparent-foreground); }
+.pill .microphone-warning { display:grid;place-items:center;flex:none;width:24px;height:24px;color:var(--apparent-warning); }
 
 /* The main row never participates in count layout. Reserve native footprint,
    not a visible gap or pointer target, for the right-hand extension. */

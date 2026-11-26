@@ -142,7 +142,9 @@ The 20-place limit admits accounts, not simultaneous connections. Existing activ
 
 `apparent connect alternatives` prints local inspection and complete-folder SSH/SCP instructions, consent boundaries and error recovery without contacting the service or changing configuration. SSH is optional; use an existing authorized route or ask for the intended destination/access. Older apps need an update for this command; `apparent inspect '/absolute/path/capture.apparent'` remains the local path.
 
-Clipboard handoffs use Connect IDs only for current pending/ready private jobs. Failed, expired, cancelled and unknown states fall back to the original local path, with transfer guidance. Pending is not ready. Copy again after failure; already pasted IDs cannot be rewritten. On the recording computer, `apparent connect status` exposes the local bundle path and queue error. `beta_required` needs admitted account access, not another sign-in; network failures may be retried. The receiver cannot recover a local path from an opaque ID.
+Clipboard handoffs use IDs for pending or ready private jobs. Copy
+again after failure for the local path and transfer guidance. Previously pasted
+IDs stay the same. `beta_required` requires account admission.
 
 Connect's dependency-free `typescript/src/handoff.ts` owns eligibility and recovery text, executed through the existing packaged Node runtime and bounded private stdio. Rust retains consent/generation checks, queue state, process safety and file access; no persistence writer changes. A missing policy runtime falls back to the local pointer. The shared Settings staging script includes `dist/handoff.js` for both platform packagers. Rollback restores the old queue-pointer adapter; the legacy clipboard formatter remains for local image/transcript assembly until its owning workflow is migrated. This slice does not claim the entire client or Desktop is Rust-independent.
 
@@ -205,7 +207,16 @@ apparent fetch 0123456789abcdef0123456789abcdef --out ./capture.apparent --wait 
 
 A person approves a separate **read** device grant. Never paste an upload/read token into an agent prompt or silently expose one through the clipboard. Fetch does not require the upload experiment or consent. `--wait` bounds pending-manifest polling to 0–900 seconds; zero makes a single manifest request. Individual network operations are bounded separately (30 seconds for JSON, 60 for a file); the wait deadline does not cap transfer time once ready. The complete manifest and all files must arrive and pass size/SHA-256 checks before a sibling private staging directory is atomically renamed to `--out`. There is no lazy media retrieval. The parent directory must exist, and the destination must **not** exist: existing directories/files/symlinks are rejected, never merged or replaced. Traversal, absolute paths, invalid IDs, symlink paths, duplicate/unknown assets and invalid hashes are rejected. Failed fetches remove their staging directory and publish nothing.
 
-After fetching, inspect `contact-sheet.png` visually and read `summary.md`/`apparent.json`, then use `apparent zoom` against the downloaded recording as usual. For multiple sender accounts, see [reader profiles](../client/README.md).
+Open `contact-sheet.png` and `summary.md`/`apparent.json` after fetching.
+Use `apparent zoom` for detail. See [reader profiles](../client/README.md)
+for multiple accounts.
+
+### Inspect a pending share on the recording computer
+
+Directory safety is checked before readiness. Use an owned private directory.
+If still pending, run `apparent connect status` on the recording computer.
+Match `queue[].id` to the share ID and run `apparent inspect` on its `bundle`.
+Keep queue output local. Recipients retry when ready.
 
 ### Local filesystem security boundary
 

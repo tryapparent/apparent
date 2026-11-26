@@ -17,6 +17,7 @@ import {
 } from "../../../onboarding/renderer/frog-nudge/preview";
 import { DesktopFrogWithWardrobe } from "./labs/frog-wardrobe";
 import { SpeakingStyle } from "../../../agent/settings/speaking-style";
+import { OpenRouterExperiment } from "../../../record/settings/renderer/openrouter-experiment";
 import { About, type AboutBridge } from "./about";
 import availableFrog from "../../../capture/desktop/assets/settings/frog-jump.png";
 import currentFrog from "../../../capture/desktop/assets/settings/frog-lounge.png";
@@ -87,11 +88,14 @@ declare module "react" {
         HTMLElement
       > & {
         pane: string;
-        pushToTalkExperiment?: ComponentType<PushToTalkProps>;
-        speakingStyleExperiment?: typeof SpeakingStyle;
-        desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
-        frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
-        agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
+        experiments?: {
+          pushToTalkExperiment?: ComponentType<PushToTalkProps>;
+          openRouterExperiment?: typeof OpenRouterExperiment;
+          speakingStyleExperiment?: typeof SpeakingStyle;
+          desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
+          frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
+          agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
+        };
       };
     }
   }
@@ -252,16 +256,17 @@ function Settings() {
         ) : (
           <apparent-settings-pane
             pane={current}
-            speakingStyleExperiment={
-              current === "Labs" ? SpeakingStyle : undefined
-            }
-            pushToTalkExperiment={current === "Labs" ? PushToTalk : undefined}
-            agentContextExperiment={AgentContextPreference}
-            desktopFrogExperiment={
-              current === "Labs" ? DesktopFrogWithWardrobe : undefined
-            }
-            frogExperiment={
-              current === "Labs" ? FrogNudgePreference : undefined
+            experiments={
+              current === "Labs"
+                ? {
+                    speakingStyleExperiment: SpeakingStyle,
+                    pushToTalkExperiment: PushToTalk,
+                    openRouterExperiment: OpenRouterExperiment,
+                    agentContextExperiment: AgentContextPreference,
+                    desktopFrogExperiment: DesktopFrogWithWardrobe,
+                    frogExperiment: FrogNudgePreference,
+                  }
+                : undefined
             }
           />
         )}

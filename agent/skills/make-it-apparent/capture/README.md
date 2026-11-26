@@ -1,6 +1,11 @@
 ## Choose and prepare the capture surface
 
-Prefer the installed **Apparent** on the same machine showing the result for native windows, screen motion, or iPhone. Follow the host repo's `AGENTS.md` and capture safety rules first. On Apparent's development Macs, read `capture/engine/docs/capture.md`; never wake, flash, or record Kit's real displays to make a demo. On another host, check its own permissions and capture capabilities; do not run a binary from a different machine and call it that host's proof.
+Use the installed **Apparent** on the host showing the result. Follow its
+`AGENTS.md` and capture safety rules. On development Macs, read
+`capture/engine/docs/capture.md`. Never wake, flash or record Kit's displays.
+For isolated Linux takes,
+[check KVM before preparation](../../../../capture/desktop/docs/native-testing.md#check-kvm-from-the-launch-session).
+Verify permissions and capabilities on the capture host.
 
 Prepare a clean window before capture: hide notifications, unrelated windows and tabs, personal or customer records, tokens, credentials and auth prompts. Use synthetic **data** if necessary, but label a mocked or simulated **behavior** as such. Authenticate off camera. A crop or blur made after recording does not remove private material from the retained raw file; if a secret appears, discard that take and capture again. Keep the source bundle private, outside public/static asset paths and git.
 

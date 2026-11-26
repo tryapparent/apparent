@@ -16,7 +16,6 @@ use crate::shared::model::{ApparentBundle, InteractionEvent, Stroke, TargetInfo}
 pub(in crate::capture::desktop) type CaptureResult =
     anyhow::Result<(PathBuf, ApparentBundle, String)>;
 
-/// The GUI has already stopped telemetry, closed the overlay and snapshotted the paper.
 pub(in crate::capture::desktop) fn finalize(
     source: CaptureSource,
     target: TargetInfo,
@@ -146,7 +145,7 @@ pub(in crate::capture::desktop) fn finalize(
             }
             strokes
         };
-        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle(
+        crate::capture::engine::bundle::bundle_processing::finalize_capture_bundle_with_trial(
             &bundle_dir,
             target,
             recording,
@@ -156,6 +155,8 @@ pub(in crate::capture::desktop) fn finalize(
             None,
             activity,
             None,
+            None,
+            true,
         )
     });
     (finalized, duration_ms)
@@ -171,8 +172,6 @@ fn after_publication(
     result
 }
 
-/// Both recording sources must finish optional drawing mutations and validate
-/// the surviving capture before Desktop can see any successful result.
 fn complete_bundle(
     path: &std::path::Path,
     board: &whiteboard::SavedBoard,

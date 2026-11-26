@@ -68,7 +68,8 @@
         "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. From the repository root, run xvfb-run -a node --test record/pill/enablement/startup.smoke.cts after building the frontend. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
       },
       "expectedEvidence": [
-        "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
+        "The recording row has icon-only controls and no elapsed time. A slashed microphone indicates missing audio while Finish remains available. The full microphone status is available on hover and through assistive technology.",
+        "Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. On Hyprland, the native window fits the row before any notes exist. The first note extends the window without moving the controls.",
         "Local completion shows four evenly spaced icon slots. A reported copy failure disables Paste and places a recovery card directly below the row with an Inspect recording action.",
         "In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle.",
@@ -295,6 +296,49 @@
       ],
       "limits": [
         "Bounds are best-effort, window-relative coordinates. This check exercises Accessibility on macOS or AT-SPI on Hyprland."
+      ]
+    },
+    {
+      "id": "openrouter-cli-speech",
+      "description": "Verify timed hosted transcription and narration share one profile key.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Provision a key with apparent openrouter-key --stdin, then use apparent reprocess --openrouter-stt and apparent export --openrouter-tts.",
+      "prerequisites": [
+        "Complete candidate installation, ffmpeg, a test credential, a synthetic desktop bundle and timed cues."
+      ],
+      "runner": {
+        "path": "record/transcription/README.md",
+        "instructions": "record/transcription/README.md#hosted-speech-from-the-cli"
+      },
+      "expectedEvidence": [
+        "The rebuilt bundle has OpenRouter model provenance and word timings.",
+        "The export contains narration within its cue windows, and source files are unchanged.",
+        "Both operations fail cleanly after the shared key is removed."
+      ],
+      "limits": [
+        "Synthetic HTTP checks do not establish current provider behavior."
+      ]
+    },
+    {
+      "id": "openrouter-byok-transcription",
+      "description": "Save a test key, select MAI-Transcribe 2, and observe request and fallback timings.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Open Settings → Labs, save an OpenRouter key, enable OpenRouter transcription, and stop a screen recording with synthetic narration.",
+      "prerequisites": [
+        "An installed candidate and a private test account with OpenRouter credits for the live-provider check.",
+        "A synthetic recording with a microphone track."
+      ],
+      "runner": {
+        "path": "capture/desktop/ui/frontend/tests/settings/labs/smoke.ts",
+        "policy": "record/enablement/ci/bend/check.ts",
+        "instructions": "record/transcription/README.md#openrouter-byok-experiment"
+      },
+      "expectedEvidence": [
+        "Electron verifies key save, opt-in, model selection and removal using a synthetic credential.",
+        "A live success has OpenRouter model provenance, word timings and a success receipt in finish-trace.json. A refused request records its status and local fallback time while retaining the bundle."
+      ],
+      "limits": [
+        "The automated Settings and policy proofs use synthetic credentials and provider responses. Native capture and live OpenRouter performance need a real provider run."
       ]
     }
   ]

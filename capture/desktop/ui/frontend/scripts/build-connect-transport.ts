@@ -6,7 +6,6 @@ import path from 'node:path';
 import { lstatSync, mkdirSync } from 'node:fs';
 import { buildOrdering } from '../../../../../handoff/enablement/ci/bend/build.ts';
 
-// Keep the existing Electron/main and package consumer path. Authored source is
 // TypeScript; emitted CommonJS is a build artifact and has no Rust prerequisite.
 const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 await buildOrdering();
@@ -33,13 +32,14 @@ if (diagnostics.length) {
 }
 if (program.emit(undefined, (file, content) => {
   if (file === `${root}/electron/settings/general.js`) ts.sys.writeFile(`${root}/electron/settings/general.cjs`, content);
-  // Type-only renderer contracts participate in checking, never runtime output.
 
+  if (file === `${root}/src/settings/labs/policy.js`) ts.sys.writeFile(`${root}/electron/settings/labs.cjs`, content + '\nexports.openRouterAction = require("./openrouter.cjs").openRouterAction;\n');
   if (file === `${root}/src/settings/agents/policy.js`) ts.sys.writeFile(`${root}/electron/settings/agents.cjs`, content);
 
   if (file === `${root}/tests/settings/agents/parent.cjs`) ts.sys.writeFile(file,content);
-  if (file === `${root}/src/settings/labs/policy.js`) ts.sys.writeFile(`${root}/electron/settings/labs.cjs`, content);
 }).emitSkipped) throw Error('Connect transport emission failed');
+
+execFileSync(process.execPath, [path.resolve(root, '../../../../composition/settings/build-openrouter.ts'), root], {stdio:'inherit'});
 
 await build({
   stdin: {

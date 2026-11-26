@@ -62,43 +62,13 @@ fn merge_full_keyframes(
     (merged, matched)
 }
 
-/// Per-stage timing breakdown logged on every finish (`finish timings: ...`).
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StageTimings {
-    pub started_at: Option<Instant>,
-    pub stop_ms: Option<u64>,
-    pub audio_ms: Option<u64>,
-    pub candidates_ms: Option<u64>,
-    pub transcribe_ms: Option<u64>,
-}
+#[path = "../../../engine/recording/hosted/openrouter.rs"]
+pub(crate) mod openrouter;
 
-/// Local-only finish diagnostics. Parallel stages overlap; do not sum their durations.
-/// This contains no transcript, screen, filenames or window metadata.
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FinishTrace {
-    version: u32,
-    stop_ms: Option<u64>,
-    audio_ms: Option<u64>,
-    candidates_ms: Option<u64>,
-    transcribe_ms: Option<u64>,
-    select_ms: u64,
-    decode_ms: u64,
-    autocrop_ms: u64,
-    sheet_ms: u64,
-    write_ms: u64,
-    total_ms: u64,
-    prepared_visuals: bool,
-}
-
-fn save_finish_trace(bundle_dir: &Path, trace: &FinishTrace) -> Result<()> {
-    publication::write(
-        bundle_dir,
-        "finish-trace.json",
-        &serde_json::to_vec_pretty(trace)?,
-    )?;
-    Ok(())
-}
+#[path = "../../../engine/recording/hosted/finish_trace.rs"]
+mod finish_trace;
+use finish_trace::{FinishTrace, save_finish_trace};
+pub use finish_trace::StageTimings;
 
 /// Pre-rendered keyframe visuals and encoded PNGs computed while transcription is running.
 pub struct PreparedVisuals {
@@ -289,7 +259,6 @@ fn merge_capture_notes(directory: &Path, events: &mut Vec<InteractionEvent>) -> 
     Ok(())
 }
 
-/// Core pipeline that turns raw frames, strokes, events, and audio/transcript into a complete `.apparent` bundle on disk.
 #[allow(clippy::too_many_arguments)]
 ///
 /// The recording's candidate frames are small; the keyframes are decoded again from its video at
@@ -323,6 +292,26 @@ pub fn finalize_capture_bundle_with_transcript(
     activity: windows::ActivityLog,
     interaction_telemetry: Option<model::InteractionTelemetry>,
     transcript: Option<TranscriptData>,
+) -> Result<(PathBuf, ApparentBundle, String)> {
+    finalize_capture_bundle_with_trial(
+        bundle_dir, target, recording, strokes, events, recorded_audio, note,
+        activity, interaction_telemetry, transcript, false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finalize_capture_bundle_with_trial(
+    bundle_dir: &Path,
+    target: TargetInfo,
+    recording: capture::ScreenRecording,
+    strokes: Vec<Stroke>,
+    events: Vec<InteractionEvent>,
+    recorded_audio: Option<RecordedAudio>,
+    note: Option<String>,
+    activity: windows::ActivityLog,
+    interaction_telemetry: Option<model::InteractionTelemetry>,
+    transcript: Option<TranscriptData>,
+    hosted_trial: bool,
 ) -> Result<(PathBuf, ApparentBundle, String)> {
     trace::local_finish(activity.stop_started, || publication::publish_after(bundle_dir, || {
         let mut events = events;
@@ -361,17 +350,18 @@ pub fn finalize_capture_bundle_with_transcript(
         let has_wav = wav_path.exists();
         let wav_required = recorded_audio.is_some() || has_wav;
         publication::preflight_sources(bundle_dir, video).stage(Stage::SourcePreflight)?;
-        let ((transcript, transcribe_ms), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| {
+        let ((transcript, transcribe_ms, hosted_transcription), ((predecoded, prepared), frames, crop_settings, assembly_plan)) = std::thread::scope(|scope| {
             let wav_path = &wav_path;
             let recorded_audio = &recorded_audio;
             let transcribe_handle = scope.spawn(trace::propagate(move || {
                 let _span = trace::span(Operation::Transcribe);
-                let t0 = Instant::now();
-                let tr = transcript.unwrap_or_else(|| transcribe::transcribe(
-                    has_wav.then_some(wav_path.as_path()),
-                    recorded_audio.as_ref(),
-                ));
-                (tr, t0.elapsed().as_millis() as u64)
+                let t0 = std::time::Instant::now();
+                let (data, hosted) = transcript.map(|data| (data, None)).unwrap_or_else(|| {
+                    openrouter::finish(hosted_trial, recorded_audio.as_ref(), || transcribe::transcribe(
+                        has_wav.then_some(wav_path.as_path()), recorded_audio.as_ref(),
+                    ))
+                });
+                (data, t0.elapsed().as_millis() as u64, hosted)
             }));
             recover::write(
                 bundle_dir,
@@ -473,6 +463,7 @@ pub fn finalize_capture_bundle_with_transcript(
                     started_at: Some(started_at),
                     stop_ms,
                     transcribe_ms: Some(transcribe_ms),
+                    hosted_transcription,
                     ..StageTimings::default()
                 },
                 ..SourceExtras::default()
@@ -958,6 +949,7 @@ pub fn build_bundle_from_parts(
             audio_ms: extras.timings.audio_ms,
             candidates_ms: extras.timings.candidates_ms,
             transcribe_ms: extras.timings.transcribe_ms,
+            hosted_transcription: extras.timings.hosted_transcription,
             select_ms,
             decode_ms,
             autocrop_ms,

@@ -321,14 +321,27 @@ pub fn fetch(args: FetchArgs) -> Result<()> {
     println!("{}", fetched.display());
     Ok(())
 }
+
+#[derive(clap::Args)]
+pub(crate) struct ReadSource {
+    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest")]
+    pub bundle: PathBuf,
+    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+    pub reader: Option<String>,
+}
+
 /// Only a bare canonical Connect ID implies a download. Explicit local paths
 /// retain local inspection semantics; fetch never overwrites existing output.
-pub fn inspect_source(source: &Path, reader: Option<&str>) -> Result<PathBuf> {
+pub fn inspect_source(source: &Path, reader: Option<&str>, out: Option<&Path>) -> Result<PathBuf> {
     let Some(id) = inspect_capture_id(source) else {
         anyhow::ensure!(reader.is_none(), "--reader requires a Connect capture ID");
+        anyhow::ensure!(out.is_none(), "--out requires a Connect capture ID");
         return Ok(source.to_path_buf());
     };
-    client().fetch_with_reader(id, &PathBuf::from(format!("./{id}.apparent")), 120, None, reader)
+    let default_out = PathBuf::from(format!("./{id}.apparent"));
+    let out = out.unwrap_or(&default_out);
+    anyhow::ensure!(out.extension().is_some_and(|ext| ext == "apparent"), "--out must name a new .apparent directory");
+    client().fetch_with_reader(id, out, 120, None, reader)
         .map_err(recovery)
 }
 
