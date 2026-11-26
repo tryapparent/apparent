@@ -1,4 +1,14 @@
 impl Session {
+    #[cfg(target_os = "macos")]
+    pub(crate) fn shortcut_editor_pid(&self) -> Option<i32> {
+        match &self.transport {
+            Transport::Renderer { child, .. } if self.editing_shortcut() && !self.flow.hidden => {
+                Some(child.pid())
+            }
+            _ => None,
+        }
+    }
+
     fn spawn_helper(
         shortcut: &str,
         events: impl Fn(Event) + Send + Sync + Clone + 'static,

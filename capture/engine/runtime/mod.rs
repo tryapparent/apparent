@@ -119,6 +119,8 @@ mod record_target_tests {
 pub enum LiveOverlayEvent {
     /// ⌥⇧S (or the configured shortcut) went down; `shortcut::Shortcut` decides what it means.
     CaptureShortcut,
+    #[cfg(target_os = "macos")]
+    OnboardingFnSelected(u64),
     /// A Linux compositor's existing Record command arrived while bindings are
     /// paused. This is input metadata for the editor, never a capture request.
     #[cfg(target_os="linux")]
@@ -611,7 +613,6 @@ pub fn region_target(
     }
 }
 
-/// Shared state collected by the global input monitor during an active capture session.
 pub struct SharedCaptureTelemetry {
     pub active: AtomicBool,
     pub selecting: AtomicBool,
@@ -668,7 +669,6 @@ pub struct SharedCaptureTelemetry {
     /// When the last key tap was tried (ms since `UNIX_EPOCH`), to space out retries.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     tap_tried_ms: AtomicU64,
-    /// Whether key presses are arriving (macOS's key tap, Windows' keyboard hook).
     tap_live: AtomicBool,
     /// Esc went down since the UI loop last looked (`take_escape`).
     escape_pressed: AtomicBool,
@@ -680,6 +680,8 @@ pub struct SharedCaptureTelemetry {
     last_shortcut_ms: AtomicU64,
     #[cfg(target_os = "macos")]
     fn_candidate: AtomicBool,
+    #[cfg(target_os = "macos")]
+    onboarding_fn_editor: Mutex<platform::OnboardingFnEditor>,
     drag_start: Mutex<Option<(u64, f32, f32, Option<String>, TargetFrame)>>,
     /// The `agentContext` experiment was on when this capture started: clicks and strokes are
     /// looked up in the Accessibility tree (`crate::ax`, macOS only).
@@ -754,6 +756,8 @@ impl SharedCaptureTelemetry {
             last_shortcut_ms: AtomicU64::new(0),
             #[cfg(target_os = "macos")]
             fn_candidate: AtomicBool::new(false),
+            #[cfg(target_os = "macos")]
+            onboarding_fn_editor: Mutex::default(),
             drag_start: Mutex::new(None),
             agent_context: AtomicBool::new(false),
             action_context: Mutex::default(),
@@ -776,11 +780,6 @@ impl SharedCaptureTelemetry {
     /// 90 ms duplicate-source guard for ordinary shortcuts.
     pub fn emit_capture_shortcut(&self) {
         self.emit_capture_shortcut_after(90);
-    }
-
-    /// Fn is a press/release gesture, so rapid taps use the 400 ms toggle guard.
-    pub fn emit_fn_shortcut(&self) {
-        self.emit_capture_shortcut_after(400);
     }
 
     fn emit_capture_shortcut_after(&self, minimum_interval_ms: u64) {

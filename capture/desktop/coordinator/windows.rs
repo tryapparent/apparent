@@ -124,7 +124,6 @@ fn open_review_window(coord_entity: &Entity<ApparentCoordinator>, cx: &mut App) 
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(gpui::TitlebarOptions {
-                // The taskbar and Alt+Tab show it on Windows and Linux; macOS draws no title here.
                 title: cfg!(not(target_os = "macos")).then(|| "Apparent".into()),
                 appears_transparent: true,
                 traffic_light_position: Some(point(px(16.0), px(16.0))),
@@ -488,6 +487,8 @@ pub fn run_app(
                     while let Ok(ev) = ui_receiver.try_recv() {
                         loop_coord.update(cx, |coord, cx| match ev {
                             LiveOverlayEvent::CaptureShortcut => coord.press_shortcut(cx),
+                            #[cfg(target_os = "macos")]
+                            LiveOverlayEvent::OnboardingFnSelected(generation) => coord.select_onboarding_fn(generation),
                             #[cfg(target_os="linux")]
                             LiveOverlayEvent::DesktopShortcutWhilePaused => {
                                 if let Some(session)=coord.onboarding.as_mut().filter(|session|session.editing_shortcut()) {
@@ -540,8 +541,6 @@ pub fn run_app(
                     } else if loop_coord.read(cx).telemetry.take_escape()
                         && loop_coord.read(cx).is_selecting()
                     {
-                        // The picker may not have the keys (another app is active), but the
-                        // key tap sees Esc anyway.
                         loop_coord.update(cx, |coord, cx| coord.cancel_recording(cx));
                     }
                     if loop_coord.read(cx).gate.is_pending() {
