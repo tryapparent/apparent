@@ -71,7 +71,7 @@ LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy \
   --plugin gstreamer
 node --experimental-strip-types "$root/capture/desktop/scripts/linux/appimage/nss-runtime.ts" check "$appdir/usr/lib"
 LDAI_OUTPUT="Apparent-$arch.AppImage" linuxdeploy --appdir "$appdir" --output appimage
-bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
+[[ "${GITHUB_ACTIONS:-}" == true && "${APPARENT_APPIMAGE_ENCODER_CHECK_IN_DIST:-}" == 1 ]] || bash "$root/capture/desktop/scripts/linux/appimage/check-appimage-encoder.sh" "$out/Apparent-$arch.AppImage"
 node --experimental-strip-types "$root/record/media/test/package.ts" \
   --binary "$out/Apparent-$arch.AppImage" --settings "$appdir/usr/share/apparent/settings"
 node --experimental-strip-types "$root/capture/agent/media/test/package.ts" \
