@@ -1,6 +1,27 @@
 {
   "scenarios": [
     {
+      "id": "onboarding-macos-fn-shortcut",
+      "description": "Choose standalone Fn with a physical keyboard in the macOS Electron shortcut recorder.",
+      "platforms": ["macos"],
+      "userEntryPoint": "Open the welcome tour from Settings → About in a fresh test profile. At Choose your shortcut, press and release Fn while the recorder is focused. When One more time appears, press and release Fn again.",
+      "prerequisites": [
+        "The installed candidate, a Mac with an Fn or Globe key in an approved isolated environment, and the app's normal Accessibility and recording grants.",
+        "A test profile with guided first capture enabled and a non-Fn Record shortcut. Use a synthetic desktop for any practice capture."
+      ],
+      "runner": {
+        "path": "engine/native/input/macos/key_tap_tests.rs",
+        "instructions": "Run cargo test onboarding_selects_fn_after_release_from_the_current_focused_editor on macOS for the synthetic CoreGraphics regression. Exercise the installed tour manually for physical input."
+      },
+      "expectedEvidence": [
+        "The held Fn key does not select a shortcut. Its release saves Record as Fn and advances to One more time without starting capture.",
+        "The next standalone Fn tap enters guided capture. Fn used with another key, or with focus in another app, does not save Fn in the editor."
+      ],
+      "limits": [
+        "The automated regression injects CoreGraphics events and a focus predicate. It does not establish physical Fn delivery, installed window focus, or macOS Globe settings."
+      ]
+    },
+    {
       "id": "onboarding-practice-completion",
       "description": "Finish the onboarding practice recording and verify that the app saves the recording, copies its reference, and persists setup completion.",
       "platforms": ["linux-hyprland"],

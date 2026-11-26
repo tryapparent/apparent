@@ -372,7 +372,7 @@ impl ApparentCoordinator {
         ) {
             Ok(session) => {
                 self.onboarding = Some(session);
-                self.sync_onboarding_editor();
+                self.sync_onboarding_editor(false);
             }
             Err(e) => apparent_log(format!("{e:#}")),
         }
@@ -729,40 +729,12 @@ impl ApparentCoordinator {
                 .as_mut()
                 .map_or(Effect::None, |session| session.action(&action)),
             Event::Shortcut(action) => {
-                if self
-                    .onboarding
-                    .as_ref()
-                    .is_some_and(|session| session.editing_shortcut() ||
-                        (session.choosing_shortcut() && matches!(action, crate::capture::desktop::settings::Action::ResetShortcut { .. })))
-                    && matches!(
-                        action,
-                        crate::capture::desktop::settings::Action::Shortcut {
-                            kind: crate::capture::engine::runtime::ShortcutKind::Record,
-                            ..
-                        } | crate::capture::desktop::settings::Action::ResetShortcut {
-                            kind: crate::capture::engine::runtime::ShortcutKind::Record
-                        } | crate::capture::desktop::settings::Action::CancelShortcut
-                    )
-                {
-                    let mut host = crate::capture::desktop::settings::AppHost {
-                        telemetry: &self.telemetry,
-                    };
-                    let choosing = matches!(action, crate::capture::desktop::settings::Action::Shortcut { .. })
-                        && self.onboarding_editor.record_shortcut(&host).recording;
-                    self.onboarding_editor.on(action, &mut host);
-                    let editor = self.onboarding_editor.record_shortcut(&host);
-                    if choosing && !editor.recording && editor.error.is_none()
-                        && let Some(session) = self.onboarding.as_mut()
-                    {
-                        session.input(crate::capture::desktop::settings::onboarding::Input::ShortcutChosen);
-                    }
-                    self.sync_onboarding_editor();
-                }
+                self.onboarding_shortcut_event(action, false);
                 Effect::None
             }
             Event::Exited => {
                 if self.onboarding.as_mut().is_some_and(|session| session.restore_native()) {
-                    self.sync_onboarding_editor();
+                    self.sync_onboarding_editor(false);
                     return;
                 }
                 if let Some(session) = self.onboarding.as_ref() {
@@ -784,7 +756,7 @@ impl ApparentCoordinator {
                     },
                     &mut host,
                 );
-                self.sync_onboarding_editor();
+                self.sync_onboarding_editor(false);
             }
             Effect::Close | Effect::Settings => {
                 #[cfg(target_os = "macos")]

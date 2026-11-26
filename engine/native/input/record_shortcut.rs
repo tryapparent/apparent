@@ -7,23 +7,88 @@ impl ApparentCoordinator {
         crate::capture::desktop::settings::onboarding::Effect::None
     }
 
-    fn sync_onboarding_editor(&mut self) {
+    fn sync_onboarding_editor(&mut self, selected_after_release: bool) {
         use crate::capture::desktop::settings::Host as _;
         let host = crate::capture::desktop::settings::AppHost {
             telemetry: &self.telemetry,
         };
         if let Some(session) = self.onboarding.as_mut() {
             session.shortcut_changed(&host.shortcuts().record.label);
-            session.shortcut_editor(&self.onboarding_editor.record_shortcut(&host));
+            if selected_after_release {
+                session.shortcut_selection_released(true);
+            }
+            let editor = self.onboarding_editor.record_shortcut(&host);
+            #[cfg(target_os = "macos")]
+            self.telemetry.set_onboarding_fn_editor(
+                session.shortcut_editor_pid().filter(|_| editor.recording),
+            );
+            session.shortcut_editor(&editor);
         }
     }
 
     fn cancel_onboarding_editor(&mut self) {
+        #[cfg(target_os = "macos")]
+        self.telemetry.set_onboarding_fn_editor(None);
         let mut host = crate::capture::desktop::settings::AppHost {
             telemetry: &self.telemetry,
         };
         self.onboarding_editor
             .on(crate::capture::desktop::settings::Action::CancelShortcut, &mut host);
+    }
+
+    fn onboarding_shortcut_event(
+        &mut self,
+        action: crate::capture::desktop::settings::Action,
+        released: bool,
+    ) {
+        use crate::capture::desktop::settings::{Action, AppHost, onboarding::Input};
+        use crate::capture::engine::runtime::ShortcutKind::Record;
+        let in_editor = self.onboarding.as_ref().is_some_and(|session| {
+            session.editing_shortcut()
+                || (session.choosing_shortcut() && matches!(action, Action::ResetShortcut { .. }))
+        });
+        if !in_editor
+            || !matches!(
+                action,
+                Action::Shortcut { kind: Record, .. }
+                    | Action::ResetShortcut { kind: Record }
+                    | Action::CancelShortcut
+            )
+        {
+            return;
+        }
+        let mut host = AppHost { telemetry: &self.telemetry };
+        let choosing = matches!(action, Action::Shortcut { .. })
+            && self.onboarding_editor.record_shortcut(&host).recording;
+        self.onboarding_editor.on(action, &mut host);
+        let editor = self.onboarding_editor.record_shortcut(&host);
+        let accepted = choosing && !editor.recording && editor.error.is_none();
+        if accepted && let Some(session) = self.onboarding.as_mut() {
+            session.input(Input::ShortcutChosen);
+        }
+        self.sync_onboarding_editor(accepted && released);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn select_onboarding_fn(&mut self, generation: u64) {
+        use crate::capture::desktop::settings::{Action, Pressed};
+        use crate::capture::engine::runtime::{is_frontmost, MACOS_FN_KEY_CODE, ShortcutKind};
+        if let Some(pid) = self.onboarding.as_ref().and_then(|session| session.shortcut_editor_pid())
+            && self.telemetry.accepts_onboarding_fn(pid, generation, is_frontmost)
+        {
+            self.onboarding_shortcut_event(
+                Action::Shortcut {
+                    kind: ShortcutKind::Record,
+                    pressed: Pressed {
+                        key_code: MACOS_FN_KEY_CODE,
+                        modifiers: 0,
+                        key: "Fn".into(),
+                        reserved: false,
+                    },
+                },
+                true,
+            );
+        }
     }
 
 
