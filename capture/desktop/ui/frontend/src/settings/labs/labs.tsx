@@ -1,29 +1,27 @@
-import {useEffect, useRef, useState} from 'react';
+import {useLayoutEffect, useRef, useState} from 'react';
 import {Button} from '@apparent/ui/button';
 import {Switch} from '@apparent/ui/switch';
 import {ErrorDialog} from '@apparent/ui/error-dialog';
 import frog from '../../../../../assets/settings/frog-puzzled.png';
-import {enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
+import {enabled, sharingEnabled, wisprEnabled, type LabsFacts, type LabsSetting} from './policy';
 import {bindPreference} from '../../../../../../../shared/settings/binding';
 
 declare global {interface Window {apparentLabs: {
   read(): Promise<LabsFacts>; save(...command: [value: boolean, setting?: LabsSetting] | [value: undefined, setting: undefined, intent: unknown]): Promise<LabsFacts>;
   subscribe(callback: (facts: LabsFacts) => void): () => void;
 };}}
-const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', autoPaste: 'auto-paste-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
+const controls: Record<Exclude<LabsSetting, 'frogWardrobe'>, string> = {streaming: 'local-stream-toggle', pushToTalk: 'push-to-talk-toggle', sharing: 'public-sharing-toggle', wisprFlow: 'wispr-lab-toggle', dictationFrog: 'dictation-frog-toggle', desktopFrog: 'desktop-frog-toggle', agentContext: 'agent-context-toggle', speakingStyle: 'speaking-style-toggle', recordingPerformance: 'recording-performance-toggle'};
 export type LabsExperiment<Checked = boolean> = React.ComponentType<{
   id: string; checked: Checked; disabled: boolean; saving: boolean;
   access?: LabsFacts['agentContextAccess'];
   onCheckedChange: (value: boolean) => void;
 }>;
-export type AutoPasteExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported: boolean}>;
 export type PushToTalkExperiment = React.ComponentType<React.ComponentProps<LabsExperiment> & {supported?: boolean}>;
-export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, autoPasteExperiment: AutoPaste, pushToTalkExperiment: PushToTalk}: {
+export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: FrogNudge, desktopFrogExperiment: DesktopFrog, agentContextExperiment: AgentContext, pushToTalkExperiment: PushToTalk}: {
   speakingStyleExperiment?: LabsExperiment;
   frogExperiment?: LabsExperiment;
   desktopFrogExperiment?: LabsExperiment;
   agentContextExperiment?: LabsExperiment;
-  autoPasteExperiment?: AutoPasteExperiment;
   pushToTalkExperiment?: PushToTalkExperiment;
 }) {
   const [facts, setFacts] = useState<LabsFacts>();
@@ -31,7 +29,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
   const [setting, setSetting] = useState<Exclude<LabsSetting, 'frogWardrobe'>>('streaming'), [operation, setOperation] = useState<'read' | 'save'>('read');
   const alive = useRef(true), pending = useRef(false);
   const restoreFocus = useRef<string | null>(null);
-  const autoPasteSupported = useRef(false), wisprSupported = useRef(false);
+  const wisprSupported = useRef(false);
   async function request(value?: boolean, setting: Exclude<LabsSetting, 'frogWardrobe'> = 'streaming') {
     if (pending.current) return;
     if (value !== undefined) {
@@ -42,24 +40,22 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
     try {
       const next = await (value === undefined ? window.apparentLabs.read() : window.apparentLabs.save(value, setting));
       if (!alive.current) return;
-      if (next.autoPasteSupported !== undefined) autoPasteSupported.current = next.autoPasteSupported;
       if (next.wisprSupported !== undefined) wisprSupported.current = next.wisprSupported;
       setFacts(next); setError(next.error ? 'Refresh the saved value, then try again.' : '');
     } catch {if (alive.current) {setFacts(undefined); setError('The app did not confirm this preference. Refresh to check the saved value.');}}
     finally {pending.current = false; if (alive.current) setBusy(false);}
   }
-  useEffect(() => {
+  useLayoutEffect(() => {
     alive.current = true;
     const unsubscribe = window.apparentLabs.subscribe(next => {
       if (alive.current && !pending.current) {
-        if (next.autoPasteSupported !== undefined) autoPasteSupported.current = next.autoPasteSupported;
       if (next.wisprSupported !== undefined) wisprSupported.current = next.wisprSupported;
         setFacts(next); setError(next.error ? 'Unable to read this experiment. Refresh to try again.' : '');
       }
     });
     void request(); return () => {alive.current = false; unsubscribe();};
   }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (busy || !restoreFocus.current) return;
     const target = document.getElementById(restoreFocus.current) as HTMLButtonElement | null;
     restoreFocus.current = null;
@@ -67,7 +63,6 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
       target.focus({preventScroll: true});
   }, [busy, facts]);
   const on = facts && enabled(facts);
-  const autoPaste = facts && autoPasteEnabled(facts);
   const sharing = facts && sharingEnabled(facts);
   const wispr = facts && wisprEnabled(facts);
   return <section className="settings-labs" aria-label="Experimental features">
@@ -88,9 +83,6 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
     {PushToTalk && <PushToTalk id={controls.pushToTalk} checked={facts?.pushToTalkSaved === true}
       supported={facts?.pushToTalkSupported} disabled={busy || !facts || !!facts.error}
       saving={busy && setting === 'pushToTalk'} onCheckedChange={bindPreference('labs', 'labs.pushToTalk', value => void request(value, 'pushToTalk'))} />}
-    {AutoPaste && <AutoPaste id={controls.autoPaste} checked={autoPaste ?? false} supported={autoPasteSupported.current}
-      disabled={busy || autoPaste === undefined} saving={busy && setting === 'autoPaste'}
-      onCheckedChange={bindPreference('labs', 'labs.autoPasteDraft', value => void request(value, 'autoPaste'))} />}
     <section className="agent-preference">
       <div className="agent-preference-row"><h2 className="settings-preference-label" id="public-sharing-label" tabIndex={-1}>Public sharing links</h2>
         <Switch id={controls.sharing} className="agent-switch" checked={sharing ?? false} aria-labelledby="public-sharing-label" aria-describedby="public-sharing-help public-sharing-limits" aria-busy={busy && setting === 'sharing'}

@@ -92,9 +92,10 @@ field is focused at Finish and stays focused, Apparent also pastes the draft. A
 visual handoff attempts the contact sheet first, then the text. The receiving
 app controls attachment acceptance and you submit the draft yourself.
 
-Auto paste is on by default. Settings → Labs or
+Auto paste is on by default. Settings → Handoff or
 `apparent settings set labs.autoPasteDraft false` turns it off for the next
-Finish. Existing `experiments.autoPasteDraft` values remain readable. Practice, agent, phone and terminal workflows retain
+Finish. The Settings move keeps the existing preference ID and saved choices.
+Existing `experiments.autoPasteDraft` values remain readable. Practice, agent, phone and terminal workflows retain
 manual handoff. On Wayland without the Hyprland shortcut adapter, use explicit
 Paste and grant keyboard access before automatic paste can use the desktop
 portal. If focus, clipboard ownership or provider access changes, check the

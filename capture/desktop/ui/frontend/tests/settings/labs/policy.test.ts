@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {LabsPreferences, enabled, autoPasteEnabled, sharingEnabled, wisprEnabled, facts} from '../../../src/settings/labs/policy.ts';
+import {LabsPreferences, enabled, sharingEnabled, wisprEnabled, facts} from '../../../src/settings/labs/policy.ts';
 test('Labs applies preference defaults and only accepts acknowledged, bounded preferences', async () => {
   assert.equal(enabled(facts({saved:null})),false);
   assert.equal(enabled(facts({error:'config_read_failed'})),undefined);
@@ -15,14 +15,8 @@ test('Labs applies preference defaults and only accepts acknowledged, bounded pr
   assert.deepEqual(await saved,{saved:true});
   const closed=bridge.request();bridge.close();await assert.rejects(closed,/closed/);
   await assert.rejects(bridge.request('true'));
-  assert.equal(autoPasteEnabled(facts({saved:true,autoPasteSaved:null,autoPasteSupported:true})),true);
-  assert.throws(()=>facts({saved:false,autoPasteSaved:'true'}));
-  assert.throws(()=>facts({saved:false,autoPasteSupported:1}));
   await assert.rejects(bridge.request(true,'unknown' as never));
-  const autoPaste=bridge.request(true,'autoPaste');
-  assert.deepEqual(sent.at(-1),{action:'labs-preference',request:3,enabled:true,setting:'autoPaste'});
-  bridge.receive({request:3,facts:{saved:false,autoPasteSaved:true,autoPasteSupported:true,secret:'removed'}});
-  assert.deepEqual(await autoPaste,{saved:false,autoPasteSaved:true,autoPasteSupported:true});
+  await assert.rejects(bridge.request(true,'autoPaste' as never));
   assert.equal(wisprEnabled(facts({saved:null})),false);
   assert.equal(wisprEnabled(facts({error:'config_read_failed'})),undefined);
   assert.throws(()=>facts({saved:false,wisprSaved:'true'}));
@@ -31,11 +25,11 @@ test('Labs applies preference defaults and only accepts acknowledged, bounded pr
   assert.equal(sharingEnabled(facts({error:'config_read_failed'})),undefined);
   assert.throws(()=>facts({saved:false,sharingSaved:'true'}));
   const sharing=bridge.request(true,'sharing');
-  assert.deepEqual(sent.at(-1),{action:'labs-preference',request:4,enabled:true,setting:'sharing'});
-  bridge.receive({request:4,facts:{saved:false,sharingSaved:true,autoPasteSaved:false}});
-  assert.deepEqual(await sharing,{saved:false,sharingSaved:true,autoPasteSaved:false});
+  assert.deepEqual(sent.at(-1),{action:'labs-preference',request:3,enabled:true,setting:'sharing'});
+  bridge.receive({request:3,facts:{saved:false,sharingSaved:true}});
+  assert.deepEqual(await sharing,{saved:false,sharingSaved:true});
   const wispr=bridge.request(true,'wisprFlow');
-  assert.deepEqual(sent.at(-1),{action:'labs-preference',request:5,enabled:true,setting:'wisprFlow'});
-  bridge.receive({request:5,facts:{saved:false,wisprSaved:true,wisprSupported:true}});
+  assert.deepEqual(sent.at(-1),{action:'labs-preference',request:4,enabled:true,setting:'wisprFlow'});
+  bridge.receive({request:4,facts:{saved:false,wisprSaved:true,wisprSupported:true}});
   assert.deepEqual(await wispr,{saved:false,wisprSaved:true,wisprSupported:true});
 });

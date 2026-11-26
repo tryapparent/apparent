@@ -111,6 +111,27 @@ try {
     await expect(sharing).toBeEnabled();
     await expect(sharing).toHaveAttribute("aria-checked", String(on));
   }
+  await expect(page.getByRole("switch", { name: "Auto paste" })).toHaveCount(0);
+  const wispr = page.getByRole("switch", {
+    name: "Dictation app conflicts",
+    exact: true,
+  });
+  await expect(wispr).toHaveAttribute("aria-checked", "false");
+  if (process.platform === "darwin") {
+    for (const on of [true, false]) {
+      await wispr.click();
+      await expect(wispr).toHaveAttribute("aria-checked", String(on));
+      const saved = JSON.parse(await fs.readFile(process.argv[2], "utf8"));
+      assert.equal(saved.labs.onboardingWisprFlow, on);
+      assert.equal(saved.labs.localStreamingTranscription, false);
+      assert.equal(saved.secret, "private");
+      assert.equal(saved.experiments.other, true);
+      await page.reload();
+      await expect(wispr).toBeEnabled();
+      await expect(wispr).toHaveAttribute("aria-checked", String(on));
+    }
+  } else await expect(wispr).toBeDisabled();
+  await page.getByRole("button", { name: "Handoff", exact: true }).click();
   const autoPaste = page.getByRole("switch", {
     name: "Auto paste",
     exact: true,
@@ -132,25 +153,6 @@ try {
     await expect(autoPaste).toBeEnabled();
     await expect(autoPaste).toHaveAttribute("aria-checked", String(on));
   }
-  const wispr = page.getByRole("switch", {
-    name: "Dictation app conflicts",
-    exact: true,
-  });
-  await expect(wispr).toHaveAttribute("aria-checked", "false");
-  if (process.platform === "darwin") {
-    for (const on of [true, false]) {
-      await wispr.click();
-      await expect(wispr).toHaveAttribute("aria-checked", String(on));
-      const saved = JSON.parse(await fs.readFile(process.argv[2], "utf8"));
-      assert.equal(saved.labs.onboardingWisprFlow, on);
-      assert.equal(saved.labs.localStreamingTranscription, false);
-      assert.equal(saved.secret, "private");
-      assert.equal(saved.experiments.other, true);
-      await page.reload();
-      await expect(wispr).toBeEnabled();
-      await expect(wispr).toHaveAttribute("aria-checked", String(on));
-    }
-  } else await expect(wispr).toBeDisabled();
 } finally {
   await browser?.close().catch(() => {});
   if (app.exitCode === null) {

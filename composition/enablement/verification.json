@@ -4,7 +4,7 @@
       "id": "settings-preference-contract",
       "description": "Verify pane-bound preference coverage, native CLI discovery, Settings navigation and save acknowledgements.",
       "platforms": ["linux"],
-      "userEntryPoint": "Open Settings, navigate to Permissions or Labs, and change a switch. Check the result and recover from a refused change.",
+      "userEntryPoint": "Open Settings, navigate to Permissions, Labs or Handoff, and change a switch. Check the result and recover from a refused change.",
       "prerequisites": [
         "Node 22, the locked frontend and dependency policy packages, the pinned Bend toolchain, Electron and Xvfb.",
         "A candidate checkout with its normal Settings renderer build."
@@ -16,7 +16,7 @@
       },
       "expectedEvidence": [
         "The Bend coverage check requires generated pane IDs, production bindings and round-trip samples. Negative fixtures reject invalid paths and writes.",
-        "Electron fixtures report successful navigation, keyboard changes, save acknowledgement and recovery.",
+        "Electron fixtures report successful navigation, keyboard changes, save acknowledgement and recovery. The Recording smoke also exercises Settings → Handoff → Auto paste.",
         "The native release check verifies discovery and direct CLI round trips with an isolated config."
       ],
       "limits": [

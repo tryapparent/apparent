@@ -11,6 +11,7 @@ export type PreferenceValues = {
   "recording.appleLocale": string;
   "recording.lowerPlayback": boolean;
   "recording.playbackLevel": number;
+  "labs.autoPasteDraft": boolean;
   "storage.mediaDays": number | null;
   "storage.capturesDir": string;
   "storage.bundleDays": number | null;
@@ -20,7 +21,6 @@ export type PreferenceValues = {
   "labs.localStreamingTranscription": boolean;
   "labs.pushToTalk": boolean;
   "labs.recordingPerformance": boolean;
-  "labs.autoPasteDraft": boolean;
   "labs.agentContext": boolean;
   "labs.speakingStyle": boolean;
   "labs.onboardingWisprFlow": boolean;
@@ -32,3 +32,7 @@ export type PreferenceValues = {
 };
 
 export type RegisteredPreferenceId = keyof PreferenceValues;
+
+export const preferenceLocations = {
+  "labs.autoPasteDraft": "handoff",
+} as const;

@@ -2,8 +2,6 @@ export { settingsReportCapture } from "../../../../../../composition/settings/re
 export { settingsFeedbackHost } from "../../../../../../composition/settings/feedback-host.ts";
 export { bindAbout } from "../../../../../../composition/settings/about/host.ts";
 
-import { PermissionHost } from "../../../../../../record/settings/permissions/permission-host.ts";
-import { RecordingHost } from "../../../../../../composition/settings/recording-host.ts";
 
 // Desktop's native presentation barrier. A DOM commit and an older first-paint
 // event do not prove that Chromium has composited the committed Settings UI.
@@ -18,7 +16,7 @@ export async function committedFrame(contents: {
 
 // Desktop shell presentation, independent of the renderer and native backend.
 
-const destinations = ['about', 'labs', 'agents', 'general', 'recording', 'permissions', 'storage'];
+const destinations = ['about', 'labs', 'agents', 'general', 'recording', 'handoff', 'permissions', 'storage'];
 export function isSharedSettingsPane(pane: unknown): pane is string {
   return typeof pane === 'string' && destinations.includes(pane);
 }
@@ -46,36 +44,4 @@ export function settingsWindowOptions(platform: string) {
   };
 }
 
-type RecordingWindow = Parameters<RecordingHost["bind"]>[0];
-type RecordingHooks = Parameters<RecordingHost["bind"]>[1];
-
-export class SettingsHosts {
-  private recording: RecordingHost;
-  private permissions: PermissionHost;
-
-  constructor(send: (action: object) => void) {
-    this.recording = new RecordingHost(send);
-    this.permissions = new PermissionHost(send);
-  }
-
-  bind(
-    window: RecordingWindow,
-    hooks: Omit<RecordingHooks, 'bind'> & {bind(pane: string, name: string, handle: (...args: unknown[]) => unknown): void},
-  ) {
-    this.recording.bind(window, {...hooks, bind: (name, handle) => hooks.bind('recording', name, handle)});
-    this.permissions.bind(
-      (name, handle) => hooks.bind('permissions', name, handle),
-      state => window.webContents.send('apparent:permission-state', state),
-    );
-  }
-
-  receive(pane: string, command: Parameters<RecordingHost["receive"]>[0] | Parameters<PermissionHost["receive"]>[0]) {
-    if (pane === 'recording' && command.type.startsWith('recording-')) this.recording.receive(command as Parameters<RecordingHost["receive"]>[0]);
-    if (pane === 'permissions' && command.type.startsWith('permission-')) this.permissions.receive(command as Parameters<PermissionHost["receive"]>[0]);
-  }
-
-  reset() {
-    this.recording.reset();
-    this.permissions.reset();
-  }
-}
+export { SettingsHosts } from "../../../../../../composition/settings/hosts.ts";

@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { Agents } from './settings/agents/agents';
-import { Labs, type LabsExperiment, type AutoPasteExperiment, type PushToTalkExperiment } from './settings/labs/labs';
+import { Labs, type LabsExperiment, type PushToTalkExperiment } from './settings/labs/labs';
 import { Storage } from './storage';
 
 class SettingsPane extends HTMLElement {
@@ -22,13 +22,6 @@ class SettingsPane extends HTMLElement {
 
   set frogExperiment(component: LabsExperiment | undefined) {
     this.renderFrogExperiment = component;
-    this.renderPane();
-  }
-
-  private renderAutoPasteExperiment?: AutoPasteExperiment;
-
-  set autoPasteExperiment(component: AutoPasteExperiment | undefined) {
-    this.renderAutoPasteExperiment = component;
     this.renderPane();
   }
 
@@ -64,7 +57,7 @@ class SettingsPane extends HTMLElement {
   private renderPane() {
     const pane = this.getAttribute("pane");
     this.root?.render(pane === "Agents" ? <Agents /> :
-      pane === "Labs" ? <Labs speakingStyleExperiment={this.renderSpeakingStyleExperiment} frogExperiment={this.renderFrogExperiment} desktopFrogExperiment={this.renderDesktopFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} autoPasteExperiment={this.renderAutoPasteExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} /> : <Storage settings />);
+      pane === "Labs" ? <Labs speakingStyleExperiment={this.renderSpeakingStyleExperiment} frogExperiment={this.renderFrogExperiment} desktopFrogExperiment={this.renderDesktopFrogExperiment} agentContextExperiment={this.renderAgentContextExperiment} pushToTalkExperiment={this.renderPushToTalkExperiment} /> : <Storage settings />);
   }
 }
 

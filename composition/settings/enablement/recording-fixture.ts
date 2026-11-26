@@ -129,8 +129,7 @@ export function recordingFixture(send: (message: object) => void) {
   const fixture = {
     refuse: false,
     pickerSupported: false,
-    autoPasteSupported: false,
-    autoPasteSaved: false,
+    autoPasteSaved: true,
     show() {
       send({ type: "recording-state", state });
     },
@@ -205,21 +204,19 @@ export function recordingFixture(send: (message: object) => void) {
           });
       }
       if (action.action === "labs-preference") {
-        if (
-          action.setting === "autoPaste" &&
-          typeof action.enabled === "boolean"
-        )
-          fixture.autoPasteSaved = action.enabled;
         send({
           type: "labs-result",
           request: action.request,
-          facts: {
-            saved: false,
-            autoPasteSupported: fixture.autoPasteSupported,
-            autoPasteSaved: fixture.autoPasteSaved,
-            sharingSaved: false,
-            wisprSupported: false,
-          },
+          facts: { saved: false, sharingSaved: false, wisprSupported: false },
+        });
+      }
+      if (action.action === "handoff-auto-paste") {
+        if (!fixture.refuse && typeof action.enabled === "boolean")
+          fixture.autoPasteSaved = action.enabled;
+        send({
+          type: "handoff-auto-paste-result",
+          request: action.request,
+          enabled: fixture.refuse ? null : fixture.autoPasteSaved,
         });
       }
       if (action.action === "recording-preference") {

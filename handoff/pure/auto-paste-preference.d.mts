@@ -1,4 +1,4 @@
 declare const policy: {
-  can_toggle(supported: boolean, saved: boolean): boolean;
+  can_toggle(known: boolean, busy: boolean): boolean;
 };
 export default policy;
