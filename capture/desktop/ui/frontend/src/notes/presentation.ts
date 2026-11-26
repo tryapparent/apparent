@@ -22,11 +22,7 @@ export function initialPresentation(position: [number, number]): Presentation {
 export function transition(state: Presentation, event: Event): Presentation {
   switch (event.kind) {
     case 'open': return { ...state, mode: 'editor', current: event.pin, position: event.position, focusRevision: state.focusRevision + 1 };
-    case 'list': {
-      const rect = state.badgeRect;
-      return { ...state, mode: 'list', position: rect ? [rect[0] + rect[2], rect[1] + rect[3]] : state.position,
-        focusRevision: state.focusRevision + 1 };
-    }
+    case 'list': return { ...state, mode: 'list', focusRevision: state.focusRevision + 1 };
     case 'save': case 'dismiss': case 'outside': return { ...state, mode: 'badge' };
     case 'badge': return { ...state, badgeRect: event.rect };
   }

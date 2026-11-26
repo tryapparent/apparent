@@ -245,6 +245,7 @@ test("portable staging preserves generated payloads and excludes Linux native pr
     frontend + "/electron/record-media/native/apparent-engine-media",
     frontend + "/electron/agent-media/native/apparent-engine-frames",
     frontend + "/electron/notes/main.cjs",
+    frontend + "/electron/notes/dropdown-layout.mjs",
     frontend + "/electron/installer/main.cts",
     frontend + "/dist/src/installer/index.html",
     frontend + "/dist/assets/foundation-a.js",
@@ -270,6 +271,13 @@ test("portable staging preserves generated payloads and excludes Linux native pr
       "connect/client/typescript/dist/foreground.js",
     );
     assert(existsSync(join(destination, "app/dist/assets/foundation-a.js")));
+    assert.equal(
+      readFileSync(
+        join(destination, "app/electron/notes/dropdown-layout.mjs"),
+        "utf8",
+      ),
+      frontend + "/electron/notes/dropdown-layout.mjs",
+    );
     assert(
       existsSync(
         join(destination, "app/electron/installer/ui/assets/foundation-a.js"),

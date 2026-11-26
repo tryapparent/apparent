@@ -248,6 +248,7 @@ printf fresh > "${frontend}/dist/index.html"
         "notes/main.cjs",
         "notes/presentation.cjs",
         "notes/lifecycle.cjs",
+        "notes/dropdown-layout.mjs",
       ]) {
         write(`${frontend}/electron/${file}`, file);
       }
@@ -298,6 +299,14 @@ printf fresh > "${frontend}/dist/index.html"
           "utf8",
         ),
         "fresh",
+      );
+      const notesLayout = "notes/dropdown-layout.mjs";
+      assert.equal(
+        readFileSync(
+          join(appdir, "usr/lib/apparent/note-ui/electron", notesLayout),
+          "utf8",
+        ),
+        notesLayout,
       );
     }
     if (route === "hosted") {

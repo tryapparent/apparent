@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@apparent/ui/button';
+import { X } from 'lucide-react';
 import './notes.css';
 
 type Note = { pin: number; t: number; x: number; y: number; text: string };
@@ -35,17 +36,15 @@ export function CaptureNotes() {
     if (!state?.current || busy) return;
     setBusy(true); void command({ action: 'save', pin: state.current, text });
   }
-  function dismiss() {
-    void command({ action: 'dismiss' });
-  }
-  if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
+  const dismiss = () => { void command({ action: 'dismiss' }); };
+  if (!state) return <div className="capture-notes" role="status">Connecting notes…</div>;
   return <main className="capture-notes" onClick={e => {
     if (e.target === e.currentTarget) void dismiss();
   }} onKeyDown={e => {
     if (e.key === 'Escape' && !e.nativeEvent.isComposing) { e.preventDefault(); void dismiss(); }
   }}>
-    {state.mode === 'list' ? <section className="note-list" aria-label="Capture notes">
-      <header><strong>Notes</strong><Button variant="ghost" size="sm" aria-label="Close notes" onClick={() => void dismiss()}>Close</Button></header>
+    {state.mode === 'list' ? <section className="note-list" role="dialog" aria-label="Notes">
+      <header><strong>Notes</strong><Button variant="ghost" size="icon" aria-label="Close notes" onClick={dismiss}><X aria-hidden="true" /></Button></header>
       {state.notes.length === 0 ? <p>No notes yet.</p> :
         <ul className="note-rows" aria-label="Saved notes" tabIndex={0}>
           {state.notes.map(n => <li key={n.pin}>

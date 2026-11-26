@@ -24,7 +24,7 @@ root = Path(__file__).resolve().parents[4]
 with (root / 'calls').open('a') as trace: trace.write(json.dumps(sys.argv[1:]) + '\\n')
 if ${JSON.stringify(mode)} == 'failed': sys.exit(19)
 frontend = root / 'capture/desktop/ui/frontend'
-for name in ['dist/index.html', 'electron/runtime.cjs', 'electron/notes/main.cjs', 'electron/notes/presentation.cjs', 'electron/notes/lifecycle.cjs']:
+for name in ['dist/index.html', 'electron/runtime.cjs', 'electron/notes/main.cjs', 'electron/notes/presentation.cjs', 'electron/notes/lifecycle.cjs', 'electron/notes/dropdown-layout.mjs']:
     if ${JSON.stringify(mode)} == 'missing' and name.endswith('main.cjs'): continue
     output = frontend / name
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -48,7 +48,7 @@ test('one fresh preparation supplies Settings and popup payloads with signing ar
   assert.deepEqual(readFileSync(resolve(f.root, 'calls'), 'utf8').trim().split('\n').map(line => JSON.parse(line)),
     [[resolve(f.resources, 'settings'), ...signing]]);
   assert.equal(readFileSync(resolve(f.resources, 'settings/app/dist/settings.html'), 'utf8'), 'fresh Settings');
-  for (const name of ['dist/index.html', 'electron/runtime.cjs', 'electron/notes/main.cjs', 'electron/notes/presentation.cjs', 'electron/notes/lifecycle.cjs'])
+  for (const name of ['dist/index.html', 'electron/runtime.cjs', 'electron/notes/main.cjs', 'electron/notes/presentation.cjs', 'electron/notes/lifecycle.cjs', 'electron/notes/dropdown-layout.mjs'])
     assert.equal(readFileSync(resolve(f.resources, 'note-ui', name), 'utf8'), 'fresh ' + name);
   assert.throws(() => readFileSync(resolve(f.resources, 'note-ui/old-runtime')), /ENOENT/);
 });
