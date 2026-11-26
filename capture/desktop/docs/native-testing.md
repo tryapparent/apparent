@@ -208,42 +208,36 @@ ignore-inhibit/screen-lock behavior remains scenario-specific; see linked limits
 
 ## Run and native consent
 
-The runner defaults to `--desktop hyprland`. For a separately prepared GNOME or
-KDE Wayland image, pass `--desktop gnome` or `--desktop kde`. It requires the
-test account's compositor process and exported X11/Wayland/runtime environment,
-Wayland session type and matching desktop identity before staging the candidate.
-A GDM/SDDM greeter or another desktop is not readiness. The selected desktop is
-recorded in `result.json`; this check does not establish product acceptance.
-Use a stopped, sanitized standalone image/firmware pair with its preparation
-provenance and hashes. The Omarchy templates contain neither GNOME Shell nor
-KWin; selecting an option does not install or configure a desktop. The existing
-capture smoke recipe below remains an Omarchy-tested recipe until separately
-verified on those desktops. Keep compositor/version, multi-output and native
-product evidence separate from driver contracts.
+The default is `--desktop hyprland`. Use `--desktop gnome` or `--desktop kde` with
+its own prepared Wayland image. The runner checks the test user's compositor,
+Wayland session, exported X11/Wayland/runtime environment and desktop identity
+before staging, then records the desktop in `result.json`. Use a stopped,
+sanitized standalone disk and firmware pair with preparation provenance and
+hashes. The capture smoke recipe below is qualified on Omarchy.
 
-For a separately prepared GNOME X11 image, `--desktop gnome-x11` requires the
-test account's `gnome-shell`, X11 session type, DISPLAY/runtime environment and
-GNOME identity. It does not require WAYLAND_DISPLAY or change the guest session.
-The released GNOME image below is Wayland; this selector does not convert it or
-qualify X11 capture. Prepared inputs bind the exact desktop/backend selection.
-With `gnome-x11 --outputs 2`, the runner requests two heads on one VirtIO GPU
-and sends one bounded head-1 UIInfo through QEMU’s private peer D-Bus display
-interface. This profile requires host Python GI (Gio/GLib), checked before
-allocation; it does not use the host session bus or change the guest session.
-Initialization shares the original boot deadline. Other backends keep the
-separate-GPU arrangement. Check actual connected and
-active outputs in XRandR/GDK before treating the request as two-output proof.
-On Ubuntu 24.04 with QEMU 8.2.2, GNOME 46/Xorg 21.1.12 qualification
-verified an active local X11 session and two connected, active 1280×800@1×
-outputs at (0,0) and (1280,0), matching XRandR and GdkX11Display. The separate-GPU
-predecessor exposed only one monitor; merely requesting two scanouts also left
-the second disconnected. The private UIInfo initialization enabled the real
-second connector. Apparent was staged but never executed: Screen/Area capture,
-scaling, crossings and Finish/Cancel remain unqualified by this environment test.
+For `--desktop gnome-x11`, use a separately qualified standalone Xorg disk and
+its matching firmware. Metadata can outlive the disk. Verify both files against
+their preparation hashes before preflight and stop if either is missing. The
+runner requires the test user's `gnome-shell`, X11 session, DISPLAY, runtime and
+GNOME identity. Prepared receipts bind the backend and input pair.
+
+For Electron on Ubuntu 24.04/Xorg, a ready desktop can still yield
+`No usable sandbox!`. Verify any guest AppArmor user-namespace profile matches
+the actual Chromium executable path. Require the expected window and sandboxed
+renderer, with the global namespace restriction enabled. Record fixture and
+candidate hashes. Ubuntu Desktop remains outside the supported installer matrix.
+
+`gnome-x11 --outputs 2` uses two heads on one VirtIO GPU. Host Python GI
+(Gio/GLib) sends one bounded head-1 UIInfo through QEMU's private peer D-Bus
+within the boot deadline. Other backends use separate GPUs. Check connected,
+active outputs in XRandR/GDK. On Ubuntu 24.04 with QEMU 8.2.2 and GNOME
+46/Xorg 21.1.12, both reported two active 1280×800@1× outputs at (0,0) and
+(1280,0). Earlier separate-GPU and scanout-only runs exposed one active
+monitor. This environment qualification only staged Apparent.
 
 ### Released GNOME environment (Clanker, 2026-11-08)
 
-The read-only standalone template is
+The read-only standalone template was released at
 `/home/simon/VMs/apparent-gnome-noble-20261108/`: `system.qcow2`, matching
 `OVMF_VARS.fd` and test-only `test_access` key. Use `sshUser` from
 `preparation.json`. Check `versions.tsv` and `template.sha256`. Disk SHA256:
