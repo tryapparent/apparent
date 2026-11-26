@@ -110,6 +110,12 @@ ${intro}
 
 - [Reading a capture](${SITE}/skill.md): what a paste looks like, the files in a \`.apparent\` bundle (\`contact-sheet.png\`, \`frames/frame-NN.png\`, \`summary.md\`, \`apparent.json\`, the recording and \`audio.wav\`), and what the red marks, click ripples and laser trails mean.
 
+## Guides
+
+- [Record, talk, and point for a coding agent](${SITE}/guides/record-screen-for-coding-agent/): record a visual change and hand off timestamped evidence.
+- [Send an existing screen recording to a coding agent](${SITE}/guides/send-existing-screen-recording/): import an MP4 or MOV and inspect the relevant frames.
+- [Show a coding agent which UI element you mean](${SITE}/guides/show-coding-agent-right-ui-element/): choose an annotated screenshot, a browser selection, or a short recording.
+
 ## CLI
 
 The \`apparent\` command runs on the computer where Apparent is installed (macOS or Linux). Most commands take a bundle path or \`latest\`.

@@ -57,9 +57,9 @@
     },
     {
       "id": "compact-recording-pill",
-      "description": "Verify the compact recording row, live captions, and capture commands.",
+      "description": "Verify the compact recording and completion rows, live captions, and capture commands.",
       "platforms": ["linux", "macos"],
-      "userEntryPoint": "Start a recording and watch the lilac spinner change to the red Finish control once media is ready. The trailing cross cancels during startup and recording.",
+      "userEntryPoint": "Start a recording and watch the lilac spinner change to the red Finish control once media is ready. The trailing cross cancels during startup and recording. Finish a local recording to see the compact completion row.",
       "prerequisites": [
         "Install the locked Desktop frontend dependencies. Use Xvfb on Linux."
       ],
@@ -70,10 +70,32 @@
       "expectedEvidence": [
         "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. On Hyprland, the native window fits the row before any notes exist. The first note extends the window without moving the controls.",
+        "Local completion shows four evenly spaced icon slots. A reported copy failure disables Paste and places a recovery card directly below the row with an Inspect recording action.",
         "In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle."
       ],
       "limits": [
         "The production Electron renderer runs with a synthetic native parent. Use the installed AppImage in an isolated VM for compositor admission and the installed macOS foreground CI scenario for child recovery during a real capture."
+      ]
+    },
+    {
+      "id": "read-only-recording-notes",
+      "description": "Verify that the recording pill opens a read-only list of attached notes.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "During a recording, attach a typed note, open the count on the recording pill, and close the Notes list before finishing.",
+      "prerequisites": [
+        "A built Desktop Electron frontend for renderer checks. Use Xvfb on Linux.",
+        "For native checks, use a packaged app on an isolated desktop with recording and input permissions."
+      ],
+      "runner": {
+        "path": "capture/desktop/ui/frontend/tests/notes/smoke.cjs",
+        "instructions": "From capture/desktop/ui/frontend, run npm run test:electron:targeted -- tests/notes/smoke.cjs. Prefix with xvfb-run -a on Linux. In the installed app, attach a multiline note and open the count from the recording pill."
+      },
+      "expectedEvidence": [
+        "The pill count opens a list displaying the attached text with its line breaks. Close and Escape dismiss it. Long lists scroll by keyboard.",
+        "The Electron bridge rejects retired edit and delete requests. Finish produces a bundle containing the attached text."
+      ],
+      "limits": [
+        "The renderer test uses a synthetic native parent. The installed app check verifies the real pill, native popup placement and saved bundle."
       ]
     },
     {

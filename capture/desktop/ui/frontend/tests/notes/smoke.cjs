@@ -7,7 +7,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 
 for (const scale of process.platform === 'linux' ? [1, 2] : [1]) {
-test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts and isolates bridge at ${scale}x`, { timeout: 45000 }, async t => {
+test(`shipped Electron note UI saves, shows saved notes read-only and isolates the bridge at ${scale}x`, { timeout: 45000 }, async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'apparent-notes-ui-'));
   const profile = path.join(home, 'owned-profile');
   await fs.mkdir(profile, { mode: 0o700 });
@@ -79,7 +79,7 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
   await field.press('Enter');
   await expect.poll(() => messages.find(m => m.action === 'save')?.text).toBe('Smaller button\nx');
   // Real Rust owns this ack in production. This fixture tests renderer behavior only.
-  state = { ...state, mode: 'badge', notes: [{ ...state.drafts[0], text: 'Smaller button\nx' }], drafts: [{ ...state.drafts[0], text: 'Smaller button\nx' }] }; send();
+  state = { ...state, mode: 'badge', notes: [{ ...state.drafts[0], text: 'Smaller button\nx' }], drafts: [] }; send();
   state.mode = 'list'; state.badgeRect = [450, 36, 380, 40]; send();
   if (process.platform === 'linux') {
     const [id, extra] = messages.find(m => m.action === 'windows').ids;
@@ -91,27 +91,27 @@ test(`shipped Electron note UI focuses, saves, counts, edits, recovers drafts an
     send([{ kind: 'list' }]);
     await expect.poll(focusedLists).toBe(before + 1);
   }
-  await popup.getByRole('button', { name: /Smaller button/ }).click();
-  await expect.poll(() => messages.some(m => m.action === 'edit' && m.pin === 1)).toBe(true);
-  state.mode = 'editor'; send();
-  await expect(field).toBeFocused(); await field.fill('Draft correction'); await field.press('Escape');
+  await expect(popup.getByRole('listitem')).toHaveText(/Smaller button\s+x/);
+  await expect(popup.getByRole('button')).toHaveCount(1);
+  await popup.getByRole('button', { name: 'Close notes' }).click();
   await expect.poll(() => messages.some(m => m.action === 'dismiss')).toBe(true);
-  state.mode = 'badge'; state.drafts[0].text = 'Draft correction'; send();
-  state.mode = 'editor'; send(); await expect(field).toHaveValue('Draft correction');
+  const draft = { ...state.notes[0], pin: 2, text: 'New draft' };
+  state = { ...state, current: 2, mode: 'editor', drafts: [draft] }; send();
+  await expect(field).toHaveValue('New draft');
   const dismissals = messages.filter(m => m.action === 'dismiss').length;
   await popup.locator('main').click({ position: { x: 10, y: 210 } });
   await expect.poll(() => messages.filter(m => m.action === 'dismiss').length).toBe(dismissals + 1);
   await field.press('Enter');
   state.error = 'Could not save this note. Your text is kept; try again.'; send();
-  await expect(popup.getByRole('alert')).toBeVisible(); await expect(field).toHaveValue('Draft correction');
-  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 1, text: 'x', path: '/tmp/no' })));
+  await expect(popup.getByRole('alert')).toBeVisible(); await expect(field).toHaveValue('New draft');
+  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 2, text: 'x', path: '/tmp/no' })));
   // Finish must acknowledge every save already sent by this renderer, in pipe order.
-  await popup.evaluate(() => { void window.captureNotes.command({ action: 'save', pin: 1, text: 'Final correction' }); });
+  await popup.evaluate(() => { void window.captureNotes.command({ action: 'save', pin: 2, text: 'Final correction' }); });
   child.stdin.write(JSON.stringify({ finishing: true }) + '\n');
   await expect.poll(() => messages.some(m => m.action === 'finished')).toBe(true);
   const finish = messages.findIndex(m => m.action === 'finished');
   assert.ok(messages.findIndex(m => m.action === 'save' && m.text === 'Final correction') < finish);
-  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 1, text: 'Too late' })));
+  await assert.rejects(popup.evaluate(() => window.captureNotes.command({ action: 'save', pin: 2, text: 'Too late' })));
   const exited = new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Notes did not exit after EOF')), 5000);
     child.once('exit', code => { clearTimeout(timer); resolve(code); });

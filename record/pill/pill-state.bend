@@ -242,7 +242,7 @@ type Surface is Data:
   StartingSurface{}
   RecordingSurface{no_words: Bool, notes: U32, movable: Bool, finish_primary: Bool}
   ProcessingSurface{}
-  CompletedSurface{paste: Bool, inspect: Bool, share: Share, copy: Copy, audio_problem: Bool}
+  CompletedSurface{paste: Bool, inspect: Bool, share: Share, copy: Copy, audio_problem: Bool, copy_failed: Bool}
 
 type Facts is Data:
   Facts{phone: Bool, no_words: Bool, note_count: U32, movable: Bool, paste: Bool, inspect: Bool, sharing_enabled: Bool, sharing_online: Bool, microphone_problem: Bool, audio_problem: Bool, screen_starting: Bool}
@@ -273,10 +273,10 @@ def copy_control(copy: Copy, enabled: Bool, available: Bool, sharing: Bool) -> S
 
 def completed_surface(result: Completion, +paste: Bool, inspect: Bool, enabled: Bool, online: Bool, audio_problem: Bool) -> Surface:
   match result:
-    case Result{dismiss_at, recovery, +sharing, consent, +copy}:
+    case Result{dismiss_at, +recovery, +sharing, consent, +copy}:
       available = Bool.and(paste, Bool.and(online, Bool.not(sharing)))
       control = copy_control(copy, enabled, available, sharing)
-      CompletedSurface{paste, inspect, control, copy, audio_problem}
+      CompletedSurface{Bool.and(paste, Bool.not(recovery)), inspect, control, copy, audio_problem, recovery}
 
 def can_record(mode: Mode) -> Bool:
   match mode:

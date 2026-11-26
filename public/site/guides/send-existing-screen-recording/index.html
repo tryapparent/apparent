@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How to send an existing screen recording to Claude Code or Codex | Apparent</title>
+    <meta name="description" content="Import a screen recording in MP4 or MOV format into Apparent, then give your coding agent timestamped frames and a transcript it can inspect." />
+    <link rel="canonical" href="https://app.tryapparent.com/guides/send-existing-screen-recording/" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../agents/quickstart.css" />
+  </head>
+  <body>
+    <header class="shell">
+      <a href="/" aria-label="Apparent home"><img src="/apparent-wordmark.svg" width="132" height="31" alt="Apparent" /></a>
+      <a href="/agents/#guides">Agent guides</a>
+    </header>
+    <main class="shell guide">
+      <h1>How to send an existing screen recording to Claude Code or Codex</h1>
+      <p class="intro">If you already have an MP4 or MOV screen recording, Apparent can import it into a local bundle with frames and a transcript. Your coding agent can inspect the moment you describe, even if you used another app to record it.</p>
+
+      <section aria-labelledby="import">
+        <h2 id="import">Import the video</h2>
+        <p><a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/installation.md">Install the Apparent CLI</a> on a supported Mac or Linux machine. Run these commands in the folder that contains the video and use your video’s filename.</p>
+        <pre><code>apparent import ./screen-recording.mp4 --out ./ui-bug.apparent
+apparent inspect ./ui-bug.apparent</code></pre>
+        <p><code>inspect</code> prints a summary and any transcribed speech. The bundle holds the recording and images. The pointer can be visible in the footage. Separate click, ink, and window events are available from supported native captures.</p>
+        <p>Keep the bundle directory together. If the agent runs on a different machine, transfer the complete folder through an approved route, then give the agent its path on that machine.</p>
+      </section>
+
+      <section aria-labelledby="inspect">
+        <h2 id="inspect">Tell the agent where to look</h2>
+        <blockquote><p>Inspect <code>./ui-bug.apparent</code> around 0:07. Which item was I trying to select, and what changed before I got there? Explain what the frames show before suggesting a fix.</p></blockquote>
+        <p>Use <code>zoom</code> to make a sheet of nearby frames. Use <code>frames</code> when you know the start and end of the sequence.</p>
+        <pre><code>apparent zoom ./ui-bug.apparent --at 0:07
+apparent frames --from 6.5 --to 8.5 --fps 6 ./ui-bug.apparent</code></pre>
+      </section>
+
+      <section aria-labelledby="example">
+        <h2 id="example">Try it with a 15-second example</h2>
+        <p><a href="/feature-demos/handoff/.local-media/menu-demo.mp4" download>Download the simulated Rename-menu clip</a> and substitute <code>menu-demo.mp4</code> for <code>screen-recording.mp4</code> above.</p>
+        <p>In our Linux import, the transcript captured that the menu should stay open until the pointer reaches Rename. The frame sheet shows Rename visible at <strong>0:06.863</strong> and the menu closed at <strong>0:07.045</strong>. Ask the agent to investigate what closes the menu as the pointer leaves the trigger.</p>
+        <p><a href="/agents/#compare-handoffs">See the tested import and its output</a>.</p>
+      </section>
+    </main>
+    <footer class="shell">
+      <nav aria-label="Related guides">
+        <ul class="links">
+          <li><a href="/guides/record-screen-for-coding-agent/">Record, talk, and point</a></li>
+          <li><a href="/guides/show-coding-agent-right-ui-element/">Show the right UI element</a></li>
+        </ul>
+      </nav>
+    </footer>
+  </body>
+</html>

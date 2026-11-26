@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url"
 import { publicAssetPlugin } from "./lib/public-assets.mjs"
 import react from "@vitejs/plugin-react"
 import { agentFiles, jsonLd } from "../enablement/site-build/agent-files.ts"
+import { agentRoutes } from "../enablement/artifact/agent-paths.ts"
 
 
 const TYPES: Record<string, string> = { ".txt": "text/plain; charset=utf-8", ".md": "text/markdown; charset=utf-8" }
@@ -41,7 +42,8 @@ export default defineConfig({
   build: {
     chunkSizeWarningLimit: 700,
     rollupOptions: {
-      input: ["./index.html", "./agents/index.html"].map(path => fileURLToPath(new URL(path, import.meta.url))),
+      input: ["index.html", ...agentRoutes.map(([path]) => path).filter(path => path.endsWith(".html"))]
+        .map(path => fileURLToPath(new URL(path, import.meta.url))),
     },
   },
   // Previews are shared over Tailscale (studio.*.ts.net).

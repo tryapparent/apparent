@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How to show a coding agent which UI element you mean | Apparent</title>
+    <meta name="description" content="Help your coding agent find the right button or menu. Use browser annotation for a visible element, a marked screenshot for a static view, or a short recording for a bug that happens across steps." />
+    <link rel="canonical" href="https://app.tryapparent.com/guides/show-coding-agent-right-ui-element/" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../agents/quickstart.css" />
+  </head>
+  <body>
+    <header class="shell">
+      <a href="/" aria-label="Apparent home"><img src="/apparent-wordmark.svg" width="132" height="31" alt="Apparent" /></a>
+      <a href="/agents/#guides">Agent guides</a>
+    </header>
+    <main class="shell guide">
+      <h1>How to show a coding agent which UI element you mean</h1>
+      <p class="intro">If your coding agent keeps changing the wrong thing on screen, show it the section, the control label, and the behavior you expect. For a visible web element, select it in the agent’s browser. If it disappears before you can select it, record the steps leading up to the bug.</p>
+
+      <section aria-labelledby="choose">
+        <h2 id="choose">Choose what to show the agent</h2>
+        <ul class="setup">
+          <li>
+            <h3>A control you can select in the browser</h3>
+            <p>Use the agent’s browser annotation to attach your request to the exact control. <a href="https://help.openai.com/en/articles/20001277-using-the-built-in-browser-in-the-chatgpt-desktop-app">Codex’s built-in browser</a> lets you select an element or region. <a href="https://cursor.com/docs/agent/design-mode">Cursor Design Mode</a> includes the screenshot and element context.</p>
+          </li>
+          <li>
+            <h3>A control you can show in one screenshot</h3>
+            <p>Circle it and keep the section heading and nearby controls visible. A screenshot works for a native app too. Include how to reach that screen and what you want to happen.</p>
+          </li>
+          <li>
+            <h3>A control that disappears or changes while you interact</h3>
+            <p>Record the lead-up and the result. For example, a click on <strong>File actions</strong> opens a menu that closes while the pointer is moving toward <strong>Rename</strong>. The last screenshot shows the closed menu. The recording shows the open menu, pointer movement, and when the menu disappears.</p>
+            <p>With Apparent, say what you expected as you point. Your agent can inspect the transcript and frames around the moment the target disappears. <a href="/agents/#example">Watch the simulated Rename-menu bug</a> or <a href="/guides/record-screen-for-coding-agent/">record your own example</a>.</p>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-labelledby="verify">
+        <h2 id="verify">Check that the agent found the right control</h2>
+        <p>If two buttons say <strong>Save</strong>, name the section and the nearby control you want to preserve. Give the agent a way to verify each one separately.</p>
+        <blockquote><p>In Profile, disable Save until the display name changes. Keep Notifications → Save available. Before editing, identify what renders the Profile button. After editing, check both buttons separately.</p></blockquote>
+        <p>If both buttons use a shared component, ask the agent to identify the call site or condition that distinguishes the two instances before it edits the component.</p>
+      </section>
+    </main>
+    <footer class="shell">
+      <nav aria-label="Related guides">
+        <ul class="links">
+          <li><a href="/guides/record-screen-for-coding-agent/">Record, talk, and point</a></li>
+          <li><a href="/guides/send-existing-screen-recording/">Send an existing recording</a></li>
+        </ul>
+      </nav>
+    </footer>
+  </body>
+</html>
