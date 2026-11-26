@@ -51,7 +51,11 @@ export const frogPlatform: FrogPlatform = {
   },
   configure(window, overlay) {
     if (mac) window.setContentProtection(true);
-    window.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: mac });
+    if (mac || hyprland) {
+      window.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: mac });
+    } else {
+      window.on("show", () => window.setVisibleOnAllWorkspaces(true));
+    }
     window.setIgnoreMouseEvents(overlay);
     if (hyprland)
       window.on("page-title-updated", (event) => event.preventDefault());
