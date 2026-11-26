@@ -156,3 +156,138 @@ button:focus-visible {
     opacity: 0;
   }
 }
+
+.desktop-frog-achievement {
+  position: absolute;
+  z-index: 2;
+  top: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  text-align: center;
+  width: max-content;
+  max-width: calc(100% - 6px);
+}
+.desktop-frog-achievement:not(:empty) {
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: light-dark(#f5f0e8, #201c24);
+  color: light-dark(#201c24, #f5f0e8);
+  border: 1px solid light-dark(#b7a5d8, #756886);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.desktop-frog-achievement span {
+  display: block;
+  font-size: 10px;
+}
+.desktop-frog-streamers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.desktop-frog-streamers i {
+  position: absolute;
+  top: 58px;
+  left: 50%;
+  width: 6px;
+  height: 3px;
+  border-radius: 2px;
+  background: #d4baff;
+  animation: frog-streamer 940ms ease-out both;
+}
+.desktop-frog-streamers i:nth-child(4n + 2) {
+  width: 8px;
+  height: 7px;
+  border: solid #efbf70;
+  border-width: 2px 2px 0 0;
+  border-radius: 0 70% 0 0;
+  background: transparent;
+}
+.desktop-frog-streamers i:nth-child(4n + 3) {
+  background: #f290b0;
+}
+.desktop-frog-streamers i:nth-child(4n) {
+  background: #b6c685;
+}
+.desktop-frog-streamers i:nth-child(1) {
+  --x: -52px;
+  --y: -18px;
+  --turn: -22deg;
+}
+.desktop-frog-streamers i:nth-child(2) {
+  --x: -47px;
+  --y: -33px;
+  --turn: -58deg;
+}
+.desktop-frog-streamers i:nth-child(3) {
+  --x: -38px;
+  --y: -10px;
+  --turn: 38deg;
+}
+.desktop-frog-streamers i:nth-child(4) {
+  --x: -30px;
+  --y: -29px;
+  --turn: 32deg;
+}
+.desktop-frog-streamers i:nth-child(5) {
+  --x: 36px;
+  --y: -31px;
+  --turn: 58deg;
+}
+.desktop-frog-streamers i:nth-child(6) {
+  --x: 46px;
+  --y: -20px;
+  --turn: 44deg;
+}
+.desktop-frog-streamers i:nth-child(7) {
+  --x: 54px;
+  --y: -8px;
+  --turn: -29deg;
+}
+.desktop-frog-streamers i:nth-child(8) {
+  --x: 38px;
+  --y: -8px;
+  --turn: 28deg;
+}
+
+.desktop-frog[data-celebrating] .desktop-frog-pet {
+  animation: frog-celebration-hop 500ms ease-in-out;
+}
+.desktop-frog[data-celebrating] .desktop-frog-tip {
+  visibility: hidden;
+}
+@keyframes frog-celebration-hop {
+  20% {
+    transform: scale(1.07, 0.93);
+  }
+  62% {
+    transform: translateY(-12px);
+  }
+}
+@keyframes frog-streamer {
+  from {
+    transform: translate(0, 5px) scale(0.4);
+    opacity: 0;
+  }
+  22% {
+    opacity: 1;
+  }
+  60% {
+    transform: translate(var(--x), var(--y)) rotate(var(--turn));
+    opacity: 1;
+  }
+  to {
+    transform: translate(var(--x), calc(var(--y) + 14px))
+      rotate(calc(var(--turn) + 45deg));
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-frog-streamers {
+    display: none;
+  }
+  .desktop-frog[data-celebrating] .desktop-frog-pet {
+    animation: none;
+  }
+}

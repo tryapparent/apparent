@@ -125,14 +125,19 @@ the frog starts in the display corner again.
 ### Frog wardrobe
 
 After adopting a frog, turn on **Frog wardrobe** in Settings → Labs.
-Sunglasses, a flowering lily pad and a unicorn horn become claimable after
-10, 20 and 30 eligible saves. Claiming keeps the item. Equipping and removing
-it affects the desktop frog within its next config refresh.
+The frog earns and equips sunglasses at 10 eligible saves. The flowering
+lily pad follows after 20 more saves (30 total). The unicorn horn follows
+after another 30 (60 total). The desktop frog shows the achievement and
+celebrates briefly. With reduced motion it shows the achievement without
+the hop or streamers. Equip and Remove in Labs change what the frog
+wears without resetting ownership.
 
 Only new, successfully published user-started Desktop recordings count.
 Guided practice, feedback, simulations, Agent-started captures, imports and
 recovered recordings are excluded. Clipboard and share outcomes are separate.
-The native completion receipt is deduplicated by bundle ID. Progress pauses
+The native completion receipt is deduplicated by bundle ID. The same profile
+transaction records the count and the new equipped item. Existing earned
+items and save counts carry forward without replaying celebrations. Progress pauses
 with either experiment off, survives onboarding replay and is local to the
 active profile. A process crash between bundle publication and the progress
 write can miss a credit. The recording itself remains saved.

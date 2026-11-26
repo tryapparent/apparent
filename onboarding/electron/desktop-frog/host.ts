@@ -19,6 +19,7 @@ import { record } from "../../host/projection.ts";
 
 const width = 148;
 const height = 94;
+type Achievement = [number, string];
 
 export interface FrogPlatform {
   readonly flight: boolean;
@@ -57,6 +58,10 @@ export function startDesktopFrog(
   let name = "";
   let shortcut = "";
   let equipped: string[] = [];
+  let lastAchievement: number | undefined;
+  let pendingAchievement: Achievement | undefined;
+  let wardrobeReady = false;
+  let sentWardrobe: string[] | undefined;
   let takeoff: [number, number, number] | undefined;
   let visible = false;
   let revision = 0;
@@ -121,15 +126,41 @@ export function startDesktopFrog(
       }
     }
     if (Array.isArray(data.equipped)) {
-      equipped = data.equipped.filter(
+      const items = data.equipped.filter(
         (item) =>
           item === "sunglasses" ||
           item === "lily-pad" ||
           item === "unicorn-horn",
       );
-      window?.webContents.send("desktop-frog:wardrobe", equipped);
+      if (
+        items.length !== equipped.length ||
+        items.some((item, index) => item !== equipped[index])
+      )
+        equipped = items;
+      const achievement = data.achievement;
+      if (achievement === null) lastAchievement ??= 0;
+      if (
+        Array.isArray(achievement) &&
+        typeof achievement[0] === "number" &&
+        Number.isSafeInteger(achievement[0]) &&
+        typeof achievement[1] === "string"
+      ) {
+        const [count, item] = achievement;
+        if (
+          lastAchievement !== undefined &&
+          count > lastAchievement &&
+          Date.now() >= pausedUntil &&
+          equipped.includes(item)
+        ) {
+          pendingAchievement = [count, item];
+        }
+        lastAchievement = Math.max(lastAchievement ?? 0, count);
+      }
+      if (pendingAchievement && !equipped.includes(pendingAchievement[1]))
+        pendingAchievement = undefined;
     }
     if (platformReady) present();
+    sendWardrobe();
   });
 
   function owns(
@@ -148,6 +179,11 @@ export function startDesktopFrog(
     if (owns(event, window)) return { name, shortcut, equipped };
     throw Error("Forbidden desktop frog request");
   });
+  ipcMain.on("desktop-frog:wardrobe-ready", (event) => {
+    if (!owns(event, window)) return;
+    wardrobeReady = true;
+    sendWardrobe();
+  });
   ipcMain.on("desktop-frog:start", (event) => {
     if (!window || !window.isVisible() || !available() || !owns(event, window))
       return;
@@ -163,6 +199,7 @@ export function startDesktopFrog(
         label: "Quit for 1 hour",
         click: () => {
           if (!available()) return;
+          pendingAchievement = undefined;
           pausedUntil = Date.now() + policy.desktop_pause_ms();
           present();
           scheduleWake();
@@ -257,6 +294,20 @@ export function startDesktopFrog(
     flight?.destroy();
     flight = undefined;
     if (desktopReady && available()) window?.showInactive();
+    sendWardrobe();
+  }
+
+  function sendWardrobe() {
+    if (!window || !wardrobeReady) return;
+    if (pendingAchievement && (!available() || !window.isVisible())) return;
+    if (!pendingAchievement && sentWardrobe === equipped) return;
+    window.webContents.send(
+      "desktop-frog:wardrobe",
+      equipped,
+      pendingAchievement,
+    );
+    sentWardrobe = equipped;
+    pendingAchievement = undefined;
   }
 
   function available() {
@@ -311,6 +362,7 @@ export function startDesktopFrog(
     window.on("ready-to-show", () => {
       desktopReady = true;
       if (available() && !flight) window?.showInactive();
+      sendWardrobe();
     });
     if (origin && platform.flight) {
       flightPath = {

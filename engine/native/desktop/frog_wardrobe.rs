@@ -9,6 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/frog-wardrobe.rs"));
 pub(crate) const PREFERENCE: &str = "labs.frogWardrobe";
 const KEY: &str = "frogWardrobe";
 const COUNT_STATES: usize = THRESHOLDS[2] + 1;
+pub(crate) type Achievement = (usize, &'static str);
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -24,13 +25,20 @@ impl Item {
     fn id(self) -> &'static str {
         ["sunglasses", "lily-pad", "unicorn-horn"][self as usize]
     }
+
+    fn threshold(self) -> usize {
+        THRESHOLDS[self as usize]
+    }
+
+    fn index(self, count: usize, state: usize) -> usize {
+        (self as usize * COUNT_STATES + count) * 3 + state
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Action {
-    Claim,
-    Equip,
+    Equip = 1,
     Remove,
 }
 
@@ -103,26 +111,43 @@ pub(crate) fn facts(config: &Value) -> Value {
     let count = ids.len();
     let items = Item::ALL.map(|item| {
         let item_state = state(store, item);
-        let index = (item as usize * COUNT_STATES + count) * 3 + item_state;
-        let action = ["", "claim", "equip", "remove"][(ACTIONS[index] - b'0') as usize];
-        json!({"id": item.id(), "threshold": THRESHOLDS[item as usize], "action": action})
+        let index = item.index(count, item_state);
+        let action = ["", "equip", "remove"][(ACTIONS[index] - b'0') as usize];
+        json!({"id": item.id(), "threshold": item.threshold(), "action": action})
     });
     json!({"enabled": saved, "count": count, "items": items})
 }
 
-pub(crate) fn equipped(config: &Value) -> Vec<&'static str> {
+pub(crate) fn projection(config: &Value) -> (Vec<&'static str>, Option<Achievement>) {
     let store = store(config);
-    if !enabled(config) {
-        return Vec::new();
-    }
     let Ok(ids) = receipts(store) else {
-        return Vec::new();
+        return Default::default();
     };
-    Item::ALL
+    let achievement = Item::ALL
         .into_iter()
-        .filter(|item| ids.len() >= THRESHOLDS[*item as usize] && state(store, *item) == 2)
+        .find(|item| store["lastAward"].as_str() == Some(item.id()))
+        .map(|item| (item.threshold(), item.id()));
+    if !enabled(config) {
+        return (Vec::new(), achievement);
+    }
+    let equipped = Item::ALL
+        .into_iter()
+        .filter(|item| EARNED[item.index(ids.len(), state(store, *item))] == b'2')
         .map(Item::id)
-        .collect()
+        .collect();
+    (equipped, achievement)
+}
+
+fn set_state(store: &mut Value, item: Item, state: u8) -> Result<()> {
+    store
+        .as_object_mut()
+        .context("Invalid wardrobe")?
+        .entry("items")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .context("Invalid wardrobe items")?
+        .insert(item.id().into(), json!(state));
+    Ok(())
 }
 
 pub(crate) fn change(path: &Path, request: Request) -> Result<()> {
@@ -130,19 +155,10 @@ pub(crate) fn change(path: &Path, request: Request) -> Result<()> {
         let count = receipts(store)?.len();
         let item = request.item;
         let old = state(store, item);
-        let index =
-            ((item as usize * COUNT_STATES + count) * 3 + old) * 3 + request.action as usize;
+        let index = item.index(count, old) * 2 + request.action as usize - 1;
         let next = CHANGES[index] - b'0';
         ensure!(next != 0, "Wardrobe action unavailable");
-        store
-            .as_object_mut()
-            .context("Invalid wardrobe")?
-            .entry("items")
-            .or_insert_with(|| json!({}))
-            .as_object_mut()
-            .context("Invalid wardrobe items")?
-            .insert(item.id().into(), json!(next));
-        Ok(())
+        set_state(store, item, next)
     })
 }
 
@@ -161,7 +177,19 @@ fn credit(path: &Path, id: &str) -> Result<()> {
         if CREDIT[index] == b'0' {
             return Err(Skip.into());
         }
+        let previous_count = ids.len();
         ids.insert(id.to_owned());
+        for item in Item::ALL {
+            let old = state(store, item);
+            let index = item.index(ids.len(), old);
+            let earned = EARNED[index] - b'0';
+            if usize::from(earned) != old {
+                set_state(store, item, earned)?;
+            }
+            if earned == 2 && EARNED[item.index(previous_count, old)] == b'0' {
+                store["lastAward"] = json!(item.id());
+            }
+        }
         store
             .as_object_mut()
             .context("Invalid wardrobe")?
@@ -225,7 +253,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wardrobe_counts_distinct_receipts_and_retains_claims_when_removed() {
+    fn wardrobe_awards_distinct_milestones_and_retains_rewards_when_removed() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
         std::fs::write(&path, r#"{"secret":"preserve","labs":{"desktopFrog":true,"frogWardrobe":true},"onboarding":{"frogAdopted":true,"frogName":"Pip","seen":true,"frogWardrobe":{"extra":1}}}"#).unwrap();
@@ -235,33 +263,59 @@ mod tests {
         for n in 0..9 {
             credit(&path, &format!("receipt-{n}")).unwrap();
         }
-        assert!(act(Action::Claim).is_err());
         assert!(act(Action::Equip).is_err());
         credit(&path, "receipt-9").unwrap();
         credit(&path, "receipt-9").unwrap();
         assert_eq!(receipts(store(&read())).unwrap().len(), 10);
-        act(Action::Claim).unwrap();
-        assert!(equipped(&read()).is_empty());
-        act(Action::Equip).unwrap();
-        assert_eq!(equipped(&read()), ["sunglasses"]);
+        assert_eq!(projection(&read()), (vec!["sunglasses"], Some((10, "sunglasses"))));
         handoff::write_preference(&path, PREFERENCE, Some(json!(false))).unwrap();
         assert!(credit(&path, "paused").is_err());
         assert!(act(Action::Remove).is_err());
-        assert!(equipped(&read()).is_empty());
+        assert!(projection(&read()).0.is_empty());
         handoff::write_preference(&path, PREFERENCE, Some(json!(true))).unwrap();
-        assert_eq!(equipped(&read()), ["sunglasses"]);
+        assert_eq!(projection(&read()).0, ["sunglasses"]);
         act(Action::Remove).unwrap();
-        assert!(equipped(&read()).is_empty());
-        assert!(act(Action::Claim).is_err());
+        assert!(projection(&read()).0.is_empty());
         assert!(act(Action::Equip).is_ok());
-        for n in 10..35 {
-            credit(&path, &format!("receipt-{n}")).unwrap();
+        for (before, milestone, award) in [
+            (10, 30, "lily-pad"),
+            (30, 60, "unicorn-horn"),
+        ] {
+            for n in before..milestone - 1 {
+                credit(&path, &format!("receipt-{n}")).unwrap();
+            }
+            assert!(!projection(&read()).0.contains(&award));
+            credit(&path, &format!("receipt-{}", milestone - 1)).unwrap();
+            assert_eq!(projection(&read()).1, Some((milestone, award)));
+            assert!(projection(&read()).0.contains(&award));
         }
+        credit(&path, "after-final").unwrap();
         let after = read();
-        assert_eq!(receipts(store(&after)).unwrap().len(), 30);
+        assert_eq!(receipts(store(&after)).unwrap().len(), 60);
         assert_eq!(after["secret"], "preserve");
         assert_eq!(after["onboarding"]["seen"], true);
         assert_eq!(store(&after)["extra"], 1);
+    }
+
+    #[test]
+    fn legacy_wardrobe_keeps_owned_items_and_does_not_replay_achievements() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let receipts: Vec<_> = (0..30).map(|n| format!("legacy-{n}")).collect();
+        std::fs::write(&path, json!({
+            "labs": {"desktopFrog":true,"frogWardrobe":true},
+            "onboarding": {"frogAdopted":true,"frogName":"Pip","frogWardrobe":{
+                "receipts": receipts, "items": {"lily-pad": 1, "unicorn-horn": 2}
+            }}
+        }).to_string()).unwrap();
+        let read = || handoff::read_preferences(&path).unwrap();
+        assert_eq!(projection(&read()), (vec!["sunglasses", "unicorn-horn"], None));
+        credit(&path, "new-save").unwrap();
+        assert_eq!(projection(&read()), (vec!["sunglasses", "unicorn-horn"], None));
+        change(&path, Request { item: Item::UnicornHorn, action: Action::Remove }).unwrap();
+        assert_eq!(projection(&read()), (vec!["sunglasses"], None));
+        change(&path, Request { item: Item::UnicornHorn, action: Action::Equip }).unwrap();
+        assert_eq!(projection(&read()), (vec!["sunglasses", "unicorn-horn"], None));
     }
 
     #[test]

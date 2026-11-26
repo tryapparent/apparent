@@ -61,7 +61,8 @@ test("desktop frog renders and sends a start only after hiding", {
     revision: number,
     shortcut = "Ctrl+R",
     equipped: string[] = [],
-  ) => send({ visible, revision, shortcut, equipped });
+    achievement: [number, string] | null = null,
+  ) => send({ visible, revision, shortcut, equipped, achievement });
   send({ name: "Pip" });
   project(true, 1);
   const endpoint = await waitFor(async () => {
@@ -146,8 +147,94 @@ test("desktop frog renders and sends a start only after hiding", {
   project(false, 4);
   send({ type: "record-settled" });
   await waitForMapped(false);
-  project(true, 5);
+  const glasses: [number, string] = [10, "sunglasses"];
+  project(false, 4, "Ctrl+R", ["sunglasses"], glasses);
+  project(true, 5, "Ctrl+R", ["sunglasses"], glasses);
   await waitForMapped(true);
+  const achievementText = () =>
+    frog.evaluate<string>(
+      'document.querySelector(".desktop-frog-achievement").textContent',
+    );
+  const waitForReward = async (count: number, accessory: string) => {
+    await waitFor(
+      async () =>
+        (await achievementText()).includes(`${count} recordings saved`)
+          ? true
+          : undefined,
+      `achievement for ${count} recordings`,
+    );
+    assert.ok((await achievementText()).includes(`${accessory} equipped`));
+    assert.equal(
+      await frog.evaluate<boolean>(`(() => {
+      const { left, right, top, bottom } =
+        document.querySelector(".desktop-frog-achievement").getBoundingClientRect();
+      return left >= 0 && right <= innerWidth && top >= 0 && bottom <= innerHeight;
+    })()`),
+      true,
+    );
+    if (process.env.APPARENT_FROG_EVIDENCE) {
+      await frog.painted();
+      const { data } = await frog.send<{ data: string }>(
+        "Page.captureScreenshot",
+      );
+      await writeFile(
+        join(
+          process.env.APPARENT_FROG_EVIDENCE,
+          `frog-achievement-${count}.png`,
+        ),
+        Buffer.from(data, "base64"),
+      );
+    }
+  };
+  await waitForReward(10, "Sunglasses");
+  await waitFor(
+    async () => ((await achievementText()) === "" ? true : undefined),
+    "achievement expires",
+  );
+  project(true, 5, "Alt+R", [], glasses);
+  project(true, 5, "Alt+R", ["sunglasses"], glasses);
+  await waitFor(
+    async () =>
+      (await frog.evaluate<string>(
+        'document.querySelector(".desktop-frog-tip kbd")?.textContent',
+      )) === "Alt+R"
+        ? true
+        : undefined,
+    "equipment-only projection",
+  );
+  assert.equal(
+    await frog.evaluate<boolean>(
+      'document.querySelector("main").hasAttribute("data-celebrating")',
+    ),
+    false,
+  );
+
+  const pad: [number, string] = [30, "lily-pad"];
+  project(true, 5, "Alt+R", ["sunglasses", "lily-pad"], pad);
+  await waitForReward(30, "Flowering lily pad");
+  assert.equal(
+    await frog.evaluate<boolean>(
+      '!!document.querySelector(".desktop-frog-alternate-pad")',
+    ),
+    true,
+  );
+  await frog.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
+  project(
+    true,
+    5,
+    "Alt+R",
+    ["sunglasses", "lily-pad", "unicorn-horn"],
+    [60, "unicorn-horn"],
+  );
+  await waitForReward(60, "Unicorn horn");
+  assert.equal(
+    await frog.evaluate<string>(
+      'getComputedStyle(document.querySelector(".desktop-frog-streamers")).display',
+    ),
+    "none",
+  );
   if (process.env.APPARENT_FROG_EVIDENCE) {
     await frog.evaluate(
       'document.querySelector(".desktop-frog-record").focus()',
@@ -164,7 +251,7 @@ test("desktop frog renders and sends a start only after hiding", {
         "Page.captureScreenshot",
       );
       await writeFile(
-        join(process.env.APPARENT_FROG_EVIDENCE, `frog-${theme}.png`),
+        join(process.env.APPARENT_FROG_EVIDENCE, `frog-reward-${theme}.png`),
         Buffer.from(data, "base64"),
       );
     }

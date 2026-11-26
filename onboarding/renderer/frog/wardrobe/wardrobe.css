@@ -17,7 +17,7 @@
   place-items: center;
   width: 40px;
   height: 40px;
-  background: var(--apparent-stock);
+  background: #e7e0ee;
 }
 .frog-wardrobe-item-name {
   font-weight: 500;
@@ -34,8 +34,75 @@
     grid-template-columns: 40px minmax(0, 1fr);
     gap: 4px 12px;
   }
-  .frog-wardrobe-item button {
+  .frog-wardrobe-item :is(button, .frog-wardrobe-locked) {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+.frog-wardrobe-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 16px;
+  align-items: start;
+}
+.frog-wardrobe-locked {
+  padding-inline: 8px;
+}
+.frog-wardrobe-preview {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 12px;
+  background: var(--apparent-stock);
+}
+@media (prefers-color-scheme: dark) {
+  .frog-wardrobe-preview {
+    background: #30263a;
+  }
+}
+.frog-wardrobe-preview-art {
+  position: relative;
+  width: 84px;
+  height: 62px;
+}
+.frog-wardrobe-preview-art canvas {
+  position: absolute;
+  inset: 0;
+  width: 84px;
+  image-rendering: pixelated;
+}
+.frog-wardrobe-preview-pad,
+.frog-wardrobe-preview-flowering {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  image-rendering: pixelated;
+}
+.frog-wardrobe-preview-pad {
+  width: 49px;
+  top: 41px;
+}
+.frog-wardrobe-preview-flowering {
+  top: 12px;
+}
+.frog-wardrobe-preview-flowering svg {
+  width: 66px;
+  height: 66px;
+}
+
+@media (max-width: 760px) {
+  .frog-wardrobe-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .frog-wardrobe-preview {
+    grid-row: 1;
+    grid-template-columns: auto 84px;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .frog-wardrobe-items {
+    margin: 0;
   }
 }
