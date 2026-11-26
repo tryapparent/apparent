@@ -107,9 +107,16 @@ impl ApparentCoordinator {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         if let Some(ActiveRecording { performance: Some(performance), .. }) = self.active_recording.as_mut()
             && performance.needs_pill()
-            && let Some((flushed, reported)) = self.electron_pill.as_ref().and_then(|pill| pill.recording_pill_timing(self.capture_generation))
+            && let Some((flushed, reported)) = self.electron_pill.as_ref().and_then(|pill| pill.recording_pill_timing(self.capture_generation, false))
         {
             performance.pill_reported(flushed, reported);
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        if let Some(ActiveRecording { performance: Some(performance), .. }) = self.active_recording.as_mut()
+            && performance.needs_red_pill()
+            && let Some((flushed, reported)) = self.electron_pill.as_ref().and_then(|pill| pill.recording_pill_timing(self.capture_generation, true))
+        {
+            performance.red_pill_reported(flushed, reported);
         }
         if let Some(ActiveRecording { performance: Some(performance), source: CaptureSource::Screen { session, .. }, .. }) = self.active_recording.as_mut()
             && performance.needs_ready() && session.has_frames()

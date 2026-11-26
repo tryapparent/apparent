@@ -217,6 +217,11 @@ impl Session {
             self.sync();
             return Effect::None;
         }
+        if matches!(input, Input::ShortcutTriggered) && self.electron_shortcut_step() {
+            if self.shortcut_policy() != ShortcutPolicy::Trial { return Effect::None; }
+            self.flow.shortcut_chosen = true;
+            self.flow.shortcut_tested = true;
+        }
         if matches!(input, Input::Back) {
             self.frog_revealed = false;
             self.frog_error = false;
@@ -304,15 +309,6 @@ impl Session {
     }
 
     pub fn action(&mut self, action: &str) -> Effect {
-        if let Some(label) = action.strip_prefix("accept-shortcut-choice:") {
-            if self.practice.is_some() && self.fallback.is_some() && !self.fallback_pending
-                && self.flow.step() == Step::Shortcut
-                && self.flow.shortcut_chosen && !self.flow.shortcut_editing
-                && !self.shortcut_choice_down && !label.is_empty() && label == self.shortcut_label
-                && !self.editor.as_ref().is_some_and(|editor| editor.recording)
-            { return self.input(Input::ShortcutTriggered); }
-            return Effect::None;
-        }
         if self.practice.is_some() && self.flow.step()==Step::Welcome {
             if action=="back" && self.pen_picker {self.pen_picker=false;self.sync();return Effect::None;}
             if action=="continue" && !self.pen_picker {self.pen_picker=true;self.sync();return Effect::None;}
@@ -337,13 +333,15 @@ impl Session {
             self.sync();return effect;
         }
         let input = match action {
-            "continue" => Input::Continue,
+            "continue" if !self.electron_shortcut_step() => Input::Continue,
+            "use-shortcut" if self.electron_shortcut_step() && self.flow.shortcut_tested
+                && self.shortcut_policy() == ShortcutPolicy::Trial => Input::Continue,
             "back" => Input::Back,
             "later" => Input::Later,
             "close" => Input::Closed,
             "settings" => Input::Settings,
             "change-shortcut" => Input::ChangeShortcut,
-            "skip-shortcut-trial" if !self.editor.as_ref().is_some_and(|editor| editor.recording) => Input::SkipShortcutTrial,
+            "skip-shortcut-trial" if !self.electron_shortcut_step() && !self.editor.as_ref().is_some_and(|editor| editor.recording) => Input::SkipShortcutTrial,
             "skip" => Input::Skip,
             "watched" => Input::Watched,
             "practiced" => Input::Practiced,
@@ -370,7 +368,7 @@ impl Session {
 
     pub fn shortcut_changed(&mut self, label: &str) {
         if !self.shortcut_label.is_empty() && self.shortcut_label != label
-            && self.flow.mode == Mode::Tour && !self.flow.practice_recording && !self.flow.first_capture_completed
+            && (self.electron_shortcut_step() || (self.flow.mode == Mode::Tour && !self.flow.practice_recording && !self.flow.first_capture_completed))
         {
             self.flow.shortcut_tested = false;
             self.shortcut_choice_down = true;
@@ -402,16 +400,6 @@ impl Session {
 
     pub(crate) fn local_practice(&self) -> bool {
         self.flow.local_practice()
-    }
-
-    pub(crate) fn shortcut_policy(&self) -> ShortcutPolicy {
-        match self.frog_stage() {
-            1 => return ShortcutPolicy::Trial,
-            2 => return ShortcutPolicy::Block,
-            _ => (),
-        }
-        let policy = self.flow.shortcut_policy();
-        if self.shortcut_choice_down && policy == ShortcutPolicy::Trial { ShortcutPolicy::Block } else { policy }
     }
 
     pub(crate) fn shortcut_selection_released(&mut self, released: bool) {

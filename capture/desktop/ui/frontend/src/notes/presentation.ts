@@ -2,8 +2,7 @@
 // request; failed writes never transition the editor away from recoverable text.
 export type Event =
   | { kind: 'open'; pin: number; position: [number, number] }
-  | { kind: 'edit'; pin: number }
-  | { kind: 'list' | 'save' | 'delete' | 'dismiss' | 'outside' }
+  | { kind: 'list' | 'save' | 'dismiss' | 'outside' }
   | { kind: 'badge'; rect: [number, number, number, number] };
 export type Presentation = {
   mode: 'badge' | 'editor' | 'list'; current: number | null;
@@ -23,14 +22,12 @@ export function initialPresentation(position: [number, number]): Presentation {
 export function transition(state: Presentation, event: Event): Presentation {
   switch (event.kind) {
     case 'open': return { ...state, mode: 'editor', current: event.pin, position: event.position, focusRevision: state.focusRevision + 1 };
-    case 'edit': return { ...state, mode: 'editor', current: event.pin, focusRevision: state.focusRevision + 1 };
     case 'list': {
       const rect = state.badgeRect;
       return { ...state, mode: 'list', position: rect ? [rect[0] + rect[2], rect[1] + rect[3]] : state.position,
         focusRevision: state.focusRevision + 1 };
     }
     case 'save': case 'dismiss': case 'outside': return { ...state, mode: 'badge' };
-    case 'delete': return { ...state, mode: 'list' };
     case 'badge': return { ...state, badgeRect: event.rect };
   }
 }
@@ -41,8 +38,7 @@ export function validEvents(value: unknown): value is Event[] {
     const keys = Object.keys(e).sort().join(',');
     switch (e.kind) {
       case 'open': return keys === 'kind,pin,position' && Number.isInteger(e.pin) && e.pin > 0 && e.pin <= 100000 && tuple(e.position, 2);
-      case 'edit': return keys === 'kind,pin' && Number.isInteger(e.pin) && e.pin > 0 && e.pin <= 100000;
-      case 'list': case 'save': case 'delete': case 'dismiss': case 'outside': return keys === 'kind';
+      case 'list': case 'save': case 'dismiss': case 'outside': return keys === 'kind';
       case 'badge': return keys === 'kind,rect' && tuple(e.rect, 4);
       default: return false;
     }

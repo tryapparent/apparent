@@ -49,90 +49,10 @@ impl Drop for Stream {
     }
 }
 
-/// Where to record `target` from.
-pub(crate) fn source_for(target: &TargetInfo, stopping: &AtomicBool, startup: Option<&Startup>) -> Result<Source> {
-    let f = target.frame;
-    let rect = [f.x, f.y, f.width, f.height];
-    anyhow::ensure!(target.mode != CaptureMode::Window || target.window_id.is_some(),
-        "Window capture has no selected window ID");
-    if !super::super::wayland_session() {
-        return Ok(match (target.mode, target.window_id) {
-            (CaptureMode::Window, Some(xid)) => Source::X11Window { xid },
-            _ => Source::X11 { rect },
-        });
-    }
-    // An X11 app's window on XWayland can be read like on X11.
-    if target.mode == CaptureMode::Window
-        && let Some(xid) = target.window_id
-    {
-        return Ok(Source::X11Window { xid });
-    }
-    if super::super::gnome() && target.mode != CaptureMode::Window {
-        match mutter_area(rect) {
-            Ok(session) => {
-                return Ok(Source::PipeWire {
-                    session,
-                    crop: None,
-                });
-            }
-            Err(error) => apparent_log(format!("GNOME screencast unavailable: {error:#}")),
-        }
-    }
-    let window = target.mode == CaptureMode::Window;
-    let monitors = if window { Vec::new() } else { super::super::monitors() };
-    let output = if window {
-        None
-    } else {
-        let output = selected_monitor(&monitors, target.display_id)
-            .context("The selected display is no longer connected")?;
-        // A connected output can still move after selection; do not use stale coordinates.
-        if !target_fits_output(target.mode, rect, output.rect) {
-            bail!("The selected display moved or changed; choose the target again");
-        }
-        Some(output)
-    };
-    // A token for another output must never silently override the target chosen in the picker.
-    let key = screencast_key(output.map(|m| m.name.as_str()), monitors.len());
-    if !portal_request_supported(target.mode, monitors.len(), super::super::hyprland()) {
-        // This backend has no validated identity contract. Asking for consent
-        // cannot make the source verifiable, so refuse before opening a session.
-        save_token(&key, None);
-        const MESSAGE: &str = "This sharing portal cannot verify the selected display with multiple displays connected. Connect only one display and try again. No recording was started.";
-        super::super::shell::notify("Capture not started", MESSAGE);
-        bail!(MESSAGE);
-    }
-    let (session, token) = portal_screencast(window, Some(&key), stopping, startup.cloned())?;
-    if let Some(output) = output
-        && !output_still_selected(output, &super::super::monitors(), monitors.len())
-    {
-        bail!("The display layout changed while screen sharing was chosen; choose the target again");
-    }
-    if let Some(output) = output
-        && !portal_output_verified(target.mode, monitors.len(), super::super::hyprland(),
-            &output.name, session.mapping_id.as_deref())
-    {
-        // Discard a stale restore token too, otherwise every retry restores the wrong screen.
-        save_token(&key, None);
-        bail!("The sharing portal selected {:?}, not {}. Choose that screen in the sharing dialog and try again.", session.mapping_id, output.name);
-    }
-    // Portal positions are in compositor coordinates, not XWayland pixels. Crop relative to
-    // the chosen RandR output; its pixel size is the captured stream's pixel size.
-    let crop = (target.mode == CaptureMode::Region).then(|| {
-        region_crop(rect, output, monitors.len(), super::super::hyprland(), session.rect, session.portal_monitor)
-    }).flatten();
-    if target.mode == CaptureMode::Region && crop.is_none() {
-        bail!("The selected screen does not contain the capture region (or the portal did not report its position). Choose the screen containing the region and try again.");
-    }
-    if !window {
-        save_token(&key, token.as_deref());
-    }
-    Ok(Source::PipeWire { session, crop })
-}
-
 pub(crate) fn choose_display(stopping: &AtomicBool) -> Result<(TargetInfo, Source)> {
     anyhow::ensure!(super::super::wayland_session(), "The system screen picker requires Wayland");
     let monitors = super::super::monitors();
-    let (session, _) = portal_screencast(false, None, stopping, None)?;
+    let (session, _) = portal_screencast(false, None, stopping, None, None)?;
     anyhow::ensure!(session.portal_monitor, "Choose a display in the system screen picker");
     let output = picked_monitor(&monitors, session.mapping_id.as_deref(), super::super::hyprland())
         .context("The sharing portal did not identify the selected display")?;

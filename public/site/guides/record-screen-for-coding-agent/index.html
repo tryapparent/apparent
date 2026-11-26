@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How to record your screen, talk, and point for Claude Code or Codex | Apparent</title>
+    <meta name="description" content="Record your screen and voice, point at the UI you want changed, and give Claude Code or Codex a transcript and frames it can inspect." />
+    <link rel="canonical" href="https://app.tryapparent.com/guides/record-screen-for-coding-agent/" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="../../agents/quickstart.css" />
+  </head>
+  <body>
+    <header class="shell">
+      <a href="/" aria-label="Apparent home"><img src="/apparent-wordmark.svg" width="132" height="31" alt="Apparent" /></a>
+      <a href="/agents/#guides">Agent guides</a>
+    </header>
+    <main class="shell guide">
+      <h1>How to record your screen, talk, and point for Claude Code or Codex</h1>
+      <p class="intro">Record the few seconds where the problem happens. Say what you expected while you point to the relevant control, then paste the capture into your coding agent’s chat. Apparent gives the agent a timed transcript and frames it can inspect at the same moment.</p>
+
+      <section aria-labelledby="record">
+        <h2 id="record">Record one change</h2>
+        <ol>
+          <li><a href="https://github.com/tryapparent/apparent/releases">Install Apparent</a> on macOS or a compatible Linux desktop and grant screen and microphone permissions when prompted. Check the <a href="https://github.com/tryapparent/apparent/blob/main/capture/desktop/docs/linux/linux.md">Linux setup guide</a> for compositor and input requirements.</li>
+          <li>Press <kbd>Option+Shift+S</kbd> on macOS or <kbd>Alt+Shift+S</kbd> on Linux to start. Use your own shortcut if you changed it in Settings.</li>
+          <li>Describe what you expected as you reproduce what happened. Point to the control and keep enough of the surrounding screen visible to identify it. Where supported, hold <kbd>Shift</kbd> to draw or <kbd>Shift</kbd>-click to drop a pin.</li>
+          <li>Press the shortcut again to finish, then paste into your agent chat if Apparent hasn’t already done so. Check the draft and send it yourself.</li>
+        </ol>
+        <blockquote><p>I open File actions and move toward Rename. The menu closes on the way down. It should stay open until I can reach Rename.</p></blockquote>
+        <p><a href="/agents/#example">Watch the simulated Rename-menu bug</a>.</p>
+      </section>
+
+      <section aria-labelledby="handoff">
+        <h2 id="handoff">Give the agent a moment to inspect</h2>
+        <p>Check which parts of the paste arrived. Composer support varies, and the handoff can include a contact sheet, timed transcript, and interaction summary. The original recording and frames are in the <code>.apparent</code> bundle.</p>
+        <p>For a local handoff, give the agent access to the complete bundle and the <a href="/agents/#setup">Apparent CLI</a>. If the agent runs on another machine, transfer the folder through an approved route and use the path on that machine. Attach the contact sheet directly when it gives the agent enough context.</p>
+        <p>Replace the example path and timestamp with the ones from your capture.</p>
+        <pre><code>apparent inspect ./your-capture.apparent
+apparent zoom ./your-capture.apparent --at 0:20</code></pre>
+        <blockquote><p>Check the frames around the moment the menu closes. Tell me which control I was pointing to and what should change before you edit.</p></blockquote>
+      </section>
+    </main>
+    <footer class="shell">
+      <nav aria-label="Related guides">
+        <ul class="links">
+          <li><a href="/guides/send-existing-screen-recording/">Send an existing recording</a></li>
+          <li><a href="/guides/show-coding-agent-right-ui-element/">Show the right UI element</a></li>
+        </ul>
+      </nav>
+    </footer>
+  </body>
+</html>

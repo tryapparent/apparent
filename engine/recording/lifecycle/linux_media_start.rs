@@ -53,6 +53,14 @@ impl Recorder {
             .context("No candidate sink")?
             .downcast::<gst_app::AppSink>()
             .map_err(|_| anyhow!("Not an appsink"))?;
+        let sampler = std::thread::current();
+        let mut notify_first = true;
+        candidates.set_callbacks(gst_app::AppSinkCallbacks::builder().new_sample(move |_| {
+            if std::mem::take(&mut notify_first) {
+                sampler.unpark();
+            }
+            Ok(gst::FlowSuccess::Ok)
+        }).build());
         let first_frame_ms = Arc::new(AtomicU64::new(u64::MAX));
         if let Some(sink) = pipeline
             .by_name("encoder")
@@ -155,7 +163,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let movie = video_output_path.as_deref().filter(|_| can_record_video());
     let candidate = frames.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         .sampling_size(&target, movie.is_some());
-    let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping, startup.as_ref()), Ok);
+    let source = prepared_source.map_or_else(|| super::portal::source_for(&target, &stopping, startup.as_ref()), |source| source.acquire(&stopping));
     let recorder = source.and_then(|source| {
         Recorder::new(&source, out, candidate, movie, pinned_movie_dir.as_ref(), started_at, startup.clone())
             .map_err(|error| anyhow!("{error:#}"))
@@ -182,6 +190,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
     let mut last_sample = Instant::now()
         .checked_sub(crate::capture::engine::runtime::FRAME_SAMPLE_INTERVAL)
         .unwrap_or_else(Instant::now);
+    let mut first_candidate = false;
     let mut offset_set = false;
     let records_others = !matches!(
         recorder.as_ref().map(|(_, source)| source),
@@ -222,7 +231,7 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .interval();
-        if is_urgent || last_sample.elapsed() >= interval {
+        if !first_candidate || is_urgent || last_sample.elapsed() >= interval {
             last_sample = Instant::now();
             let t_ms = started_at.elapsed().as_millis() as u64;
             let frame = match recorder.as_mut() {
@@ -230,9 +239,15 @@ pub fn run_sampler(sampler: Sampler) -> Option<PathBuf> {
                 None => None,
             };
             match frame {
-                Some(frame) => crate::capture::engine::runtime::push_candidate(
-                    &frames, &real_frame_seen, frame, is_urgent, true,
-                ),
+                Some(frame) => {
+                    if !first_candidate {
+                        StartupPoint::FirstCandidate.record_in(startup.as_ref());
+                        first_candidate = true;
+                    }
+                    crate::capture::engine::runtime::push_candidate(
+                        &frames, &real_frame_seen, frame, is_urgent, true,
+                    );
+                }
                 None if is_urgent => urgent.store(true, Ordering::Release),
                 None => {}
             }

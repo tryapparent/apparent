@@ -106,6 +106,10 @@ test("typed upload progress, retry and recovery ignore changes to display copy",
   send("CaptureStarted", 0);
   send("CaptureSealed", 1);
   send("CaptureSaved", 2, { recovery: true, text: "A different translation" });
+  const failedCopy = present();
+  assert.equal(failedCopy.copyFailed, true);
+  assert.equal(failedCopy.actions.find(({ id }) => id === "paste")?.enabled, false);
+  assert.equal(failedCopy.actions.find(({ id }) => id === "inspect")?.enabled, true);
   assert.equal(send("Deadline", 15003).phase, "Completed");
   send("ShareStarted", 16000);
   send("CompletionText", 17000, {

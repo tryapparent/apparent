@@ -103,7 +103,7 @@ fn select_linux(stop: &AtomicBool) -> anyhow::Result<SelectedDisplay> {
         let result = crate::capture::desktop::linux::portal::choose_display(stop);
         let storage = store.ok().and_then(|job| job.join().ok()).flatten();
         let (target, source) = result?;
-        Ok(SelectedDisplay { target, source, storage })
+        Ok(SelectedDisplay { target, source: super::PreparedSource::Ready(source), storage })
     })
 }
 

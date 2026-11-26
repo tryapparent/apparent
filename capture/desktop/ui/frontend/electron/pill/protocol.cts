@@ -8,7 +8,7 @@ function view(value) {
       !(value.noteCount == null || Number.isSafeInteger(value.noteCount) && value.noteCount >= 0 && value.noteCount <= 100) ||
       typeof value.clock !== 'string' || value.clock.length > 20 ||
       !(value.shareIndicator == null || ['none','uploading','retry','receipt'].includes(value.shareIndicator)) ||
-      typeof value.label !== 'string' || value.label.length > 300 ||
+      typeof value.label !== 'string' || value.label.length > 300 || !(value.copyFailed == null || typeof value.copyFailed === 'boolean') ||
       !(value.warning === null || typeof value.warning === 'string' && value.warning.length <= 300) ||
       !(value.inputWaveform == null || Array.isArray(value.inputWaveform) && value.inputWaveform.length === 24 && value.inputWaveform.every(level => Number.isFinite(level) && level >= 0 && level <= 1)) ||
       !(value.noteTip == null || value.phase === 'recording' && typeof value.noteTip === 'string' && value.noteTip.length <= 120) ||
@@ -24,7 +24,7 @@ function view(value) {
     return {id:a.id,label:a.label,enabled:a.enabled,selected:a.selected,primary:a.primary};
   });
   return {revision:value.revision,phase:value.phase,clock:value.clock,label:value.label,warning:value.warning,notice:value.notice??null,noteTip:value.noteTip??null,
-    shareIndicator:value.shareIndicator??'none',reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
+    copyFailed:value.phase==='completed' && value.copyFailed===true,shareIndicator:value.shareIndicator??'none',reducedMotion:value.reducedMotion,draggable:value.draggable,inputWaveform:value.inputWaveform??null,noteCount:value.noteCount??0,
     transcript:value.transcript == null ? null : {state:value.transcript.state,text:value.transcript.text},actions:controls};
 }
 function command(current, revision, action, capture) {

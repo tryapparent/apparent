@@ -129,3 +129,41 @@ fn exports_sampled_histograms_and_parented_finish_spans() {
     assert!(!metrics.to_string().contains("private-generation"));
     assert!(!traces.to_string().contains("private-generation"));
 }
+
+#[test]
+fn concurrent_start_spans_keep_worker_and_red_pill_clocks_separate() {
+    use std::time::Duration;
+
+    let startup = Startup::default();
+    let origin = Instant::now();
+    for (point, ms) in [
+        (PortalSelect, 2),
+        (PortalSourcesSelected, 12),
+        (PortalStart, 32),
+        (VideoDispatch, 33),
+        (VideoDispatched, 35),
+        (AudioBegin, 35),
+        (AudioReady, 51),
+        (VideoBuild, 65),
+        (VideoFirstFrame, 92),
+        (FirstCandidate, 96),
+        (ScreenReadyObserved, 100),
+        (RedPillFlushed, 105),
+        (RedPillReported, 112),
+    ] {
+        startup.record_at(point, origin + Duration::from_millis(ms));
+    }
+    let spans = startup.stages(origin, 0);
+    let range = |name| {
+        let span = spans.iter().find(|span| span.name == name).unwrap();
+        (span.start / 1_000_000, span.end / 1_000_000)
+    };
+    assert_eq!(range("recording.start.portal_select_sources"), (2, 12));
+    assert_eq!(range("recording.start.portal_storage_gate"), (12, 32));
+    assert_eq!(range("recording.start.video_dispatch"), (33, 35));
+    assert_eq!(range("recording.start.audio_setup"), (35, 51));
+    assert_eq!(range("recording.start.video_first_frame"), (65, 92));
+    assert_eq!(range("recording.start.first_candidate"), (65, 96));
+    assert_eq!(range("recording.start.candidate_to_coordinator"), (96, 100));
+    assert_eq!(range("recording.start.red_pill_acknowledge"), (105, 112));
+}
