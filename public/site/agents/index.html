@@ -60,6 +60,23 @@
 apparent zoom ./menu-bug.apparent --at 0:20</code></pre>
         <p>The transcript renders “File actions” as “fellow action.” The zoom frames show the File actions label and the open Rename menu at 0:19.500. At 0:21.136 the pointer is below File actions and the menu is gone. The agent can use those frames to investigate what closes the menu. <a href="https://github.com/tryapparent/apparent/blob/main/capture/agent/docs/usage.md">See the CLI guide</a>.</p>
       </section>
+
+      <section aria-labelledby="compare-handoffs">
+        <h2 id="compare-handoffs">Apparent and Tellscreen on the same screen recording</h2>
+        <p>On November 26, 2026, we ran the 15-second Rename-menu clip above through both tools. We tested what each tool could give a coding agent from an existing video.</p>
+        <ul class="setup">
+          <li>
+            <h3>Apparent on Linux</h3>
+            <p>Apparent imported the video into a local <code>.apparent</code> bundle and transcribed the expected behavior. The frame sheet shows Rename at 0:06.863 and the closed menu at 0:07.045. The imported bundle has no separate click, ink, or window events.</p>
+            <pre><code>apparent import ./menu-demo.mp4 --out ./menu-import.apparent
+apparent zoom ./menu-import.apparent --at 0:07</code></pre>
+          </li>
+          <li>
+            <h3>Tellscreen’s video converter</h3>
+            <p>The converter returned a Markdown handoff with four hosted screenshots. We opened images showing the menu before and after it closed. The transcript was empty in both attempts, using the original MP4 and the same video and audio in a MOV container. <a href="https://tellscreen.com/ai">See Tellscreen’s handoff guide</a>.</p>
+          </li>
+        </ul>
+      </section>
     </main>
     <footer class="shell"><a href="/llms.txt">Agent documentation index (plain text)</a></footer>
   </body>
