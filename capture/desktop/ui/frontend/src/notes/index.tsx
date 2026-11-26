@@ -5,8 +5,7 @@ import './notes.css';
 type Note = { pin: number; t: number; x: number; y: number; text: string };
 type Snapshot = { mode: 'badge' | 'editor' | 'list'; current: number | null;
   notes: Note[]; drafts: Note[]; error: string | null };
-type Command = { action: 'save' | 'draft'; pin: number; text: string } |
-  { action: 'edit' | 'delete'; pin: number } | { action: 'dismiss' };
+type Command = { action: 'save' | 'draft'; pin: number; text: string } | { action: 'dismiss' };
 declare global {
   interface Window { captureNotes?: {
     onSnapshot: (callback: (state: Snapshot) => void) => () => void;
@@ -36,9 +35,8 @@ export function CaptureNotes() {
     if (!state?.current || busy) return;
     setBusy(true); void command({ action: 'save', pin: state.current, text });
   }
-  async function dismiss() {
-    if (state?.mode === 'editor' && state.current) await command({ action: 'draft', pin: state.current, text });
-    await command({ action: 'dismiss' });
+  function dismiss() {
+    void command({ action: 'dismiss' });
   }
   if (!state) return <div className="notes-unavailable" role="status">Connecting notes…</div>;
   return <main className="capture-notes" onClick={e => {
@@ -48,14 +46,12 @@ export function CaptureNotes() {
   }}>
     {state.mode === 'list' ? <section className="note-list" aria-label="Capture notes">
       <header><strong>Notes</strong><Button variant="ghost" size="sm" aria-label="Close notes" onClick={() => void dismiss()}>Close</Button></header>
-      {state.drafts.filter(n => n.text.trim()).length === 0 ? <p>No notes yet.</p> :
-        state.drafts.filter(n => n.text.trim()).map(n => <article key={n.pin}>
-          <Button variant="ghost" className="note-row" onClick={() => void command({ action: 'edit', pin: n.pin })}>
-            <span className="note-number">{n.pin}</span><span>{n.text}</span>
-            {state.notes.find(saved => saved.pin === n.pin)?.text !== n.text && <small>Draft</small>}
-          </Button>
-          <Button variant="ghost" size="sm" aria-label={`Delete note ${n.pin}`} onClick={() => void command({ action: 'delete', pin: n.pin })}>Delete</Button>
-        </article>)}
+      {state.notes.length === 0 ? <p>No notes yet.</p> :
+        <ul className="note-rows" aria-label="Saved notes" tabIndex={0}>
+          {state.notes.map(n => <li key={n.pin}>
+            <span className="note-number">{n.pin}</span><span className="note-text">{n.text}</span>
+          </li>)}
+        </ul>}
       {error && <p role="alert">{error}</p>}
     </section> : state.mode === 'editor' ? <form className="note-popup" aria-label={`Note at pin ${state.current}`} onSubmit={e => { e.preventDefault(); save(); }}>
       <textarea key={state.current} autoFocus aria-label="Note text" placeholder="What should change?" value={text} rows={3} maxLength={8192}
