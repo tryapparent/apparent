@@ -46,7 +46,7 @@ pub(crate) type FinishResult = Result<FinishOutcome, FinishFailure>;
 /// Revisions prevent an older hide receipt from releasing a newer request.
 /// This tracks delivery, not editor/list/badge presentation policy.
 #[derive(Default)]
-pub(super) struct PresentationAdmission {
+pub(crate) struct PresentationAdmission {
     sent: u64,
     observed: u64,
     active: bool,
@@ -68,7 +68,7 @@ impl PresentationAdmission {
 }
 
 #[derive(Default)]
-pub(super) struct Lifecycle {
+pub(crate) struct Lifecycle {
     sealed: bool,
     ready: bool,
     admitted: bool,
@@ -115,7 +115,13 @@ impl Lifecycle {
         receipt
     }
 
-    pub fn complete(&mut self, drained: bool, failed_writes: bool, transport_failed: bool, startup_exit: bool) {
+    pub fn complete(
+        &mut self,
+        drained: bool,
+        failed_writes: bool,
+        transport_failed: bool,
+        startup_exit: bool,
+    ) {
         self.seal();
         let save_failed = failed_writes || transport_failed;
         let result = if drained && self.ready && !save_failed && !self.startup_protocol_failed {
@@ -123,7 +129,6 @@ impl Lifecycle {
         } else if startup_exit && !self.ready && !self.admitted && !save_failed && !self.startup_protocol_failed {
             Ok(FinishOutcome::UnavailableBeforeAdmission)
         } else {
-            // Preserve the actual refusal branch without note text or pipe frames.
             crate::capture::engine::runtime::apparent_log(format!(
                 "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} transport_failed={transport_failed} startup_exit={startup_exit}",
                 self.ready, self.admitted, self.startup_protocol_failed,

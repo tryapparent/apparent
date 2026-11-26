@@ -1,10 +1,8 @@
 //! The notes-only Electron surface. Its private pipe exposes no shell or filesystem commands.
 pub(crate) mod audio;
-#[path = "../../../../engine/recording/notes/lifecycle.rs"]
-mod lifecycle;
+use crate::capture::engine::runtime::recording::notes::{Store, lifecycle};
 pub use lifecycle::FinishOutcome;
 pub(crate) use lifecycle::{FinishFailure, FinishResult};
-use crate::capture::engine::runtime::recording::notes::Store;
 use crate::capture::engine::runtime::{LiveOverlayEvent, SharedCaptureTelemetry};
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;

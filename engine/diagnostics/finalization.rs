@@ -1,6 +1,6 @@
 use crate::capture::engine::runtime::recording::diagnostics::{Failure, Stage};
 use crate::capture::engine::runtime::recording::diagnostics::sampling::Sampling;
-use crate::capture::desktop::workflow::notes::FinishFailure;
+use crate::capture::engine::runtime::recording::notes::lifecycle::FinishFailure;
 
 #[derive(Clone, serde::Serialize)]
 pub(crate) struct Diagnostics {
@@ -22,7 +22,10 @@ struct Frame {
 }
 
 impl Diagnostics {
-    pub(crate) fn from_error(error: &anyhow::Error) -> Self {
+    pub(crate) fn from_error(
+        error: &anyhow::Error,
+        source_file: fn(&str) -> Option<String>,
+    ) -> Self {
         let mut stages = Vec::new();
         let mut io_kind = None;
         let mut os_error_code = None;
@@ -38,7 +41,7 @@ impl Diagnostics {
                 }
                 stages.push(Frame {
                     stage: failure.stage,
-                    file: super::super::source_file(failure.location.file()),
+                    file: source_file(failure.location.file()),
                     line: failure.location.line(),
                 });
             }
