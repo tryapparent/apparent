@@ -29,6 +29,7 @@ const app = spawn(
       ...process.env,
       ELECTRON_RUN_AS_NODE: "",
       HOME: home,
+      APPARENT_CONFIG: process.argv[2],
       XDG_CONFIG_HOME: path.join(home, "config"),
       XDG_CACHE_HOME: path.join(home, "cache"),
     },
@@ -59,7 +60,9 @@ try {
   });
   browser = await chromium.connectOverCDP(url);
   const page = browser.contexts()[0].pages()[0];
-  await expect(page.getByRole("switch", { name: /^(Recording pill doodles|Soft Bloom)$/ })).toHaveCount(0);
+  await expect(
+    page.getByRole("switch", { name: /^(Recording pill doodles|Soft Bloom)$/ }),
+  ).toHaveCount(0);
   const agentContext = page.getByRole("switch", {
     name: "Recording context for agents",
   });
@@ -131,6 +134,27 @@ try {
       await expect(wispr).toHaveAttribute("aria-checked", String(on));
     }
   } else await expect(wispr).toBeDisabled();
+  const hosted = page.getByRole("switch", { name: "OpenRouter transcription" });
+  const key = page.getByLabel("OpenRouter API key", { exact: true });
+  const proofKey = "sk-or-v1-synthetic-settings-proof";
+  const credential = path.join(
+    path.dirname(process.argv[2]),
+    "openrouter-transcription.json",
+  );
+  await expect(hosted).toBeDisabled();
+  await key.fill(proofKey);
+  await page.getByRole("button", { name: "Save key" }).click();
+  await expect(key).toHaveValue("");
+  await expect(hosted).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByLabel("Model", { exact: true })).toHaveValue(
+    "microsoft/mai-transcribe-2",
+  );
+  await hosted.press("Space");
+  await expect(hosted).toHaveAttribute("aria-checked", "true");
+  assert.equal((await fs.stat(credential)).mode & 0o777, 0o600);
+  await page.getByRole("button", { name: "Remove key" }).click();
+  await expect(hosted).toBeDisabled();
+  await assert.rejects(fs.stat(credential), { code: "ENOENT" });
   await page.getByRole("button", { name: "Handoff", exact: true }).click();
   const autoPaste = page.getByRole("switch", {
     name: "Auto paste",

@@ -93,7 +93,7 @@ On by default. After a local capture, the Completed capsule keeps its Copy/Send 
 
 Off by default. During a microphone recording, a separate best-effort recognizer checks completed six-second chunks of captured 16 kHz audio, including continuous noise without silence. Only after two active chunks have completed successfully without recognized words does the recording capsule show the inline amber “No words yet” warning. Words clear it; after words arrive it does not claim “yet” again. A missing model or recognition error is not an empty result and cannot trigger that warning. The energy threshold qualifies audio for a check; it is not proof of speech or microphone health. The probe does not supply the final transcript; after Stop the saved audio and final transcription determine the Completed warning above. On Mac the probe runs the helper with a short deadline; on Linux and Windows it uses a separate Parakeet session. The live experiment does not change final transcription or delivered bundle content.
 
-## Local export narration (`exportNarration`) (`capture/engine/export/narration.rs`)
+## Local export narration (`exportNarration`) (`engine/native/export_narration.rs`)
 
 Available by default. Explicit `apparent export B --narration cues.json` replaces recorded
 audio in the exported movie with locally generated Kokoro `bm_fable` speech. It never
