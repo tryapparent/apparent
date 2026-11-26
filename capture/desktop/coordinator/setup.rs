@@ -331,7 +331,7 @@ impl ApparentCoordinator {
                 if self.active_recording.is_none() {
                     self.agent_capture_id = None;
                     self.report_capture = false;
-                    self.agent_captures.set(id, "failed", None, Some("start_failed"));
+                    self.agent_captures.fail_start(id);
                 }
             }
             let _ = request.reply.send(self.agent_captures.inspect(id).to_string());
@@ -551,38 +551,6 @@ impl ApparentCoordinator {
 
     fn current_grants(&self) -> Option<&Grants> {
         self.grants.as_ref().filter(|grants| grants.is_current())
-    }
-
-    fn permissions_allow_recording(&mut self, microphone: bool, session_selected: bool) -> bool {
-        use crate::permission_admission::{Admission, ScreenAuthorization, check_for};
-        match check_for(self.current_grants(), microphone, ScreenAuthorization::for_screen_recording(session_selected)) {
-            Admission::Ready => true,
-            Admission::Checking => {
-                let message = "Checking recording permissions. Try recording again in a moment.";
-                apparent_log(message);
-                if let Ok(mut status) = CAPTURE_STATUS.lock() {
-                    *status = Some(message.into());
-                }
-                false
-            }
-            Admission::Blocked(missing) => {
-                self.gate.defer(missing);
-                false
-            }
-        }
-    }
-
-    fn ready_to_record(&mut self, session_selected: bool) -> bool {
-        if self.lab {
-            return true;
-        }
-        let microphone = crate::capture::engine::runtime::audio::mic::enabled();
-        self.admitted_microphone = None;
-        if !self.permissions_allow_recording(microphone, session_selected) {
-            return false;
-        }
-        self.admitted_microphone = Some(microphone);
-        true
     }
 
     fn ready_for(&mut self, permission: Permission) -> bool {
@@ -1169,4 +1137,5 @@ impl ApparentCoordinator {
 
 }
 
+include!("../../../engine/permissions/recording_start.rs");
 include!("../../../engine/native/input/record_shortcut.rs");
