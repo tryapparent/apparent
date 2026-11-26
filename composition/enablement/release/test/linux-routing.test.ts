@@ -248,6 +248,7 @@ printf fresh > "${frontend}/dist/index.html"
         "notes/main.cjs",
         "notes/presentation.cjs",
         "notes/lifecycle.cjs",
+        "notes/dropdown-layout.mjs",
       ]) {
         write(`${frontend}/electron/${file}`, file);
       }
