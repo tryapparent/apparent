@@ -137,7 +137,10 @@ try {
   const hosted = page.getByRole("switch", { name: "OpenRouter transcription" });
   const key = page.getByLabel("OpenRouter API key", { exact: true });
   const proofKey = "sk-or-v1-synthetic-settings-proof";
-  const credential = path.join(home, "app", "openrouter-transcription.json");
+  const credential = path.join(
+    path.dirname(process.argv[2]),
+    "openrouter-transcription.json",
+  );
   await expect(hosted).toBeDisabled();
   await key.fill(proofKey);
   await page.getByRole("button", { name: "Save key" }).click();
