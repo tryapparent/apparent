@@ -1134,26 +1134,26 @@ fn shortcut_native_process_failures_reject_without_accepting_renderer_claims() {
 }
 
 #[test]
-fn electron_choice_receipt_is_bound_to_the_released_native_selection() {
-    let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(true,true,false,false));
-    session.shortcut_label="Fn".into();
-    session.practice=Some(super::practice::Practice::default());
-    let (sender,_receiver)=flume::unbounded();
-    session.fallback=Some(Box::new(move |_|Ok(Transport::InProcess(Some(sender.clone())))));
-    session.shortcut_choice_down=true;
-    session.action("accept-shortcut-choice:Fn");
-    assert!(!session.flow.shortcut_tested,"a held choice cannot admit capture");
-    session.shortcut_selection_released(true);
-    session.action("accept-shortcut-choice:Copilot");
-    assert!(!session.flow.shortcut_tested,"stale shortcut receipt is rejected");
-    session.action("accept-shortcut-choice:Fn");
-    assert!(session.flow.shortcut_tested);
-    assert_eq!(session.flow.step(),Step::Shortcut,"receipt never starts capture");
-    session.action("continue");
-    assert_eq!(session.flow.step(),Step::TryIt);
-    assert_eq!(session.shortcut_policy(),ShortcutPolicy::Record,"next press records without another trial");
-    session.flow.step=Step::Shortcut;session.flow.shortcut_tested=false;
-    session.fallback=None;
-    session.action("accept-shortcut-choice:Fn");
-    assert!(!session.flow.shortcut_tested,"retired Electron cannot change fallback progression");
+fn electron_shortcut_needs_a_native_trial_and_explicit_confirmation() {
+    for required in [false, true] {
+        let mut session=Session::for_test(Flow::tour(Step::Shortcut,None).with_first_capture(required,false,false,false));
+        session.shortcut_label="Fn".into();
+        session.fallback=Some(Box::new(|_|Ok(Transport::InProcess(None))));
+        session.action("use-shortcut");
+        assert_eq!(session.flow.step(),Step::Shortcut);
+        assert_eq!(session.shortcut_policy(),ShortcutPolicy::Trial);
+        session.input(Input::ShortcutChosen);
+        session.input(Input::ShortcutTriggered);
+        assert!(!session.flow.shortcut_tested);
+        session.shortcut_selection_released(true);
+        session.input(Input::ShortcutTriggered);
+        assert!(session.flow.shortcut_tested);
+        assert_eq!(session.flow.step(),Step::Shortcut);
+        session.shortcut_changed("Copilot");
+        assert!(!session.flow.shortcut_tested);
+        session.shortcut_selection_released(true);
+        session.input(Input::ShortcutTriggered);
+        session.action("use-shortcut");
+        assert_eq!(session.flow.step(),Step::TryIt);
+    }
 }

@@ -321,19 +321,28 @@ pub fn fetch(args: FetchArgs) -> Result<()> {
     println!("{}", fetched.display());
     Ok(())
 }
-/// Only a bare canonical Connect ID implies a download. Explicit local paths
-/// retain local inspection semantics; fetch never overwrites existing output.
-pub fn inspect_source(source: &Path, reader: Option<&str>, out: Option<&Path>) -> Result<PathBuf> {
-    let Some(id) = inspect_capture_id(source) else {
-        anyhow::ensure!(reader.is_none(), "--reader requires a Connect capture ID");
-        anyhow::ensure!(out.is_none(), "--out requires a Connect capture ID");
-        return Ok(source.to_path_buf());
-    };
-    let default_out = PathBuf::from(format!("./{id}.apparent"));
-    let out = out.unwrap_or(&default_out);
-    anyhow::ensure!(out.extension().is_some_and(|ext| ext == "apparent"), "--out must name a new .apparent directory");
-    client().fetch_with_reader(id, out, 120, None, reader)
-        .map_err(recovery)
+
+#[derive(clap::Args)]
+pub(crate) struct ReadSource {
+    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest")]
+    pub bundle: PathBuf,
+    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
+    pub reader: Option<String>,
+}
+
+impl ReadSource {
+    pub(crate) fn resolve(&self, out: Option<&Path>) -> Result<PathBuf> {
+        let Some(id) = inspect_capture_id(&self.bundle) else {
+            anyhow::ensure!(self.reader.is_none(), "--reader requires a Connect capture ID");
+            anyhow::ensure!(out.is_none(), "--out requires a Connect capture ID");
+            return Ok(self.bundle.clone());
+        };
+        let default_out = PathBuf::from(format!("./{id}.apparent"));
+        let out = out.unwrap_or(&default_out);
+        anyhow::ensure!(out.extension().is_some_and(|ext| ext == "apparent"), "--out must name a new .apparent directory");
+        client().fetch_with_reader(id, out, 120, None, self.reader.as_deref())
+            .map_err(recovery)
+    }
 }
 
 pub(crate) fn inspect_capture_id(source: &Path) -> Option<&str> {

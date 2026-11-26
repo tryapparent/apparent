@@ -309,39 +309,17 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect.poll(() => page.evaluate(() => innerWidth)).toBe(760);
   assert.equal(await page.locator('.native-setup section > p').count(),0);
   send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'linux',shortcut:'Super+Shift+Copilot',shortcutEditor:{recording:false,externallyManaged:true}});
-  await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'Choose Super+Shift+Copilot',exact:true})).toBeInViewport();
-  await expect(page.getByRole('button',{name:'Choose another shortcut',exact:true})).toBeInViewport();
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
-  await page.getByRole('button',{name:'Choose another shortcut',exact:true}).click();
+  await expect(page.locator('.shortcut-test kbd')).toHaveText(['Super','Shift','Copilot']);
+  const changeShortcut=page.getByRole('button',{name:'Change shortcut',exact:true});
+  const useShortcut=page.getByRole('button',{name:'Use shortcut',exact:true});
+  await expect(useShortcut).toBeDisabled();
+  await changeShortcut.click();
   await expect.poll(()=>output).toContain('"action":"change-shortcut"');
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:false,platform:'macos',shortcut:'',shortcutEditor:{recording:false,externallyManaged:false}});
-  await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
-  await page.getByRole('button',{name:'Choose shortcut',exact:true}).click();
-  await expect.poll(()=>output).toContain('change-shortcut');
-  assert.equal(output.includes('use-current-shortcut'),false);
-  // The real provider acknowledges a fresh listener before accepting a choice.
-  // Earlier Back/close actions must not be cleared by stale chosen/tested facts.
-  send({step:'shortcut',platform:'macos',firstCaptureRequired:true,shortcutChosen:false,shortcutEditor:{recording:true,externallyManaged:false}});
-  await expect(page.getByRole('group',{name:'Shortcut recorder'})).toBeFocused();
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
-  assert.equal(await page.getByText(/This check won’t record/).count(),0);
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
-  assert.equal(output.includes('accept-shortcut-choice:'),false,'a held choice cannot complete practice');
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:false,shortcutSelectionReleased:true});
-  await expect.poll(()=>output).toContain('accept-shortcut-choice:⌃⌥⇧9');
-  assert.equal(await page.evaluate(()=>window.nativeOnboarding.action('accept-shortcut-choice:⌃⌥⇧9').then(()=>false,()=>true)),true,'renderer cannot forge a native selection receipt');
+  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
+  await expect(page.getByRole('status')).toHaveText('Shortcut detected.');
+  await useShortcut.press('Enter');
+  await expect.poll(()=>output).toContain('"action":"use-shortcut"');
   const beforeTrialAdvance=(output.match(/"action":"continue"/g)?.length??0);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
-  await expect.poll(()=>(output.match(/"action":"continue"/g)?.length??0)).toBe(beforeTrialAdvance+1);
-  send({step:'shortcut',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
-  await page.waitForTimeout(100);
-  assert.equal((output.match(/"action":"continue"/g)?.length??0),beforeTrialAdvance+1,'repeated state must not advance twice');
-  await expect(page.getByRole('button',{name:'Continue',exact:true})).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'Change shortcut',exact:true})).toBeVisible();
   send({step:'try-it',practice:'start',firstCaptureRequired:true,shortcutChosen:true,shortcutTested:true});
   await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
   assert.equal(await page.getByText(/Press .* to start recording/).count(),0);
@@ -397,11 +375,6 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   }
   await page.setViewportSize({width:760,height:520});
   const fnEditor={externallyManaged:false,suggestedFn:{keyCode:63,modifiers:0,key:'Fn'}};
-  const fnChoiceStart=output.length;
-  send({step:'shortcut',platform:'macos',shortcutChosen:false,shortcutEditor:{...fnEditor,recording:false}});
-  await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
-  await expect.poll(()=>output.slice(fnChoiceStart)).toContain('\"keyCode\":63');
-  assert.ok(output.slice(fnChoiceStart).indexOf('change-shortcut')<output.slice(fnChoiceStart).indexOf('\"keyCode\":63'),'open the provider editor before Fn selection');
   send({step:'shortcut',platform:'macos',shortcutEditor:{...fnEditor,recording:true}});
   const recorder=page.getByRole('group',{name:'Shortcut recorder'});
   await recorder.focus();
@@ -419,7 +392,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await page.setViewportSize({width:320,height:520});
   for(const scheme of schemes){
     await page.emulateMedia({colorScheme:scheme});
-    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(2, 1, 2)');
+    await expect(page.locator('.native-setup')).toHaveCSS('background-color',scheme==='light'?'rgb(245, 240, 232)':'rgb(32, 27, 36)');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,`shortcut editor overflows at 320px in ${scheme} mode`);
     await expect(recorder).toBeInViewport();
     await screenshot(`shortcut-listening-320-${scheme}`);
@@ -427,16 +400,16 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await page.emulateMedia({colorScheme:'light'});
   const priorFnCount=(output.match(/"keyCode":63/g)||[]).length;
   await recorder.evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'Fn',code:'Fn',metaKey:true,bubbles:true})));
-  await expect(page.getByRole('alert')).toContainText('Fn alone');
+  await expect(page.getByRole('alert')).toContainText('Press a different shortcut');
   await screenshot('shortcut-rejected-fn-modifier');
   assert.equal((output.match(/"keyCode":63/g)||[]).length,priorFnCount,'Fn with another modifier must not be accepted');
-  await recorder.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).click();
+  await recorder.dispatchEvent('keydown',{key:'Fn',code:'Fn'});
   await expect.poll(()=>output).toContain('"keyCode":63,"modifiers":0,"key":"Fn"');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await screenshot('shortcut-fn-error-recovered');
   send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutTested:false,shortcutEditor:{...fnEditor,recording:false}});
-  await expect(page.getByRole('heading',{name:'One more time.',exact:true})).toBeVisible();
-  await expect(page.locator('.native-shortcut kbd')).toHaveText('Fn');
+  await expect(page.getByRole('heading',{name:'Test your recording shortcut.',exact:true})).toBeVisible();
+  await expect(page.locator('.shortcut-test kbd')).toHaveText('fn');
   await screenshot('shortcut-accepted-fn');
   send({step:'shortcut',platform:'macos',shortcut:'Fn',shortcutChosen:true,shortcutEditor:{...fnEditor,recording:true}});
   await page.getByRole('group',{name:'Shortcut recorder'}).focus();
@@ -446,15 +419,9 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await page.getByRole('group',{name:'Shortcut recorder'}).evaluate(element=>element.dispatchEvent(new KeyboardEvent('keydown',{key:'ß',code:'KeyS',altKey:true,bubbles:true})));
   await expect.poll(()=>output).toContain('"keyCode":1,"modifiers":2048,"key":"s"');
   await page.getByRole('group',{name:'Shortcut recorder'}).press('Tab');
-  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toBeFocused();
-  await page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true}).press('Tab');
-  await expect(page.getByRole('button',{name:'Cancel',exact:true})).toBeFocused();
-  await page.getByRole('button',{name:'Cancel',exact:true}).press('Enter');
+  await expect(page.getByRole('button',{name:'Back',exact:true})).toBeFocused();
+  await page.getByRole('button',{name:'Back',exact:true}).press('Enter');
   await expect.poll(()=>output).toContain('cancel-shortcut');
-  send({step:'shortcut',platform:'linux',shortcutChosen:false,shortcutEditor:{recording:false,externallyManaged:false,error:null}});
-  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toHaveCount(0);
-  send({shortcutEditor:{recording:true,externallyManaged:false,error:null}});
-  await expect(page.getByRole('button',{name:'Choose suggested Fn shortcut',exact:true})).toHaveCount(0);
 
   await page.emulateMedia({reducedMotion:'reduce'});
   send({penPicker:true,penSelected:true,penRgb:[59,121,189]});
@@ -463,7 +430,7 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect.poll(()=>output).toContain('pen:blue:');
   const blueSaveId=receiptId(latestAction());
   send({penPicker:true,penSelected:true,penRgb:[59,121,189],penSaveId:blueSaveId});
-  await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+2);
+  await expect.poll(()=>output.match(/"action":"continue"/g)?.length).toBe(beforeTrialAdvance+1);
   await expect(page.locator('.native-pond-frog')).toHaveCSS('animation-name','none');
   await page.setViewportSize({width:320,height:600});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'pen picker must reflow at 320 CSS pixels');

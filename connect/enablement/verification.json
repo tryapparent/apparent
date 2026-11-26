@@ -62,6 +62,27 @@
         "The loopback lane uses named effect substitutes for the Desktop sender, identity and managed persistence. Chromium is headless and browser HTTP caching is disabled.",
         "CPU accounting and topology describe the hosted Linux guest. Local diagnostic timings are outside the hosted score series."
       ]
+    },
+    {
+      "id": "inspect-connect-transport-diagnostics",
+      "description": "Identify the failed Connect read stage and bounded transport outcome.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Run apparent inspect <capture-id> from a private directory against a stalled Connect endpoint.",
+      "prerequisites": [
+        "A native test build, curl and a private temporary directory."
+      ],
+      "runner": {
+        "path": "connect/client/src/test_support/mod.rs",
+        "instructions": "Build the Connect TypeScript client, then run cargo test --locked -p apparent-connect-client hosted_transport_network_timeout_and_cancellation and cargo test --locked -p apparent-connect-client hosted_fetch_connection_failures_discover_mcp_without_changing_access."
+      },
+      "expectedEvidence": [
+        "A stalled file read reports the stage, curl exit code, numeric HTTP status and configured request timeout.",
+        "A refused manifest connection preserves the existing transfer recovery guidance.",
+        "The diagnostics omit credentials, capture IDs, endpoint addresses and file names."
+      ],
+      "limits": [
+        "Loopback fixtures exercise controlled failures without contacting the hosted service."
+      ]
     }
   ]
 }

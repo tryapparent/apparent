@@ -90,6 +90,13 @@ The host updates its visible and clickable shape after the current layout paints
 The Hyprland recording window fits the visible row when there are no saved
 notes. The first saved note adds the extension without moving the controls.
 
+If the count clips in an isolated Hyprland run, preserve the settled frame
+before manually resizing the pill. Compare the exact pill's XWayland width,
+its `WM_NORMAL_HINTS` widths, and Hyprland's mapped width before the first note
+and again after it saves. The startup smoke deliberately ignores a resize as
+a control. Its diagnostic reports requested, window and viewport widths and
+the note extension's edge. It runs with a synthetic parent under X11.
+
 Run `node record/enablement/ci/bend/check.ts` to compile the module and exercise
 the packaged host entrypoints under Node with no Cargo or Electron.
 Add `--proof` for the pinned kernel verdict. The root native suite exercises

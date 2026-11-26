@@ -36,3 +36,13 @@ body {
 .public-share-actions button {
   min-height: 44px;
 }
+
+.pill:has(.pill-completion-notification) {
+  display: grid;
+  justify-items: center;
+}
+.pill-completion-notification {
+  --picker-surface: var(--apparent-background);
+  --picker-ink: var(--apparent-foreground);
+  --picker-line: var(--apparent-border);
+}

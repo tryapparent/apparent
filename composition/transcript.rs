@@ -123,10 +123,8 @@ impl StyleExamples {
 
 #[derive(clap::Args)]
 pub(crate) struct InspectArgs {
-    #[arg(default_value = "latest", help = "Connect ID (fetches to ./<id>.apparent, waits 120s), local bundle, or latest.")]
-    bundle: std::path::PathBuf,
-    #[arg(long, help = "Use a specific Connect read profile for a capture ID")]
-    reader: Option<String>,
+    #[command(flatten)]
+    source: crate::connect::hosted::ReadSource,
     #[arg(long, value_name = "BUNDLE.apparent", conflicts_with = "style_examples", help = "Download a Connect capture ID to this new .apparent directory under a trusted parent")]
     out: Option<std::path::PathBuf>,
     #[arg(long, help = "Emit raw apparent.json instead of summary.md (with --marks, the marks as JSON).")]
@@ -140,7 +138,7 @@ pub(crate) struct InspectArgs {
 }
 
 pub(crate) fn inspect(args: InspectArgs) -> Result<()> {
-    let InspectArgs { bundle, reader, out, json, marks, style_examples, experiments } = args;
+    let InspectArgs { source, out, json, marks, style_examples, experiments } = args;
     use crate::shared::handoff;
     use crate::capture::agent::context as agent_context;
     use crate::capture::engine::sketch::summary_markdown;
@@ -152,17 +150,17 @@ pub(crate) fn inspect(args: InspectArgs) -> Result<()> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     if style_examples {
         let client = hosted::client();
-        let remote = hosted::inspect_capture_id(&bundle);
-        let local = if remote.is_none() { Some(handoff::resolve_bundle_dir(&bundle)?) } else { None };
+        let remote = hosted::inspect_capture_id(&source.bundle);
+        let local = if remote.is_none() { Some(handoff::resolve_bundle_dir(&source.bundle)?) } else { None };
         let id = remote.map(str::to_owned).or_else(|| client.style_source(local.as_deref()?))
             .context("No Connect speaking-style request for this recording")?;
         let mut examples = StyleExamples::new();
-        client.visit_style_transcripts(&id, reader.as_deref(), local.as_deref(), |text, budget| examples.append(text, budget))?;
+        client.visit_style_transcripts(&id, source.reader.as_deref(), local.as_deref(), |text, budget| examples.append(text, budget))?;
         examples.print();
         return Ok(());
     }
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let bundle = hosted::inspect_source(&bundle, reader.as_deref(), out.as_deref())?;
+    let bundle = source.resolve(out.as_deref())?;
     let (dir, loaded) = handoff::load_bundle(&bundle)?;
     if marks {
         let entries = agent_context::mark_entries(&loaded);

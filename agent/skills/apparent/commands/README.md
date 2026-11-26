@@ -14,6 +14,8 @@ apparent zoom <bundle> --mark 1 --frame 4        # ✎① of keyframe #4, when s
 
 It prints the path of a PNG sheet of frames around that moment, the time of each cell, and what was said. Open the PNG and look at it before you act on the feedback. `--span` is the seconds covered (default 2, a quarter of it before the moment), `--frames` the number of cells (default 12), and `--full` shows the whole screen instead of the crop. The cells are numbered from #1 within the sheet, so those numbers aren't keyframe numbers.
 
+You can pass a bare Connect capture ID to `zoom` from a private working directory. It uses the same read approval as `inspect`, accepts `--reader <name>`, and fetches to `./<id>.apparent`. If you already fetched the recording, pass the local bundle path to reuse it.
+
 `--mark` takes a mark's number from the text or its id (`m2`) and centres the sheet on the time it was drawn, with only that mark's ink, drawn whole from the moment it starts. `apparent inspect <bundle> --marks` lists every mark (`#2 ✎② 0:09 marked (2 strokes) · m2`: keyframe, number, time, shape, what it was drawn on, id), and `--marks --json` gives the same as JSON.
 
 ### Open a public GitHub issue

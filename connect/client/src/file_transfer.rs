@@ -162,8 +162,9 @@ impl Client {
                     | "Invalid server port"
                     | "Server must be an origin without a path"
                     | "Plain HTTP is allowed only on loopback" => "server_configuration",
-                    "Hosted transport failed (network, timeout or response limit)"
-                    | "Hosted transport input failed"
+                    message if message.starts_with("Hosted transport failed")
+                        || message.starts_with("Hosted request timed out") => "transport",
+                    "Hosted transport input failed"
                     | "curl is required for hosted transport"
                     | "Hosted API: http_error" => "transport",
                     _ => return error,

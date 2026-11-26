@@ -57,6 +57,13 @@ const recording = {
       primary: true,
     },
     {
+      id: "whiteboard",
+      label: "Whiteboard",
+      enabled: true,
+      selected: false,
+      primary: false,
+    },
+    {
       id: "cancel",
       label: "Cancel",
       enabled: true,
@@ -113,7 +120,7 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
         primary: false,
       },
       { ...recording.actions[0], enabled: false, primary: false },
-      recording.actions[1],
+      recording.actions[2],
     ],
   });
   await expect(page.locator(".indicator.starting")).toHaveCount(1);
@@ -168,4 +175,36 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
   assert.deepEqual(populated.row, empty.row);
   assert.equal(populated.native.x, empty.native.x);
   assert.equal(populated.native.width, empty.native.width + 72);
+
+  await publish({ ...recording, revision: 5 });
+  const reset = await geometry(5);
+  await application.evaluate(({ BrowserWindow }, originalWidth) => {
+    const pill = BrowserWindow.getAllWindows()[0];
+    const setBounds = pill.setBounds.bind(pill);
+    pill.setBounds = (bounds) => {
+      if (bounds.width === originalWidth) setBounds(bounds);
+    };
+  }, reset.native.width);
+  await publish({ ...recording, revision: 6, noteCount: 1 });
+  const clipped = await geometry(6);
+  const layout = await page.evaluate(() => ({
+    requestedWidth: Math.ceil(
+      document.querySelector("main").getBoundingClientRect().width,
+    ),
+    viewportWidth: innerWidth,
+    noteRight: Math.ceil(
+      document.querySelector(".pill-notes-layer").getBoundingClientRect().right,
+    ),
+  }));
+  t.diagnostic(
+    JSON.stringify({
+      simulatedResizeIgnored: true,
+      windowWidth: clipped.native.width,
+      ...layout,
+    }),
+  );
+  assert.equal(clipped.native.width, reset.native.width);
+  assert.equal(layout.viewportWidth, reset.native.width);
+  assert.equal(layout.requestedWidth, populated.native.width);
+  assert.equal(layout.noteRight, populated.native.width);
 });
