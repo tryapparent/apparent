@@ -72,6 +72,11 @@ Make walkthrough videos at **30 fps by default**, including browser and generate
 
 ## Production guides
 
+Video production works without trace collection. If an existing workflow explicitly
+enables local video tracing, check the installed CLI's top-level `apparent --help`
+for a `trace` entry before invoking it. If the entry is absent, proceed with
+the capture or local narrator below and keep QA evidence in private scratch.
+
 Use the [live capture and review guide](capture/README.md) for live proof.
 Use the [narration and conceptual video guide](narration/README.md) to produce
 and verify narration or render an explainer. The [source survey](references/README.md)
