@@ -331,6 +331,7 @@ pub(super) fn open_handoff_policy() -> Option<EmbeddedPolicy> {
             "nearbyWindow",
             "windowSuffix",
             "keepFrameHead",
+            "speechMatches",
             "agreedPage",
             "pageScope",
             "samePage",

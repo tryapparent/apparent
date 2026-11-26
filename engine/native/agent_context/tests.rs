@@ -1,6 +1,8 @@
 use super::*;
 #[path = "browser_tests.rs"]
 mod browser;
+#[path = "speech_tests.rs"]
+mod speech;
 use crate::shared::windows::WindowEntry;
 
 fn stroke(t0: u64, x: f32, y: f32) -> Stroke {
