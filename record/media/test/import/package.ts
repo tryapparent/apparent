@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 export function qualifyMovieImport(options: {
@@ -76,6 +83,17 @@ export function qualifyMovieImport(options: {
   );
   const zoomImage = zoom.trim().split("\n")[0];
   ffmpeg(["-xerror", "-i", zoomImage, "-f", "null", "-"]);
+  const beforeReprocess = hash(importedManifest);
+  const unsafeParent = join(root, "group-writable-output");
+  mkdirSync(unsafeParent);
+  chmodSync(unsafeParent, 0o770);
+  const unsafeOutput = join(unsafeParent, "out.apparent");
+  assert.throws(
+    () =>
+      run(binary, ["reprocess", imported, "--out", unsafeOutput], importEnv),
+    /output bundle's parent directory.*group and other write permissions disabled/,
+  );
+  assert(existsSync(join(unsafeOutput, ".publication-pending")));
   const rebuiltImport = join(root, "reprocessed-import.apparent");
   run(binary, ["reprocess", imported, "--out", rebuiltImport], importEnv);
   assert.equal(
@@ -83,6 +101,8 @@ export function qualifyMovieImport(options: {
       .source,
     "importedMovie",
   );
+  assert.equal(hash(importedManifest), beforeReprocess);
+  assert.equal(hash(join(imported, importedBundle.video)), plainHash);
   assert(readFileSync(join(imported, "summary.md"), "utf8").includes(imported));
   assert(summary.includes("The imported movie has no audio track."));
 
