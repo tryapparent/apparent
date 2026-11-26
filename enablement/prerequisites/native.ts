@@ -99,12 +99,16 @@ export function prepareNativeInputs(root: string, platform = process.platform): 
   // Refuse a missing runtime before paying for any TypeScript compilation.
   checkElectron(root);
   const frontend = resolve(root, 'capture/desktop/ui/frontend');
-  for (const generator of ['record-capture-request', 'storage-policy', 'connect-transport', 'updates', 'pill', 'record-media']) {
-    execFileSync(process.execPath, ['--experimental-strip-types', `scripts/build-${generator}.ts`],
+  const generators = [
+    '../../../../record/enablement/ci/capture-request/build.ts',
+    'scripts/capture-request/stage.ts',
+    ...['storage-policy', 'connect-transport', 'updates', 'pill', 'record-media'].map(name => `scripts/build-${name}.ts`),
+    'scripts/agent-media/build.ts',
+  ];
+  for (const generator of generators) {
+    execFileSync(process.execPath, ['--experimental-strip-types', generator],
       {cwd: frontend, stdio: 'inherit'});
   }
-  execFileSync(process.execPath, ['--experimental-strip-types', 'scripts/agent-media/build.ts'],
-    {cwd: frontend, stdio: 'inherit'});
   return checkNativeInputs(root, platform);
 }
 

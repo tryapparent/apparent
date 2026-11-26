@@ -25,6 +25,7 @@
   ],
   "inputs": [
     "capture-request/",
+    "enablement/ci/capture-request/build.ts",
     "completion/",
     "media/",
     "settings/",

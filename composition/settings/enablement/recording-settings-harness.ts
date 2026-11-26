@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { RecordingState } from "../../../record/settings/recording-contract";
+import { recordingFixture } from "../../../record/enablement/settings/recording-fixture.ts";
 
 const frontend = fileURLToPath(
   new URL("../../../capture/desktop/ui/frontend/", import.meta.url),
@@ -101,67 +101,17 @@ export async function launchRecording() {
   return { child, send, open, close };
 }
 
-export function recordingFixture(send: (message: object) => void) {
-  const linuxState: RecordingState = {
-    platform: "linux",
-    microphone: {
-      selected: "default",
-      value: "System default",
-      options: [{ id: "default", title: "System default", enabled: true }],
-      note: null,
-      meter: "fixture-input",
-    },
-    transcriber: {
-      engine: "apple",
-      hexTitle: "Hex (not running)",
-      hexEnabled: false,
-      language: "en",
-      appleLocale: "auto",
-      models: [],
-      command: null,
-    },
-    speech: { state: "ready", progress: 1 },
-    playback: null,
-    mediaWarnings: [],
-  };
-  const state = structuredClone(linuxState);
-
+export function settingsFixture(send: (message: object) => void) {
+  const recording = recordingFixture(send);
   const fixture = {
-    refuse: false,
+    recording,
+    refuseAutoPaste: false,
     pickerSupported: false,
     autoPasteSaved: true,
-    show() {
-      send({ type: "recording-state", state });
-    },
-    linux() {
-      Object.assign(state, structuredClone(linuxState));
-      fixture.show();
-    },
-    mac() {
-      state.platform = "macos";
-      state.playback = { enabled: true, level: 20 };
-      state.speech = {
-        state: "downloading",
-        locale: "en_US",
-        locales: ["en_US", "nl_NL"],
-        progress: 0.4,
-      };
-      fixture.show();
-    },
-    hex() {
-      state.microphone.meter = null;
-      state.transcriber.engine = "hex";
-      state.transcriber.hexTitle = "Hex";
-      state.transcriber.hexEnabled = true;
-      state.transcriber.models = [
-        { id: "fixture-model", title: "Test model", chosen: true },
-      ];
-      fixture.show();
-    },
     receive(action: Record<string, unknown>) {
       if (action.action === "navigate") {
         send({ type: "show", pane: action.pane });
-        if (action.pane === "recording") fixture.show();
+        if (action.pane === "recording") recording.show();
         if (action.pane === "general")
           send({
             type: "general-state",
@@ -211,32 +161,15 @@ export function recordingFixture(send: (message: object) => void) {
         });
       }
       if (action.action === "handoff-auto-paste") {
-        if (!fixture.refuse && typeof action.enabled === "boolean")
+        if (!fixture.refuseAutoPaste && typeof action.enabled === "boolean")
           fixture.autoPasteSaved = action.enabled;
         send({
           type: "handoff-auto-paste-result",
           request: action.request,
-          enabled: fixture.refuse ? null : fixture.autoPasteSaved,
+          enabled: fixture.refuseAutoPaste ? null : fixture.autoPasteSaved,
         });
       }
-      if (action.action === "recording-preference") {
-        if (
-          !fixture.refuse &&
-          action.key === "lowerPlayback" &&
-          state.playback
-        ) {
-          state.playback.enabled = Boolean(action.value);
-          fixture.show();
-        }
-        send({
-          type: "recording-result",
-          request: action.request,
-          ok: !fixture.refuse,
-        });
-      }
-      if (action.action === "recording-meter" && action.visible) {
-        send({ type: "recording-level", level: 0.45 });
-      }
+      recording.receive(action);
     },
   };
   return fixture;

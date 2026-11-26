@@ -6,14 +6,15 @@ import { createInterface } from "node:readline";
 import {
   expect,
   launchRecording,
-  recordingFixture,
-} from "./recording-fixture.ts";
+  settingsFixture,
+} from "./recording-settings-harness.ts";
 
 test("staged Recording opens directly, receives native facts and saves only on its active route", {
   timeout: 60_000,
 }, async () => {
   const { child, send, open, close } = await launchRecording();
-  const fixture = recordingFixture(send);
+  const fixture = settingsFixture(send);
+  const { recording } = fixture;
   const actions: Record<string, unknown>[] = [];
   let heldT3: unknown;
   const disconnected = { t3Saved: false, t3Configured: false };
@@ -51,7 +52,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(page.getByRole("status")).toHaveText(
       "Loading recording settings…",
     );
-    fixture.show();
+    recording.show();
     const input = page.getByRole("combobox", { name: "Input", exact: true });
     await expect(input).toBeVisible();
     await expect(page.getByRole("meter")).toHaveAttribute(
@@ -110,7 +111,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await screenshot(`video-export-${width}-${colorScheme}`);
       }
     }
-    fixture.mac();
+    recording.mac();
     await expect(
       page.getByRole("combobox", { name: "Language" }),
     ).toBeVisible();
@@ -120,20 +121,20 @@ test("staged Recording opens directly, receives native facts and saves only on i
     await expect(volumeSection).toBeVisible();
     await expect(volumeSwitch).toBeChecked();
     await expect(volumeSlider).toBeEnabled();
-    fixture.refuse = true;
+    recording.refuse = true;
     await volumeSwitch.press("Space");
     const error = page.getByRole("alertdialog", {
       name: "Couldn’t confirm the recording preference",
     });
     await expect(error).toBeVisible();
     await expect(volumeSwitch).toBeChecked();
-    fixture.refuse = false;
+    recording.refuse = false;
     await error.getByRole("button", { name: "Try again" }).press("Enter");
     await expect(error).not.toBeVisible();
     await expect(volumeSwitch).not.toBeChecked();
     await expect(volumeSwitch).toBeFocused();
 
-    fixture.hex();
+    recording.hex();
     const language = page.getByRole("textbox", { name: "Hex language" });
     const apply = page.getByRole("button", { name: "Apply", exact: true });
     await expect(language).toBeVisible();
@@ -176,7 +177,7 @@ test("staged Recording opens directly, receives native facts and saves only on i
         ),
       )
       .toBe(true);
-    fixture.linux();
+    recording.linux();
     await expect(volumeSection).toHaveCount(0);
 
     const startUrl = page.url();
@@ -336,13 +337,13 @@ test("staged Recording opens directly, receives native facts and saves only on i
         await navigate("Recording");
         await navigate("Handoff");
         await expect(autoPaste).not.toBeChecked();
-        fixture.refuse = true;
+        fixture.refuseAutoPaste = true;
         await autoPaste.press("Space");
         const retry = page.getByRole("button", { name: "Refresh preference" });
         await expect(page.getByRole("alert")).toContainText("Couldn’t confirm");
         await expect(retry).toBeFocused();
         await screenshot(`handoff-refused-${variant}`);
-        fixture.refuse = false;
+        fixture.refuseAutoPaste = false;
         await retry.press("Enter");
         await expect(autoPaste).toBeEnabled();
         await expect(autoPaste).toBeFocused();
