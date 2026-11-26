@@ -40,11 +40,8 @@ impl Store {
         }
     }
     pub fn open(&mut self, pin: u32, t: u64, x: f32, y: f32) -> Result<()> {
-        self.dismiss();
-        ensure!(
-            self.drafts.len() < MAX_NOTES || self.drafts.contains_key(&pin),
-            "Too many notes"
-        );
+        ensure!(self.saved.len() < MAX_NOTES, "Too many notes");
+        ensure!(!self.saved.iter().any(|note| note.pin == pin), "Note is already attached");
         ensure!(
             pin > 0
                 && x.is_finite()
@@ -53,7 +50,8 @@ impl Store {
                 && (0.0..=1.0).contains(&y),
             "Invalid note anchor"
         );
-        self.drafts.entry(pin).or_insert(Note {
+        self.dismiss();
+        self.drafts.insert(pin, Note {
             pin,
             t,
             x,
@@ -74,41 +72,25 @@ impl Store {
         Ok(())
     }
     pub fn save(&mut self, pin: u32, text: String) -> Result<()> {
+        if self.saved.iter().any(|note| note.pin == pin) {
+            return Ok(());
+        }
         self.draft(pin, text)?;
         let mut note = self.drafts[&pin].clone();
         note.text = note.text.trim().to_owned();
-        // Empty Enter dismisses; it does not create a note or erase an existing one.
         if note.text.is_empty() {
-            if let Some(saved) = self.saved.iter().find(|n| n.pin == pin) {
-                self.drafts.get_mut(&pin).unwrap().text = saved.text.clone();
-            }
+            self.dismiss();
             return Ok(());
         }
         let mut next = self.saved.clone();
-        if let Some(old) = next.iter_mut().find(|n| n.pin == pin) {
-            *old = note;
-        } else {
-            next.push(note);
-        }
+        next.push(note);
         next.sort_by_key(|n| (n.t, n.pin));
-        self.commit(next)
-    }
-    /// Empty pins are interactions, not draft notes and must not exhaust the note limit.
-    pub fn dismiss(&mut self) {
-        self.drafts
-            .retain(|pin, n| !n.text.trim().is_empty() || self.saved.iter().any(|s| s.pin == *pin));
-    }
-    pub fn delete(&mut self, pin: u32) -> Result<()> {
-        ensure!(self.drafts.contains_key(&pin), "Unknown note");
-        let next = self
-            .saved
-            .iter()
-            .filter(|n| n.pin != pin)
-            .cloned()
-            .collect();
         self.commit(next)?;
-        self.drafts.remove(&pin);
+        self.dismiss();
         Ok(())
+    }
+    pub fn dismiss(&mut self) {
+        self.drafts.clear();
     }
     fn commit(&mut self, next: Vec<Note>) -> Result<()> {
         use std::io::Write;
@@ -228,28 +210,29 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
-    fn empty_and_deleted_pins_do_not_exhaust_note_capacity() {
+    fn empty_and_dismissed_pins_do_not_exhaust_note_capacity() {
         let directory = dir();
         let mut store = Store::new(&directory);
         for pin in 1..=250 {
             store.open(pin, 1, 0.5, 0.5).unwrap();
-            store.save(pin, String::new()).unwrap();
+            store.draft(pin, "abandoned".into()).unwrap();
+            store.dismiss();
         }
-        store.save(250, "keep".into()).unwrap();
-        store.delete(250).unwrap();
+        store.open(251, 1, 0.5, 0.5).unwrap();
+        store.save(251, String::new()).unwrap();
         assert!(store.drafts().is_empty());
         assert!(read(&directory).unwrap().is_empty());
         std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
-    fn notes_save_edit_delete_preserve_click_time_and_exclude_drafts() {
+    fn attached_notes_preserve_click_time_and_exclude_drafts() {
         let p = dir();
         let mut s = Store::new(&p);
         s.open(1, 125, 0.2, 0.3).unwrap();
         s.draft(1, "unsent".into()).unwrap();
         assert!(read(&p).unwrap().is_empty());
         s.save(1, " first \n second ".into()).unwrap();
-        s.open(1, 900, 0.9, 0.9).unwrap();
+        assert!(s.open(1, 900, 0.9, 0.9).is_err());
         s.save(1, "edited".into()).unwrap();
         assert_eq!(
             read(&p).unwrap(),
@@ -258,16 +241,14 @@ mod tests {
                 t: 125,
                 x: 0.2,
                 y: 0.3,
-                text: "edited".into()
+                text: "first \n second".into()
             }]
         );
         s.open(2, 200, 0.3, 0.4).unwrap();
         s.save(2, "  ".into()).unwrap();
         assert_eq!(s.notes().len(), 1);
-        s.save(1, "".into()).unwrap();
-        assert_eq!(s.drafts()[0].text, "edited");
-        s.delete(1).unwrap();
-        assert!(read(&p).unwrap().is_empty());
+        assert!(s.drafts().is_empty());
+        assert_eq!(read(&p).unwrap(), s.notes());
         std::fs::remove_dir_all(p).unwrap();
     }
     #[test]
