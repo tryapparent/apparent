@@ -17,8 +17,6 @@ import CoreGraphics
 import SwiftUI
 
 enum PermissionPanel {
-  // MARK: Tuning
-
   /// The flight from the Grant button to the dock. Duration and bounce, as everywhere in Apparent:
   /// critically damped, so the card leaves fast and decelerates into place without overshooting.
   /// A spring front-loads its travel, so a cross-screen hop needs a longer duration than a drawer.
@@ -385,7 +383,7 @@ extension PermissionPanel {
 
     private var dragText: Text {
       Text(layout.screenRecording
-        ? (model.dropRejected ? "Turn on access or use Add (+)." : "Drag into Screen & Audio.")
+        ? (model.dropRejected ? "Turn on access or use Add (+)." : "Drag just above the upper +.")
         : "Drag into this list.")
         .foregroundStyle(OnboardingBrand.foreground)
     }
@@ -525,14 +523,15 @@ extension PermissionPanel {
       }
     }
 
-    func draggingSession(_: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-      screenRecording && context == .outsideApplication ? [.copy, .link, .generic] : .copy
-    }
+    func draggingSession(_: NSDraggingSession, sourceOperationMaskFor _: NSDraggingContext) -> NSDragOperation { .copy }
 
     func draggingSession(_: NSDraggingSession, willBeginAt _: NSPoint) {
       model.dragging = true
       model.dropRejected = false
-      if screenRecording { window?.ignoresMouseEvents = true }
+      if screenRecording {
+        window?.ignoresMouseEvents = true
+        window?.alphaValue = 0
+      }
     }
 
     func draggingSession(_: NSDraggingSession, endedAt _: NSPoint, operation: NSDragOperation) {
@@ -977,7 +976,7 @@ extension PermissionPanel {
           else { return false }
           return rect.width > 180 && rect.height > 100 && rect.intersects(main)
         }
-        let alpha: CGFloat = ours && !settingsPrompt ? 1 : 0
+        let alpha: CGFloat = ours && !settingsPrompt && !(layout.screenRecording && panelModel.dragging) ? 1 : 0
         if panel.alphaValue != alpha, !isFading {
           isFading = true
           NSAnimationContext.runAnimationGroup { context in

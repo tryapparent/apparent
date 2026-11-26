@@ -4,7 +4,7 @@
       "id": "macos-screen-recording-guide",
       "description": "Add the installed Nightly app to Screen & System Audio Recording from the compact permissions guide.",
       "platforms": ["macos"],
-      "userEntryPoint": "Choose Open Settings on the onboarding Screen & System Audio Recording row. Drag the Nightly app into the list, then enable access and follow the macOS reopen prompt if shown.",
+      "userEntryPoint": "Choose Open Settings on the onboarding Screen & System Audio Recording row. Drag the Nightly app just above the first Add (+) button, then enable access and follow the macOS reopen prompt if shown.",
       "prerequisites": [
         "An isolated macOS desktop with the signed Nightly candidate installed and a fresh permission state."
       ],
