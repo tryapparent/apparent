@@ -1,8 +1,10 @@
 impl ApparentCoordinator {
-    fn accept_frog_name(&mut self, _name: String, _cx: &mut Context<Self>) -> crate::capture::desktop::settings::onboarding::Effect {
-        #[cfg(target_os = "macos")]
-        if !self.capture_busy() && self.onboarding.as_mut().is_some_and(|session| session.name_frog(_name)) {
-            self.begin_target_selection(_cx);
+    fn accept_frog_name(&mut self, name: String, cx: &mut Context<Self>) -> crate::capture::desktop::settings::onboarding::Effect {
+        if !self.capture_busy() && self.onboarding.as_mut().is_some_and(|session| session.name_frog(name)) {
+            #[cfg(target_os = "macos")]
+            self.begin_target_selection(cx);
+            #[cfg(target_os = "linux")]
+            self.record_screen_now(cx);
         }
         crate::capture::desktop::settings::onboarding::Effect::None
     }

@@ -96,7 +96,7 @@ export function Labs({speakingStyleExperiment: SpeakingStyle, frogExperiment: Fr
           disabled={busy || wispr === undefined || !wisprSupported.current} onCheckedChange={bindPreference('labs', 'labs.onboardingWisprFlow', value => void request(value, 'wisprFlow'))} /></div>
       <p id="wispr-lab-help">Offer to quit Wispr Flow or Superwhisper before choosing a recording shortcut. macOS only.</p>
     </section>
-    {DesktopFrog && wisprSupported.current && <DesktopFrog id={controls.desktopFrog} checked={facts?.desktopFrogSaved ?? false}
+    {DesktopFrog && typeof facts?.desktopFrogSaved === 'boolean' && <DesktopFrog id={controls.desktopFrog} checked={facts?.desktopFrogSaved ?? false}
       disabled={busy || !facts || !!facts.error} saving={busy && setting === 'desktopFrog'}
       onCheckedChange={bindPreference('labs', 'labs.desktopFrog', value => void request(value, 'desktopFrog'))} />}
     {FrogNudge && wisprSupported.current && <FrogNudge id={controls.dictationFrog} checked={facts?.dictationFrogSaved ?? false}

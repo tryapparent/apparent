@@ -175,6 +175,12 @@ impl ApparentCoordinator {
             self.agent_captures.begin(&id);
             self.agent_capture_id = Some(id);
         }
+        #[cfg(target_os = "linux")]
+        {
+            let shortcut = self.telemetry.shortcut.lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner).label.clone();
+            workflow::electron::desktop_frog::hide_for_capture(cx, &shortcut);
+        }
         self.begin_playback();
         if let Ok(mut status) = CAPTURE_STATUS.lock() {
             *status = None;

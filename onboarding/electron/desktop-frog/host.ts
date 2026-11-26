@@ -14,13 +14,25 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline";
-import frogPolicy from "@apparent/onboarding/desktop-frog";
-import { record } from "@apparent/onboarding/projection";
+import type frogPolicy from "../../host/traversal/desktop-frog.d.mts";
+import { record } from "../../host/projection.ts";
 
 const width = 148;
 const height = 94;
 
-export function startDesktopFrog(assets: string) {
+export interface FrogPlatform {
+  readonly flight: boolean;
+  readonly windowTitle?: string;
+  ready(): Promise<void>;
+  configure(window: BrowserWindow, overlay: boolean): void;
+  hideForRecording(window: BrowserWindow): void;
+}
+
+export function startDesktopFrog(
+  assets: string,
+  platform: FrogPlatform,
+  policy: typeof frogPolicy,
+) {
   app.setName("apparent desktop frog");
   app.setPath(
     "userData",
@@ -47,9 +59,12 @@ export function startDesktopFrog(assets: string) {
   let equipped: string[] = [];
   let takeoff: [number, number, number] | undefined;
   let visible = false;
+  let revision = 0;
+  let startPending = false;
   let displayId: number | undefined;
   let window: BrowserWindow | undefined;
   let flight: BrowserWindow | undefined;
+  let platformReady = false;
   let desktopReady = false;
   let flightReady = false;
   let landing: ReturnType<typeof setTimeout> | undefined;
@@ -77,10 +92,11 @@ export function startDesktopFrog(assets: string) {
       return;
     }
     if (!record(data)) return;
+    if (data.type === "record-settled") startPending = false;
     if (
       !name &&
       typeof data.name === "string" &&
-      frogPolicy.accept_name(/\p{Cc}/u.test(data.name), data.name.length)
+      policy.accept_name(/\p{Cc}/u.test(data.name), data.name.length)
     ) {
       name = data.name;
       const point = data.takeoff;
@@ -93,9 +109,12 @@ export function startDesktopFrog(assets: string) {
     }
     if (
       typeof data.visible === "boolean" &&
+      typeof data.revision === "number" &&
+      Number.isSafeInteger(data.revision) &&
       typeof data.shortcut === "string"
     ) {
       visible = data.visible;
+      revision = data.revision;
       if (shortcut !== data.shortcut) {
         shortcut = data.shortcut;
         window?.webContents.send("desktop-frog:shortcut", shortcut);
@@ -110,7 +129,7 @@ export function startDesktopFrog(assets: string) {
       );
       window?.webContents.send("desktop-frog:wardrobe", equipped);
     }
-    if (app.isReady()) present();
+    if (platformReady) present();
   });
 
   function owns(
@@ -130,7 +149,12 @@ export function startDesktopFrog(assets: string) {
     throw Error("Forbidden desktop frog request");
   });
   ipcMain.on("desktop-frog:start", (event) => {
-    if (available() && owns(event, window)) process.stdout.write("record\n");
+    if (!window || !window.isVisible() || !available() || !owns(event, window))
+      return;
+    startPending = true;
+    grip = undefined;
+    platform.hideForRecording(window);
+    process.stdout.write(`record ${revision}\n`);
   });
   ipcMain.on("desktop-frog:menu", (event) => {
     if (!window || !available() || !owns(event, window)) return;
@@ -139,7 +163,7 @@ export function startDesktopFrog(assets: string) {
         label: "Quit for 1 hour",
         click: () => {
           if (!available()) return;
-          pausedUntil = Date.now() + frogPolicy.desktop_pause_ms();
+          pausedUntil = Date.now() + policy.desktop_pause_ms();
           present();
           scheduleWake();
           try {
@@ -183,15 +207,20 @@ export function startDesktopFrog(assets: string) {
 
   function placeInside(area: Rectangle, x: number, y: number): Rectangle {
     return {
-      x: Math.round(
-        Math.min(Math.max(x, area.x), area.x + Math.max(0, area.width - width)),
-      ),
-      y: Math.round(
-        Math.min(
-          Math.max(y, area.y),
-          area.y + Math.max(0, area.height - height),
+      x:
+        area.x +
+        policy.clamp_offset(
+          Math.max(0, Math.round(x - area.x)),
+          area.width,
+          width,
         ),
-      ),
+      y:
+        area.y +
+        policy.clamp_offset(
+          Math.max(0, Math.round(y - area.y)),
+          area.height,
+          height,
+        ),
       width,
       height,
     };
@@ -200,6 +229,7 @@ export function startDesktopFrog(assets: string) {
   function makeWindow(bounds: Rectangle, overlay: boolean) {
     const win = new BrowserWindow({
       ...bounds,
+      title: platform.windowTitle,
       show: false,
       frame: false,
       transparent: true,
@@ -215,9 +245,7 @@ export function startDesktopFrog(assets: string) {
         contextIsolation: true,
       },
     });
-    win.setContentProtection(true);
-    win.setVisibleOnAllWorkspaces(true, { skipTransformProcessType: true });
-    win.setIgnoreMouseEvents(overlay);
+    platform.configure(win, overlay);
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.webContents.on("will-navigate", (event) => event.preventDefault());
     win.webContents.on("render-process-gone", () => app.quit());
@@ -232,7 +260,10 @@ export function startDesktopFrog(assets: string) {
   }
 
   function available() {
-    return frogPolicy.desktop_visible(visible, Date.now() < pausedUntil);
+    return policy.desktop_visible(
+      visible,
+      startPending || Date.now() < pausedUntil,
+    );
   }
 
   function scheduleWake() {
@@ -244,7 +275,7 @@ export function startDesktopFrog(assets: string) {
           present();
           scheduleWake();
         },
-        Math.min(remaining, frogPolicy.desktop_pause_ms()),
+        Math.min(remaining, policy.desktop_pause_ms()),
       );
     }
   }
@@ -281,7 +312,7 @@ export function startDesktopFrog(assets: string) {
       desktopReady = true;
       if (available() && !flight) window?.showInactive();
     });
-    if (origin) {
+    if (origin && platform.flight) {
       flightPath = {
         fromX: origin[0] - area.x,
         fromY: origin[1] - area.y,
@@ -302,29 +333,36 @@ export function startDesktopFrog(assets: string) {
     void window.loadURL(page).catch(() => app.quit());
   }
 
-  void app.whenReady().then(() => {
-    if (process.platform === "darwin") app.setActivationPolicy("accessory");
-    session.defaultSession.setPermissionCheckHandler(() => false);
-    session.defaultSession.setPermissionRequestHandler(
-      (_contents, _kind, reply) => reply(false),
-    );
-    const rehome = () => {
-      if (!window || !placed) return;
-      const area = (
-        screen.getAllDisplays().find((display) => display.id === displayId) ??
-        screen.getPrimaryDisplay()
-      ).workArea;
-      placed = placeInside(area, placed.x, placed.y);
-      window.setBounds(placed);
-      if (flight) settle();
-    };
-    screen.on("display-removed", rehome);
-    screen.on("display-metrics-changed", rehome);
-    powerMonitor.on("resume", () => {
-      present();
+  void app
+    .whenReady()
+    .then(async () => {
+      await platform.ready();
+      platformReady = true;
+      session.defaultSession.setPermissionCheckHandler(() => false);
+      session.defaultSession.setPermissionRequestHandler(
+        (_contents, _kind, reply) => reply(false),
+      );
+      const rehome = () => {
+        if (!window || !placed) return;
+        const area = (
+          screen.getAllDisplays().find((display) => display.id === displayId) ??
+          screen.getPrimaryDisplay()
+        ).workArea;
+        placed = placeInside(area, placed.x, placed.y);
+        window.setBounds(placed);
+        if (flight) settle();
+      };
+      screen.on("display-removed", rehome);
+      screen.on("display-metrics-changed", rehome);
+      powerMonitor.on("resume", () => {
+        present();
+        scheduleWake();
+      });
       scheduleWake();
+      present();
+    })
+    .catch((error) => {
+      console.error("Desktop frog window setup failed", error);
+      app.quit();
     });
-    scheduleWake();
-    present();
-  });
 }

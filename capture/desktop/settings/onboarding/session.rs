@@ -1,4 +1,4 @@
-include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/desktop_frog_peer.rs"));
+include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/desktop/desktop_frog_peer.rs"));
 include!(concat!(env!("CARGO_MANIFEST_DIR"), "/engine/native/macos/desktop/onboarding_transport.rs"));
 
 impl Session {
@@ -120,7 +120,7 @@ impl Session {
             saved_shortcut_chosen: progress.shortcut_chosen,
             saved_shortcut_tested_for: progress.shortcut_tested_for,
             saved_first_capture_completed: progress.first_capture_completed,
-            frog_enabled: cfg!(target_os = "macos") && shell && handoff::experiment_preference("labs.desktopFrog"),
+            frog_enabled: Self::frog_enabled(shell),
             frog_revealed: false,
             frog_name: progress.frog_name,
             frog_error: false,

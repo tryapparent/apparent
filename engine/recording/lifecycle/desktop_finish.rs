@@ -125,9 +125,9 @@ impl ApparentCoordinator {
                 }
                 coord.capture_finalizer_finished();
                 coord.publish_capture_busy();
-                #[cfg(target_os = "macos")]
                 if let Ok((_, bundle, _)) = &finalized
                     && wardrobe_eligible
+                    && workflow::electron::desktop_frog::supported()
                 {
                     let id = bundle.id.clone();
                     cx.background_executor()

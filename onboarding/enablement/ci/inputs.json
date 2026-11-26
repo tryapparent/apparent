@@ -30,6 +30,12 @@
     "capture/desktop/ui/frontend/src/onboarding/wispr/motion.ts"
   ],
   "paths": [
+    "onboarding/electron/package.json",
+    "onboarding/electron/desktop-frog/host.ts",
+    "onboarding/electron/desktop-frog/preload.ts",
+    "onboarding/electron/desktop-frog/smoke.ts",
+    "onboarding/renderer/frog/lily.png",
+    "onboarding/renderer/frog/couch-hops.png",
     "onboarding/enablement/ci/inputs.json",
     "composition/onboarding/src/host.ts",
     "composition/onboarding/src/place.ts",

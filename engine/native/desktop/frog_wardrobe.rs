@@ -41,6 +41,12 @@ pub(crate) struct Request {
     action: Action,
 }
 
+pub(crate) fn desktop_preference(config: &Value) -> Option<bool> {
+    crate::capture::desktop::workflow::electron::desktop_frog::supported().then(|| {
+        handoff::preference_value(config, "labs.desktopFrog").and_then(|value| value.as_bool()) == Some(true)
+    })
+}
+
 pub(crate) fn frog_name(config: &Value) -> Option<&str> {
     let onboarding = &config["onboarding"];
     if onboarding["frogAdopted"] != true
@@ -86,7 +92,7 @@ fn store(config: &Value) -> &Value {
 }
 
 pub(crate) fn facts(config: &Value) -> Value {
-    if !cfg!(target_os = "macos") || frog_name(config).is_none() {
+    if !crate::capture::desktop::workflow::electron::desktop_frog::supported() || frog_name(config).is_none() {
         return Value::Null;
     }
     let saved = enabled(config);
@@ -202,7 +208,7 @@ pub(in crate::capture::desktop) fn response(
     intent: Request,
 ) -> Value {
     use crate::capture::desktop::settings::labs;
-    let facts = if cfg!(target_os = "macos")
+    let facts = if crate::capture::desktop::workflow::electron::desktop_frog::supported()
         && enabled.is_none()
         && setting.is_none()
         && change(path, intent).is_ok()

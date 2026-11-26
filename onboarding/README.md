@@ -107,9 +107,9 @@ existing onboarding experience.
 
 ## Desktop frog trial
 
-On macOS, enable **Settings → Labs → Desktop frog**, then open **Show welcome
-tour** from About. The second shortcut prompt leads to the frog naming step
-and then the real screen picker. The guided practice uses the existing capture,
+Enable **Settings → Labs → Desktop frog** on macOS or a supported Linux
+session, then open **Show welcome tour** from About. The second shortcut
+prompt leads to the frog naming step and then the platform’s guided capture. The guided practice uses the existing capture,
 annotation, save and handoff actions. A completed practice recording and
 **Finish setup** commit the frog to the profile before it lands on the desktop.
 
@@ -119,11 +119,11 @@ and choose **Quit for 1 hour** to hide it temporarily, including across an app
 restart. When the hour ends, it returns when recording and setup are idle. The frog
 pauses during capture and setup. Turning the experiment off hides it, and
 turning it back on restores a previously named and adopted frog. On restart
-the frog starts in the display corner again. Linux keeps its existing tour.
+the frog starts in the display corner again.
 
 ### Frog wardrobe
 
-After adopting a frog on macOS, turn on **Frog wardrobe** in Settings → Labs.
+After adopting a frog, turn on **Frog wardrobe** in Settings → Labs.
 Sunglasses, a flowering lily pad and a unicorn horn become claimable after
 10, 20 and 30 eligible saves. Claiming keeps the item. Equipping and removing
 it affects the desktop frog within its next config refresh.
@@ -135,3 +135,18 @@ The native completion receipt is deduplicated by bundle ID. Progress pauses
 with either experiment off, survives onboarding replay and is local to the
 active profile. A process crash between bundle publication and the progress
 write can miss a credit. The recording itself remains saved.
+
+### Linux desktop frog
+
+Labs uses the desktop frog capability supplied by the native session. The
+Linux adapter uses X11 on Xorg and XWayland on Hyprland. Other Wayland sessions
+keep the normal welcome tour. Linux lands the frog in the corner after setup.
+The existing native screen-recording path owns consent, startup, and capture
+lifetime. The frog button issues a start request after hiding its window.
+
+The Onboarding Electron smoke drives the production frog child under Xvfb
+with synthetic coordinator messages. It checks the visible window and start
+protocol. Installed checks on each supported window manager still cover
+stacking, focus, workspaces, drag, output changes, capture exclusion and
+real recordings. The Mac adapter needs an installed check when it or the
+shared native path changes. Release packaging retains its platform checks.
