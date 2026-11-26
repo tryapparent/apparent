@@ -11,7 +11,7 @@ import * as observer from "../../../shared/enablement/performance/electron-obser
 
 export const whiteboardEntry = "dist/whiteboard/main.cjs";
 
-async function sha256(file: string) {
+export async function sha256(file: string) {
   const hash = createHash("sha256");
   for await (const bytes of createReadStream(file)) hash.update(bytes);
   return hash.digest("hex");

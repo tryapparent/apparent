@@ -6,11 +6,11 @@
       "platforms": ["linux-x11-xvfb"],
       "userEntryPoint": "After adopting a frog, start a recording from the frog and save an eligible milestone recording.",
       "prerequisites": [
-        "The built Desktop frontend, its locked Electron runtime, Xvfb, a working Electron sandbox and xwininfo."
+        "The built Desktop frontend, its locked Electron runtime, Xvfb and xwininfo. The selected Electron directory needs a regular root:root chrome-sandbox helper with mode 4755."
       ],
       "runner": {
         "path": "onboarding/electron/desktop-frog/smoke.ts",
-        "instructions": "After building the Desktop frontend, run xvfb-run -a node --experimental-strip-types --test onboarding/electron/desktop-frog/smoke.ts from the repository root."
+        "instructions": "After building the Desktop frontend, run xvfb-run -a node --experimental-strip-types --test onboarding/electron/desktop-frog/smoke.ts from the repository root. If using an already configured runtime, set APPARENT_FROG_TEST_ELECTRON to the absolute path of its byte-identical Electron executable."
       },
       "expectedEvidence": [
         "The frog renders its name and updates the displayed shortcut.",
