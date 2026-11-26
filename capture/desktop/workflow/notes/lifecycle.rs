@@ -79,16 +79,16 @@ impl Lifecycle {
         receipt
     }
 
-    pub fn complete(&mut self, drained: bool, failed_writes: bool, startup_exit: bool) {
+    pub fn complete(&mut self, drained: bool, failed_writes: bool, child_exited: bool) {
         self.seal();
         let result = if drained && self.ready && !failed_writes && !self.startup_protocol_failed {
             Ok(FinishOutcome::Drained)
-        } else if startup_exit && !self.ready && !self.admitted && !failed_writes && !self.startup_protocol_failed {
+        } else if child_exited && !self.admitted && !failed_writes && !self.startup_protocol_failed {
             Ok(FinishOutcome::UnavailableBeforeAdmission)
         } else {
             // Preserve the actual refusal branch without note text or pipe frames.
             crate::capture::engine::runtime::apparent_log(format!(
-                "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} startup_exit={startup_exit}",
+                "Notes finish refused: ready={} admitted={} startup_protocol_failed={} drained={drained} failed_writes={failed_writes} child_exited={child_exited}",
                 self.ready, self.admitted, self.startup_protocol_failed,
             ));
             Err("Notes did not finish saving; recording assets were retained.".into())
@@ -125,9 +125,12 @@ mod tests {
         assert!(!state.observe(0, false));
     }
     #[test]
-    fn startup_exit_without_admission_has_an_explicit_receipt_before_or_after_finish() {
-        for finish_first in [false, true] {
+    fn child_exit_without_admission_has_an_explicit_receipt_before_or_after_finish() {
+        for (finish_first, ready) in [(false, false), (true, false), (false, true), (true, true)] {
             let mut state = Lifecycle::default();
+            if ready {
+                state.observed_ready();
+            }
             let receipt = finish_first.then(|| state.finish());
             state.seal();
             assert!(!state.admit_open());
@@ -140,25 +143,22 @@ mod tests {
         }
     }
     #[test]
-    fn admitted_or_ready_or_uncertain_failures_retain_assets() {
+    fn admitted_or_uncertain_failures_retain_assets() {
         let mut opened = Lifecycle::default();
         assert!(opened.admit_open());
         opened.complete(false, false, true);
         assert!(opened.finish().recv().unwrap().is_err());
-        let mut ready = Lifecycle::default();
-        ready.observed_ready();
-        ready.complete(false, false, true);
-        assert!(ready.finish().recv().unwrap().is_err());
         let mut request = Lifecycle::default();
+        request.observed_ready();
         request.observed_note_request();
         request.complete(false, false, true);
         assert!(request.finish().recv().unwrap().is_err());
-        let mut unknown = Lifecycle::default();
-        unknown.complete(false, false, false);
-        assert!(unknown.finish().recv().unwrap().is_err());
-        let mut failed_write = Lifecycle::default();
-        failed_write.complete(false, true, true);
-        assert!(failed_write.finish().recv().unwrap().is_err());
+        for (failed_writes, child_exited) in [(false, false), (true, true)] {
+            let mut ready = Lifecycle::default();
+            ready.observed_ready();
+            ready.complete(false, failed_writes, child_exited);
+            assert!(ready.finish().recv().unwrap().is_err());
+        }
     }
     #[test]
     fn normal_barrier_and_failed_save_remain_distinct() {

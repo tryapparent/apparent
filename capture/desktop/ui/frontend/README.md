@@ -651,13 +651,11 @@ field and retains the pin. Escape keeps the in-capture draft; Shift+Enter adds
 a newline. Capture completion closes this capture-local surface. Restarting or
 ending a capture does not promise recovery of unsubmitted drafts.
 
-If the notes child exits before readiness and before Rust admits any note request,
-Rust seals admission and returns a distinct unavailable-before-admission outcome.
-The screen capture can then finish without typed notes, matching synchronous
-notes-startup failure. The no-tray controls show the existing unavailability warning.
-This is not an Electron Finished acknowledgement. Any admitted note request,
-post-readiness crash, uncertain exit or failed write still retains recording assets
-instead of reporting a saved capture. No sandbox check is disabled for this fallback.
+If Notes stdout reaches EOF and the child exits before forced termination,
+Rust can finish the recording without notes when no note work was admitted,
+even after Ready. The no-tray controls retain the unavailability warning.
+Without a valid drain, admitted note requests, uncertain exits, startup
+protocol failures and failed writes still retain the recording assets.
 
 The native menu and Electron Recording control share `microphoneEnabled` in
 `~/.config/apparent/config.json`. It defaults on, preserves device selection,

@@ -97,6 +97,26 @@
       ]
     },
     {
+      "id": "notes-child-exit-at-finish",
+      "description": "Verify recording completion when the Notes child exits without a Finish receipt.",
+      "platforms": ["linux", "macos"],
+      "userEntryPoint": "Finish a screen recording after the Notes child exits before saving any note.",
+      "prerequisites": [
+        "A prepared root Rust test build. Use an isolated desktop and synthetic capture for native acceptance."
+      ],
+      "runner": {
+        "path": "capture/desktop/workflow/notes/lifecycle.rs",
+        "instructions": "Run cargo test --locked --bin apparent workflow::notes. For isolated native acceptance, start an owned capture, verify Notes is ready, terminate only its Notes child and finish the capture. Repeat with a note request already admitted."
+      },
+      "expectedEvidence": [
+        "EOF and child exit without admitted note work return the unavailable-before-admission receipt, allowing the bundle to publish.",
+        "Without a valid drain, an admitted request or uncertain exit retains the recording assets."
+      ],
+      "limits": [
+        "The Rust fixture replays lifecycle inputs. The isolated desktop run is required to verify a real saved bundle."
+      ]
+    },
+    {
       "id": "recording-performance-spans",
       "description": "Verify content-free nested finish spans and real bundle instrumentation without sending telemetry.",
       "platforms": ["linux", "macos"],
