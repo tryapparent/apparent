@@ -55,7 +55,7 @@ try {
     process.exitCode = 1;
   }
   phase("graphs/effects/CI");
-  const stagedErrors = await checkStaged(cwd, head, tree);
+  const stagedErrors = await checkStaged(cwd, head, tree, console.warn);
   if (stagedErrors.length) {
     console.error(stagedErrors.join("\n"));
     process.exitCode = 1;
