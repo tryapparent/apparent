@@ -1,6 +1,7 @@
 use super::*;
 use apparent_connect_client::test_support::{self, ConfigWriteHook, TestHost};
 use serde_json::Value;
+use std::os::unix::fs::PermissionsExt;
 struct AppTestHost;
 impl TestHost for AppTestHost {
     fn provider(&self, path: PathBuf) -> Arc<dyn ConfigProvider> {
@@ -192,35 +193,34 @@ fn hosted_inspect_pending_download_summary_and_local_options() {
 }
 
 #[test]
-fn hosted_inspect_shared_destination_explains_private_retry() {
-    use std::os::unix::fs::PermissionsExt;
-
+fn hosted_inspect_and_zoom_shared_destinations_explain_private_retry() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
     let shared = root.join("shared");
     std::fs::create_dir(&shared).unwrap();
     std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o770)).unwrap();
 
-    let output = inspect_subprocess(
-        &root.join("config.json"),
-        &shared,
-        &["inspect", "0123456789abcdef0123456789abcdef"],
-    );
-    assert!(!output.status.success(), "{output:?}");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let diagnostic = stderr.lines().next().unwrap_or_default();
-    assert!(diagnostic.contains("Connect download destination directory"), "{stderr}");
-    assert!(diagnostic.contains("Unsafe shared or unowned directory tree"), "{stderr}");
-    assert!(diagnostic.contains("group or other users have write permission"), "{stderr}");
-    assert!(diagnostic.contains("Retry from a private working directory"), "{stderr}");
-    assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
+    let id = "0123456789abcdef0123456789abcdef";
+    for args in [&["inspect", id][..], &["zoom", id, "--at", "0:01"][..]] {
+        let output = inspect_subprocess(&root.join("config.json"), &shared, args);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let diagnostic = stderr.lines().next().unwrap_or_default();
+        for expected in [
+            "Connect download destination directory",
+            "Unsafe shared or unowned directory tree",
+            "group or other users have write permission",
+            "Retry from a private working directory",
+        ] {
+            assert!(diagnostic.contains(expected), "{stderr}");
+        }
+        assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
+    }
     assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
 }
 
 #[test]
 fn hosted_inspect_unsafe_reader_storage_names_the_local_prerequisite() {
-    use std::os::unix::fs::PermissionsExt;
-
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
     std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();

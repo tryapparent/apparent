@@ -57,3 +57,10 @@ mod tests {
         }
     }
 }
+
+pub(crate) fn parse_engine(
+    name: &str,
+) -> Result<crate::capture::engine::runtime::audio::transcription::transcribe::Engine, String> {
+    crate::capture::engine::runtime::audio::transcription::transcribe::Engine::parse(name)
+        .ok_or_else(|| "expected `apple`, `hex` or `command`".to_owned())
+}

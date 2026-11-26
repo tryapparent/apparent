@@ -38,6 +38,7 @@ test('real Git controller changes preserve Desktop renderer and main packaging, 
   const sources = new Map([...storageControllers].map(path => [path, readFileSync(new URL('../../../../' + path, import.meta.url), 'utf8')]));
   try {
     git('init', '-q');
+    git('config', '--local', 'maintenance.auto', 'false');
     for (const [path, source] of sources) write(path, source);
     for (const path of nativeStorageGraph.keys()) {
       const input = fileURLToPath(new URL('../../../../' + path, import.meta.url));

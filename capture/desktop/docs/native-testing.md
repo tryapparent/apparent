@@ -112,17 +112,12 @@ X1, the persistent live VM disk, or another worker's resources. Coordinate RAM,
 CPU and cgroup capacity before launching. The existing runner owns the overlay,
 firmware copy, SSH forwarding, Unix VNC/QMP sockets, expiry and teardown.
 
-Set `GUI_TEMPLATE`, `GUI_TEST_KEY`, `GUI_TEST_USER`, `CANDIDATE` to your owned
-inputs and `RUN` to a **new short private** path under `$TMPDIR`. Keep candidate
-build provenance/source revision beside the run; the scenario records the
-actual executable SHA-256, not an invented source-to-build attestation. A raw
-ELF needs its runtime closure (runner stages sibling `lib*.so*`); an AppImage
-needs its own complete runtime. Neither an old installed app nor `--help`
-proves the candidate.
+Set `GUI_TEMPLATE`, `GUI_TEST_KEY`, `GUI_TEST_USER`, `CANDIDATE` to owned
+inputs and `RUN` to a **new short private** path under `$TMPDIR`. Retain
+source/build provenance alongside the scenario's executable hash.
 
-Run the launch-free checks before scarce build/VM admission. Use a separate
-new private results directory for preparation, then pass its receipt to the
-admitted run. The runner has no `doctor` subcommand.
+Before VM admission, run the launch-free checks in a fresh private results
+directory. Pass the preflight receipt to the admitted run.
 
 ```sh
 python3 capture/desktop/scripts/linux/gui/test-gui-vm.py
@@ -144,24 +139,32 @@ python3 capture/desktop/scripts/linux/gui/gui-vm.py \
   --results "$RUN-preflight" --isolated-network --preflight-only
 ```
 
-Preflight checks required local files, candidate execute permission, dangling
-sibling libraries and scenario syntax without executing the candidate or scenario.
-Ordinary scenarios must parse as Bash. Python recipes must use the exact four-line
-shell/Python header in `capture-smoke.py`; their Python body is compiled without
-execution. A plain Python shebang fails before overlay creation.
+Preflight validates local files, executable mode, sibling libraries and
+scenario syntax without executing the candidate or scenario. Use Bash or the
+exact four-line shell/Python header from `capture-smoke.py`. The runner
+compiles the Python body in preflight and rejects a plain Python shebang.
 
-The private receipt fingerprints candidate, sibling libraries, scenario, optional
-audio, firmware, access key and runner/reaper bytes, plus the desktop/network
-selection and template path/stat identity. `--prepared-inputs` rejects changed
-inputs before overlay allocation after queueing. It also binds the library file
-set, and staging verifies every transferred candidate/library/scenario/audio hash.
-Keep source-to-build provenance separately. Template stat identity detects local
-replacement; verify its published hash and provenance independently. Preparation
-does not execute the package or validate guest ABI, NSS, dlopen or decoder closure.
-Those checks still require the matching guest and normal package entry. For raw
-ELFs, stage all required versioned libraries and dlopen modules as real files
-beside the candidate. For AppImages, retain the normal launcher and existing
-packaging encoder/decoder checks.
+`--prepared-inputs` checks the receipt before allocating an overlay. It binds
+the candidate, library set, scenario, optional audio, firmware, SSH key,
+runner and reaper, desktop/network selection and template path/stat identity.
+Staging verifies every transferred candidate, library, scenario and audio hash.
+Verify source/build provenance and the template's published hash separately.
+Check guest ABI, NSS, dlopen and codec support in the matching guest through
+the normal package entry. Stage versioned libraries and dlopen modules
+beside raw ELFs as real files. Retain the AppImage launcher and codec checks.
+
+### Check KVM from the launch session
+
+Installed-build checks and `--preflight-only` leave KVM access untested.
+Before preparing a demo, check the device in the session launching QEMU:
+
+```sh
+test -c /dev/kvm && test -r /dev/kvm && test -w /dev/kvm
+```
+
+A nonzero result rules out direct launch. For a launcher that supplies the
+KVM group, check under its approved QEMU identity. If access is unavailable,
+report native capture as unverified and label any synthetic demo.
 
 Require qcow2 with no backing file, stopped writers and sufficient KVM access;
 `qemu-img info` alone does not certify sanitization, ownership or capacity.

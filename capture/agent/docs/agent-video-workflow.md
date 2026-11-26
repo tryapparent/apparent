@@ -4,7 +4,7 @@ Use this with [Make It Apparent](../../../agent/skills/make-it-apparent/SKILL.md
 
 ## Prepare and claim only your own take
 
-1. Record the exact build, OS, running executable and installed CLI capabilities in a private evidence directory. Check installed help before choosing a command. Experimental walkthrough tooling in another branch is not a shipped prerequisite.
+1. Privately record the exact build, OS and executable. [Check installed tracing support and local fallbacks](../../../agent/README.md#check-video-tracing-availability).
 2. Choose one visible claim and rehearse it on a safe capture surface. Hide unrelated material before recording; post-production cropping cannot remove secrets from the retained raw movie.
 3. Set a startup deadline and a separate finalization deadline before running the driver. Poll with a bounded interval, recording the last response and elapsed time. On timeout, stop the driver and report the phase; do not toggle recording or cancel an unknown capture to recover.
 4. Read `apparent capture state` to understand the running app. A socket pathname is not readiness. Do not toggle a shortcut or cancel an existing capture to obtain an idle app.
