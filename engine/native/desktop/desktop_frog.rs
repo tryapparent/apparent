@@ -4,6 +4,7 @@ struct DesktopFrog {
     takeoff: Option<[f64; 3]>,
     checked: Option<std::time::Instant>,
     equipped: Vec<&'static str>,
+    achievement: Option<crate::capture::desktop::frog_wardrobe::Achievement>,
     host: Option<crate::capture::desktop::settings::onboarding::DesktopFrogHost>,
 }
 
@@ -42,7 +43,9 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
         let config = crate::shared::handoff::read_preferences(&crate::shared::handoff::default_config_path()).ok();
         let name = config.as_ref().filter(|_| supported())
             .and_then(frog_wardrobe::frog_name).map(str::to_owned);
-        frog.equipped = config.as_ref().map(frog_wardrobe::equipped).unwrap_or_default();
+        if let Some(config) = &config {
+            (frog.equipped, frog.achievement) = frog_wardrobe::projection(config);
+        }
         if frog.name != name {
             frog.name = name;
             if frog.host.take().is_some() {
@@ -60,7 +63,7 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
     let Some(host) = frog.host.as_mut() else {
         return false;
     };
-    match host.tick(visible, &shortcut(), &frog.equipped) {
+    match host.tick(visible, &shortcut(), &frog.equipped, frog.achievement) {
         Some(start) => start,
         None => {
             frog.host = None;
@@ -73,7 +76,7 @@ pub(in crate::capture::desktop) fn poll_desktop_frog(
 pub(in crate::capture::desktop) fn hide_for_capture(cx: &mut gpui::App, shortcut: &str) {
     let frog = cx.default_global::<DesktopFrog>();
     if let Some(host) = frog.host.as_mut()
-        && host.project(false, shortcut, &frog.equipped).is_none()
+        && host.project(false, shortcut, &frog.equipped, frog.achievement).is_none()
     {
         frog.host = None;
     }
@@ -100,7 +103,7 @@ pub(super) fn poll_for(
         let busy = loop_coord.read(cx).capture_busy();
         let frog = cx.default_global::<DesktopFrog>();
         if let Some(host) = frog.host.as_mut() {
-            if host.project(!busy, &shortcut(), &frog.equipped).is_none() || !host.settle_record_request() {
+            if host.project(!busy, &shortcut(), &frog.equipped, frog.achievement).is_none() || !host.settle_record_request() {
                 frog.host = None;
             }
         }
