@@ -25,7 +25,6 @@ function packageHomepage(html, accept) {
     }
     symlinkSync(join(site, "../node_modules"), join(job, "node_modules"), "dir")
     mkdirSync(join(root, "dist"))
-    mkdirSync(join(root, "dist/agents"))
     writeFileSync(join(root, "dist/index.html"), html)
     // Asset contents do not participate in admission. Exercise the real packager
     // with a complete disposable asset inventory, never rewrite the built page.
@@ -33,7 +32,11 @@ function packageHomepage(html, accept) {
       "brand", "connect", "hosted", "assets", "pond", "team", "feature-demos", "apparent-wordmark.svg", "icon.svg", "HostGrotesk-Variable.ttf",
       "social-preview-v1.png", "Apparent-ghost-demo-v4-lilac.mp4", "Apparent-ghost-demo-v4-lilac-poster.jpg",
       ...agentOutputNames,
-    ]) writeFileSync(join(root, "dist", name), "fixture asset")
+    ]) {
+      const file = join(root, "dist", name)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, "fixture asset")
+    }
     mkdirSync(join(root, "dist-apparent"))
     writeFileSync(join(root, "dist-apparent/previous-release"), "preserve on rejection")
     const result = spawnSync(process.execPath, [join(root, "../enablement/site-build/package-apparent.mjs")], { encoding: "utf8" })
