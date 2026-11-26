@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -115,4 +115,64 @@ test('Cargo reruns production runtime staging after cached shared objects are pr
     assert.ok(existsSync(join(target, name)), `${name} restaged beside production binaries`);
     assert.ok(existsSync(join(target, 'deps', name)), `${name} restaged beside Cargo test binaries`);
   }
+});
+
+test('Cargo stages and links the native runtime after relocating a complete Linux target', { skip: process.platform !== 'linux' }, t => {
+  const dir = mkdtempSync(join(tmpdir(), 'apparent-dev-linux-relocated-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const put = (file: string, bytes: string) => {
+    mkdirSync(join(dir, file, '..'), { recursive: true });
+    writeFileSync(join(dir, file), bytes);
+  };
+  put('Cargo.toml', '[package]\nname="relocated-runtime-proof"\nversion="0.1.0"\nedition="2024"\n[dependencies]\ntranscribe-cpp={path="wrapper"}\n');
+  put('src/main.rs', 'fn main() { assert_eq!(transcribe_cpp::read(), 42); }\n');
+  put('build.rs', `use std::path::PathBuf;
+${productionStager()}
+fn main() {
+    stage_transcribe_shared_objects();
+    println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
+}
+`);
+  put('wrapper/Cargo.toml', '[package]\nname="transcribe-cpp"\nversion="0.1.0"\nedition="2024"\nlinks="transcribe_cpp"\n[dependencies]\ntranscribe-cpp-sys={path="../native"}\n');
+  put('wrapper/src/lib.rs', 'pub use transcribe_cpp_sys::read;\n');
+  put('wrapper/build.rs', `fn main() {
+    for name in ["RUNTIME_DIR", "MODULE_DIR"] {
+        let directory = std::env::var(format!("DEP_TRANSCRIBE_{name}")).unwrap();
+        println!("cargo:{}={directory}", name.to_lowercase());
+    }
+}
+`);
+  put('native/Cargo.toml', '[package]\nname="transcribe-cpp-sys"\nversion="0.1.0"\nedition="2024"\nlinks="transcribe"\n');
+  put('native/src/lib.rs', 'unsafe extern "C" { fn transcribe() -> i32; }\npub fn read() -> i32 { unsafe { transcribe() } }\n');
+  put('native/runtime.c', 'int transcribe(void) { return 42; }\n');
+  put('native/build.rs', `use std::{env, fs, path::PathBuf, process::Command};
+fn main() {
+    let output = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    let lib = output.join("lib");
+    let modules = lib.join("modules");
+    fs::create_dir_all(&modules).unwrap();
+    assert!(Command::new("cc").args(["-shared", "-fPIC", "runtime.c", "-o"]).arg(lib.join("libtranscribe.so")).status().unwrap().success());
+    fs::write(modules.join("libggml_cpu.so"), "synthetic backend").unwrap();
+    println!("cargo:rerun-if-changed=runtime.c");
+    println!("cargo:runtime_dir={}", lib.display());
+    println!("cargo:module_dir={}", modules.display());
+    println!("cargo:rustc-link-search=native={}", lib.display());
+    println!("cargo:rustc-link-lib=dylib=transcribe");
+}
+`);
+  const cargoRun = (target: string) => spawnSync('cargo', ['run', '--offline'], {
+    cwd: dir, encoding: 'utf8', timeout: 120_000,
+    env: { ...process.env, CARGO_TARGET_DIR: target, CARGO_BUILD_BUILD_DIR: target, RUSTC_WRAPPER: '' },
+  });
+  const original = join(dir, 'original');
+  const moved = join(dir, 'moved');
+  const first = cargoRun(original);
+  assert.equal(first.status, 0, first.stderr);
+  renameSync(original, moved);
+  rmSync(join(moved, "debug", "libtranscribe.so"));
+  const recovered = cargoRun(moved);
+  assert.equal(recovered.status, 0, recovered.stderr);
+  assert.doesNotMatch(recovered.stderr, /Compiling transcribe-cpp(?:-sys)? /, 'exercise cached producer metadata');
+  for (const destination of ['debug', 'debug/deps'])
+    assert.equal(readFileSync(join(moved, destination, 'libggml_cpu.so'), 'utf8'), 'synthetic backend');
 });
