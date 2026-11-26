@@ -231,7 +231,7 @@ export function PillSurface({
               )}
             </div>
           )}
-          <span className="sr-only" role="status">{recording && view.micWarning}</span>
+          {recording && <span className="sr-only" role="status">{view.micWarning}</span>}
           {recording && view.micWarning && (
             <span className="microphone-warning" aria-hidden="true" title={view.micWarning}>
               <MicOff size={18} />
