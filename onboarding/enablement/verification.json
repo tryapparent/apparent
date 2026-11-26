@@ -1,6 +1,27 @@
 {
   "scenarios": [
     {
+      "id": "macos-screen-recording-guide",
+      "description": "Add the installed Nightly app to Screen & System Audio Recording from the compact permissions guide.",
+      "platforms": ["macos"],
+      "userEntryPoint": "Choose Open Settings on the onboarding Screen & System Audio Recording row. Drag the Nightly app into the list, then enable access and follow the macOS reopen prompt if shown.",
+      "prerequisites": [
+        "An isolated macOS desktop with the signed Nightly candidate installed and a fresh permission state."
+      ],
+      "runner": {
+        "path": "capture/desktop/scripts/support/check-permission-panel-dock.sh",
+        "instructions": "onboarding/enablement/README.md#macos-screen-recording-guide"
+      },
+      "expectedEvidence": [
+        "The card is compact and keeps the permission controls usable at normal and small display sizes in light and dark appearance.",
+        "The drop adds the correct Nightly app and the onboarding row reflects the grant after macOS reopens the app.",
+        "A cancelled drop leads to the permission switch or the keyboard-accessible Add (+) action."
+      ],
+      "limits": [
+        "The geometry script and synthetic Electron permission smoke do not prove the live System Settings drop or grant."
+      ]
+    },
+    {
       "id": "onboarding-practice-completion",
       "description": "Finish the onboarding practice recording and verify that the app saves the recording, copies its reference, and persists setup completion.",
       "platforms": ["linux-hyprland"],
