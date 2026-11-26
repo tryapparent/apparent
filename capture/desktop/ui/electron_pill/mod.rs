@@ -136,6 +136,7 @@ pub(crate) struct Presentation {
     pub(crate) phase: String,
     pub(crate) label: String,
     pub(crate) warning: Option<String>,
+    pub(crate) mic_warning: Option<String>,
     pub(crate) actions: Vec<Control>,
     pub(crate) note_count: usize,
     pub(crate) no_words: bool,
@@ -150,6 +151,7 @@ impl Default for Presentation {
             phase: "hidden".into(),
             label: String::new(),
             warning: None,
+            mic_warning: None,
             actions: Vec::new(),
             note_count: 0,
             no_words: false,
@@ -268,7 +270,6 @@ impl View {
             && self.actions.iter().any(|action| action.id == "copy-link" && action.enabled)
     }
 
-    /// Admission is checked again against current coordinator state before dispatch.
     #[cfg(target_os = "linux")]
     pub fn drag_point(&self, command: &Command, timely: bool) -> Option<[f32; 2]> {
         if !timely || command.action != "drag" || command.revision != self.revision
@@ -276,7 +277,6 @@ impl View {
         command.target.filter(|point| point.iter().all(|v| v.is_finite()))
     }
 
-    /// Admission is checked again against current coordinator state before dispatch.
     pub fn admit(&self, mut command: Command) -> Option<PillAction> {
         let public = command.action == "copy-public-link";
         if public {

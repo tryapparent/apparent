@@ -312,8 +312,8 @@ test('a warm pill waits for its current layout and performs no sizing work for t
   globalThis.resizeHides=0;
   BrowserWindow.getAllWindows()[0].on('hide',()=>globalThis.resizeHides++);
  });
- await publish({...recording,revision:3,warning:'Microphone input stopped; screen recording continues'});
- await expect(page.getByRole('status').filter({hasText:'Microphone'})).toBeVisible();
+ await publish({...recording,revision:3,micWarning:'Microphone input stopped; screen recording continues'});
+ await expect(page.locator('.microphone-warning')).toBeVisible();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeInViewport();
  assert.ok(await application.evaluate(()=>globalThis.measurements)>start,'Content changes must still size the window');
  await page.evaluate(()=>window.apparentPill.layout(3));
