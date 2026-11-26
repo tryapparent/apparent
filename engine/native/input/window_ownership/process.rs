@@ -30,6 +30,11 @@ impl UiChild {
         self.0.lock().unwrap().try_wait()
     }
 
+    #[cfg(target_os = "macos")]
+    pub(crate) fn pid(&self) -> i32 {
+        self.0.lock().unwrap().id() as i32
+    }
+
     pub(crate) fn kill(&mut self) -> std::io::Result<()> {
         self.0.lock().unwrap().kill()
     }
