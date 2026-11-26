@@ -84,6 +84,7 @@ export type Presentation = Readonly<{
   phase: "hidden" | "selecting" | "recording" | "processing" | "completed";
   label: string;
   warning: string | null;
+  micWarning: string | null;
   actions: readonly Action[];
   noteCount: number;
   noWords: boolean;
@@ -102,6 +103,7 @@ export function presentation(
   const result = {
     actions,
     warning: facts.micWarning,
+    micWarning: null,
     noteCount: 0,
     noWords: false,
     completedWarning: false,
@@ -138,10 +140,6 @@ export function presentation(
       control("cancel", "Cancel");
       return { ...result, phase: "recording", label: "Starting recording…", warning: null };
     case "RecordingSurface":
-      if (surface.no_words)
-        result.warning = [result.warning, "No words recognized yet"]
-          .filter(Boolean)
-          .join(" · ");
       control("whiteboard", "Whiteboard");
       control("finish", "Finish", true, false, surface.finish_primary);
       control("cancel", "Cancel");
@@ -150,6 +148,8 @@ export function presentation(
         ...result,
         phase: "recording",
         label: "Recording",
+        warning: surface.no_words ? "No words recognized yet" : null,
+        micWarning: facts.micWarning,
         noteCount: surface.notes,
         noWords: surface.no_words,
         draggable: surface.movable,
