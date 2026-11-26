@@ -68,7 +68,8 @@
         "instructions": "Run npm run test:pill from the frontend directory. Prefix with xvfb-run -a on Linux. From the repository root, run xvfb-run -a node --test record/pill/enablement/startup.smoke.cts after building the frontend. Set APPARENT_PILL_EVIDENCE and APPARENT_LIVE_PROOF to a private evidence directory to retain screenshots."
       },
       "expectedEvidence": [
-        "The recording row has icon-only controls and no elapsed time. Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
+        "The recording row has icon-only controls and no elapsed time. A slashed microphone indicates missing audio while Finish remains available. The full microphone status is available on hover and through assistive technology.",
+        "Finish and the trailing cross dispatch their original actions. Capture switches appear in the picker, and Soft Bloom and doodles appear without Labs preferences.",
         "The row fits at 320 and 1200 DIP in both themes. The smoke checks keyboard focus, pending states, live-caption overflow, and stable layout during recording telemetry. On Hyprland, the native window fits the row before any notes exist. The first note extends the window without moving the controls.",
         "In the isolated Hyprland guest, use the normal screen shortcut with the picker skipped. Verify that the first visible lilac row appears while recording starts, the red row has the same size, and a physical click on Cancel during startup returns the same capture to idle with no saved bundle."
       ],

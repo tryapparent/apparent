@@ -83,7 +83,10 @@ test("reveal deadlines preserve minimum visibility and hover linger across a clo
   );
   assert.equal(send("Deadline", now + 7199).reveal, true);
   assert.equal(send("Deadline", now + 7200).reveal, false);
-  assert.equal(present({ noWords: true }).warning, "No words recognized yet");
+  const micWarning = "Microphone unavailable; screen recording continues";
+  const warnings = present({ noWords: true, micWarning });
+  assert.equal(warnings.warning, "No words recognized yet");
+  assert.equal(warnings.micWarning, micWarning);
   assert.equal(present({ noteCount: 180 }).noteCount, 100);
 });
 

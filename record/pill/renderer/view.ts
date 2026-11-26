@@ -5,6 +5,7 @@ export type PillView = {
   clock: string;
   label: string;
   warning: string | null;
+  micWarning?: string | null;
   notice: string | null;
   noteTip?: string | null;
   reducedMotion: boolean;

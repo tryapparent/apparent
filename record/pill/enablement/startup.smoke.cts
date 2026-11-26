@@ -163,8 +163,32 @@ test("the first Linux spinner shows after layout without waiting for hidden-wind
   await publish({ ...recording, revision: 3 });
   const empty = await geometry(3);
   assert.equal(empty.native.width, Math.ceil(empty.row.width));
-  await publish({ ...recording, revision: 4, noteCount: 1 });
-  const populated = await geometry(4);
+  const micWarning = "Microphone unavailable; screen recording continues";
+  await publish({ ...recording, revision: 4, micWarning });
+  const microphone = await geometry(4);
+  await expect(page.locator(".microphone-warning svg")).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: micWarning }),
+  ).toHaveCount(1);
+  await expect(page.locator(".warning")).toHaveCount(0);
+  assert.equal(microphone.native.height, empty.native.height);
+  const proof = process.env.APPARENT_PILL_EVIDENCE;
+  for (const scheme of ["dark", "light"]) {
+    await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator(".microphone-warning")).toHaveAttribute(
+      "title",
+      micWarning,
+    );
+    await expect(page.getByRole("button", { name: "Finish" })).toBeInViewport();
+    if (proof) {
+      await fs.mkdir(proof, { recursive: true });
+      await page.locator(".pill-row").screenshot({
+        path: path.join(proof, `microphone-${scheme}.png`),
+      });
+    }
+  }
+  await publish({ ...recording, revision: 5, noteCount: 1 });
+  const populated = await geometry(5);
   assert.deepEqual(populated.row, empty.row);
   assert.equal(populated.native.x, empty.native.x);
   assert.equal(populated.native.width, empty.native.width + 72);

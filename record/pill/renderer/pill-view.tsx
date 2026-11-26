@@ -11,6 +11,7 @@ import {
   ClipboardPaste,
   Link,
   LoaderCircle,
+  MicOff,
   Monitor,
   PenLine,
   Scan,
@@ -134,7 +135,7 @@ export function PillSurface({
       aria-label={view.phase === "selecting" ? view.label : undefined}
       data-phase={view.phase}
       data-reduced={view.reducedMotion || reduced}
-      data-warning={view.warning !== null}
+      data-warning={view.warning !== null || !!view.micWarning}
       data-live={view.phase === "recording" && !!view.transcript}
     >
       <div className="pill-surface" data-background={view.phase === "recording" && !!backgroundHandoff}>
@@ -221,6 +222,12 @@ export function PillSurface({
                 </span>
               )}
             </div>
+          )}
+          <span className="sr-only" role="status">{recording && view.micWarning}</span>
+          {recording && view.micWarning && (
+            <span className="microphone-warning" aria-hidden="true" title={view.micWarning}>
+              <MicOff size={18} />
+            </span>
           )}
           {view.warning && view.warning !== view.label && (
             <span className="warning" role="status">

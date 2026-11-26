@@ -60,8 +60,8 @@ test('shared pill renders authoritative states and isolates commands',async t=>{
  assert.ok(Math.abs(await center()-recordingCenter)<=1,'Processing stays centered before the native resize');
  await application.evaluate(()=>globalThis.resumeProcessingLayout());
  assert.equal(await page.getByRole('button').count(),0);
- await publish({...base,revision:3,warning:'Microphone input stopped; screen recording continues',actions:base.actions.map(a=>({...a,primary:false}))});
- await expect(page.getByRole('status').filter({hasText:'screen recording continues'})).toBeVisible();
+ await publish({...base,revision:3,micWarning:'Microphone unavailable; screen recording continues',actions:base.actions.map(a=>({...a,primary:false}))});
+ await expect(page.locator('.microphone-warning')).toHaveAttribute('title','Microphone unavailable; screen recording continues');
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeEnabled();
  await expect(page.getByRole('button',{name:'Finish',exact:true})).toBeInViewport();
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth && document.documentElement.scrollHeight<=innerHeight)).toBe(true);
