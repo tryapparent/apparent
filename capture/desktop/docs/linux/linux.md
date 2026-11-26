@@ -536,7 +536,12 @@ cargo build -j 2 --offline
 ./target/debug/apparent app
 ```
 
-GPUI needs Vulkan (`mesa-vulkan-drivers`; llvmpipe works in a VM). Tests: `cargo test`. A desktop test runs in a Tart Ubuntu VM on the Mac mini (`macvm`, see `~/code/home/tools/macvm`): GNOME on Wayland by default, X11 with `WaylandEnable=false` in `/etc/gdm3/custom.conf`. Never test on Kit's desktop session.
+GPUI needs Vulkan (`mesa-vulkan-drivers`; llvmpipe works in a VM). Tests: `cargo test`. A desktop test runs in a Tart Ubuntu VM on the Mac mini (`macvm`, see `~/code/home/tools/macvm`): GNOME on Wayland by default, X11 with `WaylandEnable=false` in `/etc/gdm3/custom.conf`. Never test on a real user’s desktop session.
+
+The AppImage desktop entry, icon and window ID use `dev.simonvanlaak.apparent`.
+If a dock pin or desktop shortcut still points to the old entry after updating,
+reintegrate the AppImage and pin the new launcher. Shortcut portals can ask for
+confirmation again under the new ID.
 
 ### Native Shift-click notes on Hyprland Lua
 

@@ -246,7 +246,7 @@ fn open(request: Request, cx: &mut App) {
             is_resizable: false,
             is_minimizable: false,
             window_background: WindowBackgroundAppearance::Opaque,
-            app_id: Some("dev.kitlangton.apparent".into()),
+            app_id: Some("dev.simonvanlaak.apparent".into()),
             ..Default::default()
         },
         move |window, cx| {

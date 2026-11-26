@@ -566,7 +566,7 @@ impl ksni::Tray for ApparentTray {
         true
     }
     fn id(&self) -> String {
-        "dev.kitlangton.apparent".into()
+        "dev.simonvanlaak.apparent".into()
     }
 
     fn title(&self) -> String {

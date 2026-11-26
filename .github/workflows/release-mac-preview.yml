@@ -1,7 +1,6 @@
 name: Mac preview release
 
 # The fork's Mac release path: optional Developer ID/notarization, always Sparkle EdDSA.
-# Keep its feed separate from Kit's Developer ID signed production appcast.
 on:
   workflow_call:
     inputs:
@@ -212,9 +211,9 @@ jobs:
           tag_args=(--target "$RELEASE_SOURCE_SHA")
           if [[ -n "$existing_sha" ]]; then tag_args=(--verify-tag); fi
           if [[ "$APPARENT_PREVIEW_NOTARIZE" == true ]]; then
-            notes="Mac preview signed with Developer ID and notarized by Apple. Updates use the existing preview Sparkle feed and EdDSA signature. This does not update Kit's app."
+            notes="Mac preview signed with Developer ID and notarized by Apple. Updates use the existing preview Sparkle feed and EdDSA signature. The upstream app uses a separate feed."
           else
-            notes="Temporary Mac release. Ad-hoc code signed, not notarized: initial installation may require Privacy & Security → Open Anyway. Later updates use the preview Sparkle feed and EdDSA signature. This does not update Kit's Developer ID signed app."
+            notes="Temporary Mac release. Ad-hoc code signed, not notarized: initial installation may require Privacy & Security → Open Anyway. Later updates use the preview Sparkle feed and EdDSA signature. The upstream app uses a separate feed."
           fi
           gh release create "$tag" "$dmg" "$dmg.sha256" "$zip" \
             "${tag_args[@]}" \

@@ -221,8 +221,6 @@ The following exhaustive baseline ledger documents an earlier campaign proposal 
 | `hosted/test/typescript.test.mjs` | `connect/service/test/typescript.test.mjs` | MOVE | connect |
 | `hosted/tsconfig.json` | `connect/service/tsconfig.json` | MOVE | connect |
 | `hosted/wrangler.toml` | `connect/service/wrangler.toml` | MOVE | connect |
-| `packaging/linux/dev.kitlangton.apparent.desktop` | `composition/enablement/release/linux/dev.kitlangton.apparent.desktop.json` | MOVE | Composition release |
-| `packaging/linux/dev.kitlangton.apparent.png` | `composition/enablement/release/linux/dev.kitlangton.apparent.png` | MOVE | Composition release |
 | `perf/pill/clips.py` | `capture/desktop/scripts/perf/pill/clips.py` | MOVE | desktop |
 | `perf/pill/motion-lint.config.json` | `capture/desktop/scripts/perf/pill/motion-lint.config.json` | MOVE | desktop |
 | `perf/pill/record.sh` | `capture/desktop/scripts/perf/pill/record.sh` | MOVE | desktop |
