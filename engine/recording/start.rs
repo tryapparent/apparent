@@ -7,6 +7,7 @@ use std::time::Instant;
 use super::PreparedSource;
 use super::ScreenCaptureSession;
 use crate::capture::desktop::start_metric;
+use crate::capture::desktop::workflow::performance::StartupPoint;
 use crate::capture::engine::bundle::recover;
 use crate::capture::engine::runtime::{
     SharedCaptureTelemetry, apparent_log, audio::audio::AudioRecorder,
@@ -158,6 +159,8 @@ impl ScreenCaptureSession {
             None,
             #[cfg(target_os = "linux")]
             None,
+            #[cfg(target_os = "linux")]
+            None,
         )
     }
 
@@ -255,61 +258,123 @@ impl ScreenCaptureSession {
             storage.verify_bundle(bundle_dir)?;
             Ok(storage.directory()?)
         }).transpose().map_err(StartError::Screen)?;
-        let stage = Instant::now();
-        let audio = if microphone {
-            #[cfg(target_os = "linux")]
-            let recorder = match prepared_audio {
-                Some(prepared) => {
-                    let prepared = prepared.wait().map_err(StartError::Audio)?;
-                    AudioRecorder::start_prepared(prepared, stream_admission, stage)
-                }
-                None => AudioRecorder::start_with_local_stream(bundle_dir, stream_admission),
-            };
-            #[cfg(not(target_os = "linux"))]
-            let recorder = AudioRecorder::start_with_local_stream(bundle_dir, stream_admission);
-            Some(recorder.map_err(StartError::Audio)?)
-        } else {
-            #[cfg(target_os = "linux")]
-            let pinned_path = storage.as_ref().map(ChooserStorage::pinned_path);
-            #[cfg(target_os = "linux")]
-            if let Some(path) = pinned_path {
-                recover::record_microphone_off(&path, target).map_err(StartError::Screen)?;
+        #[cfg(target_os = "linux")]
+        let media_clock = (microphone && pending_cancellation.is_some()).then(Instant::now);
+        let launch_screen = || {
+            let stage = Instant::now();
+            StartupPoint::VideoDispatch.record_in(startup);
+            let result = Self::start_with_exclusion_receipt(
+                target.clone(),
+                Some(bundle_dir.join("recording.mp4")),
+                Arc::clone(&telemetry.excluded_window_ids),
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                telemetry.circle_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
+                #[cfg(target_os = "macos")]
+                Arc::clone(&telemetry.applied_excluded_window_ids),
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                prepared_source,
+                #[cfg(target_os = "linux")]
+                pinned,
+                #[cfg(target_os = "linux")]
+                startup.cloned(),
+                #[cfg(target_os = "linux")]
+                media_clock,
+            );
+            start_metric("sck_start_ms", stage);
+            StartupPoint::VideoDispatched.record_in(startup);
+            result
+        };
+        let launch_audio = || -> Result<Option<AudioRecorder>, StartError> {
+            let stage = Instant::now();
+            StartupPoint::AudioBegin.record_in(startup);
+            let audio = if microphone {
+                #[cfg(target_os = "linux")]
+                let recorder = {
+                    let prepared = prepared_audio.map_or_else(
+                        || PreparedAudio::new(bundle_dir),
+                        AudioPreparation::wait,
+                    ).map_err(StartError::Audio)?;
+                    match media_clock {
+                        Some(clock) => AudioRecorder::start_on_clock(prepared, stream_admission, clock),
+                        None => AudioRecorder::start_prepared(prepared, stream_admission, stage),
+                    }
+                };
+                #[cfg(not(target_os = "linux"))]
+                let recorder = AudioRecorder::start_with_local_stream(bundle_dir, stream_admission);
+                Some(recorder.map_err(StartError::Audio)?)
             } else {
+                #[cfg(target_os = "linux")]
+                let pinned_path = storage.as_ref().map(ChooserStorage::pinned_path);
+                #[cfg(target_os = "linux")]
+                if let Some(path) = pinned_path {
+                    recover::record_microphone_off(&path, target).map_err(StartError::Screen)?;
+                } else {
+                    std::fs::write(bundle_dir.join("microphone-off"), b"")
+                        .map_err(StartError::MicrophoneIntent)?;
+                }
+                #[cfg(not(target_os = "linux"))]
                 std::fs::write(bundle_dir.join("microphone-off"), b"")
                     .map_err(StartError::MicrophoneIntent)?;
-            }
-            #[cfg(not(target_os = "linux"))]
-            std::fs::write(bundle_dir.join("microphone-off"), b"")
-                .map_err(StartError::MicrophoneIntent)?;
-            None
+                None
+            };
+            start_metric("audio_start_ms", stage);
+            StartupPoint::AudioReady.record_in(startup);
+            Ok(audio)
         };
-        start_metric("audio_start_ms", stage);
-        if let Some(trace) = startup {
-            trace.record(crate::capture::desktop::workflow::performance::StartupPoint::AudioReady);
-        }
         #[cfg(target_os = "linux")]
-        if let Some(pending) = &pending_cancellation && pending.requested() {
-            if let Err(error) = pending.abandon(bundle_dir, || drop(audio)) {
-                apparent_log(format!("Failed cancelled startup cleanup: {error:#}"));
+        let (screen, audio) = if let Some(pending) = &pending_cancellation {
+            if pending.requested() {
+                let _ = pending.abandon(bundle_dir, || drop(launch_screen));
+                return Err(StartError::Cancelled);
             }
-            return Err(StartError::Cancelled);
-        }
-        let stage = Instant::now();
-        let screen = Self::start_with_exclusion_receipt(
-            target.clone(),
-            Some(bundle_dir.join("recording.mp4")),
-            Arc::clone(&telemetry.excluded_window_ids),
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
-            telemetry.circle_session.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone(),
-            #[cfg(target_os = "macos")]
-            Arc::clone(&telemetry.applied_excluded_window_ids),
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            prepared_source,
-            #[cfg(target_os = "linux")]
-            pinned,
-            #[cfg(target_os = "linux")]
-            startup.cloned(),
-        );
+            if media_clock.is_some() {
+                let screen = launch_screen();
+                let audio = launch_audio();
+                let cancelled = pending.requested();
+                match (screen, audio) {
+                    (Ok(screen), Ok(audio)) if !cancelled => (Ok(screen), audio),
+                    (screen, audio) => {
+                        let (screen, screen_error) = match screen {
+                            Ok(screen) => (Some(screen), None),
+                            Err(error) => (None, Some(StartError::Screen(error))),
+                        };
+                        let (audio, audio_error) = match audio {
+                            Ok(audio) => (audio, None),
+                            Err(error) => (None, Some(error)),
+                        };
+                        let cleanup = pending.abandon(bundle_dir, || {
+                            drop(audio);
+                            if let Some(screen) = screen {
+                                let _ = screen.stop();
+                            }
+                        });
+                        if let Err(error) = cleanup {
+                            apparent_log(format!("Failed pending startup cleanup: {error:#}"));
+                        }
+                        return Err(if cancelled {
+                            StartError::Cancelled
+                        } else {
+                            screen_error.or(audio_error).expect("failed pending startup")
+                        });
+                    }
+                }
+            } else {
+                let audio = launch_audio()?;
+                if pending.requested() {
+                    let _ = pending.abandon(bundle_dir, || drop(launch_screen));
+                    return Err(StartError::Cancelled);
+                }
+                (launch_screen(), audio)
+            }
+        } else {
+            let audio = launch_audio()?;
+            (launch_screen(), audio)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let (screen, audio) = {
+            let audio = launch_audio()?;
+            (launch_screen(), audio)
+        };
         let screen = match screen {
             Ok(screen) => screen,
             Err(error) => {
@@ -338,7 +403,6 @@ impl ScreenCaptureSession {
                 return Err(StartError::Screen(error));
             }
         };
-        start_metric("sck_start_ms", stage);
         let windows = (target.mode == CaptureMode::Display).then(|| {
             WindowLogger::start(
                 target.frame,

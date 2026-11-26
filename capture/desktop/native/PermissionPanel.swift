@@ -6,18 +6,6 @@
 //   apparent-helper permission-panel --check PERMISSION        {"granted":true|false} from a fresh process
 //   apparent-helper permission-panel --plan --settings X,Y,W,H --visible X,Y,W,H   where the card docks
 //
-// It opens the pane in System Settings, waits for its window to settle, flies a card from
-// `--from` (the Grant button, global top-left points like CGWindow bounds) and docks it below
-// the Settings window, or inside its empty lower area when there's no room (`dock`), with its
-// app row lined up under the Privacy list's column. The row
-// drags the real Apparent.app, the bundle that holds the grant. stdin takes `cancel` (fade out;
-// EOF on a pipe does the same), `back` (fly back to `--from`, as the card's back button does) and
-// `granted` (the parent saw the grant first: show it, then fade). Events go to stdout as JSON lines and the last one is either
-//   {"event":"granted","permission":P}    or    {"event":"cancelled","permission":P,"reason":R}
-// with R one of back, settings-closed, no-settings-window, parent, timeout. Before that it may
-// print {"event":"docked"} and {"event":"dropped"}. A drop is only a hint: the grant is read from
-// a fresh `--check` process (CGPreflightScreenCaptureAccess caches its answer per process).
-//
 // The flight, the Settings window tracking and the drop race are adapted from AskForPermission
 // (https://github.com/riko2chen/AskForPermission, MIT, Copyright (c) 2026 Riko), and the
 // macOS 27 pane names from PermissionFlow (https://github.com/jaywcjlove/PermissionFlow, MIT,
@@ -29,8 +17,6 @@ import CoreGraphics
 import SwiftUI
 
 enum PermissionPanel {
-  // MARK: Tuning
-
   /// The flight from the Grant button to the dock. Duration and bounce, as everywhere in Apparent:
   /// critically damped, so the card leaves fast and decelerates into place without overshooting.
   /// A spring front-loads its travel, so a cross-screen hop needs a longer duration than a drawer.
@@ -235,8 +221,6 @@ enum PermissionPanel {
 
   enum Dock: String { case below, inside, right, left, clamped }
 
-  /// Screen recording keeps its opaque drag card inside the lower Settings content column,
-  /// directing the drop upward. Other permission panes retain the outside docking policy.
   static func dock(settings: NSRect, visible: NSRect, layout: Layout) -> (frame: NSRect, dock: Dock) {
     let size = layout.cardSize
     let fits = { (r: NSRect) in
@@ -249,18 +233,19 @@ enum PermissionPanel {
     let gap = layout.dockGap
 
     let below = NSRect(x: clampX(column), y: settings.minY - gap - size.height, width: size.width, height: size.height)
-    if !layout.screenRecording && fits(below) { return (below, .below) }
+    if fits(below) { return (below, .below) }
 
     let insideY = max(settings.minY + (layout.screenRecording ? 8 : layout.insideBottom), visible.minY + 8)
     let inside = NSRect(x: column, y: insideY, width: size.width, height: size.height)
-    if fits(inside), inside.minX >= settings.minX, inside.maxY <= settings.minY + settings.height * (layout.screenRecording ? 0.5 : 0.3) {
-      return (inside, .inside)
-    }
+    let fitsInside = fits(inside) && inside.minX >= settings.minX
+      && inside.maxY <= settings.minY + settings.height * (layout.screenRecording ? 0.5 : 0.3)
+    if !layout.screenRecording && fitsInside { return (inside, .inside) }
 
     let right = NSRect(x: settings.maxX + gap, y: clampY(settings.minY), width: size.width, height: size.height)
     if fits(right) { return (right, .right) }
     let left = NSRect(x: settings.minX - gap - size.width, y: clampY(settings.minY), width: size.width, height: size.height)
     if fits(left) { return (left, .left) }
+    if fitsInside { return (inside, .inside) }
 
     return (NSRect(x: clampX(below.minX), y: clampY(below.minY), width: size.width, height: size.height), .clamped)
   }
@@ -279,17 +264,15 @@ enum PermissionPanel {
     guard let settings = option("--settings", in: arguments).flatMap(parseRect),
           let visible = option("--visible", in: arguments).flatMap(parseRect)
     else { fail("permission-panel --plan needs --settings X,Y,W,H --visible X,Y,W,H") }
-    let plan = dock(settings: settings, visible: visible, layout: Layout(settingsWidth: settings.width, settingsHeight: settings.height, screenRecording: arguments.contains("--screen-recording")))
+    let plan = dock(settings: settings, visible: visible, layout: Layout(settingsWidth: settings.width, screenRecording: arguments.contains("--screen-recording")))
     let f = plan.frame
     emit(["dock": plan.dock.rawValue, "frame": [f.minX, f.minY, f.width, f.height].map { Double($0) }])
     exit(0)
   }
 
-  /// Card metrics. The app row matches the Privacy list's column in the Settings window.
-  struct Layout: Equatable {
-    var screenRecording = false
-    var settingsHeight: CGFloat = 0
-    var rowWidth: CGFloat
+  struct Layout {
+    let screenRecording: Bool
+    let rowWidth: CGFloat
     let instructionHeight: CGFloat = 28
     /// Less above the instruction than below the row: line height already pads the text.
     let top: CGFloat = 7
@@ -301,25 +284,21 @@ enum PermissionPanel {
     let dockGap: CGFloat = 10
     /// Inside the window: this far above its bottom edge.
     let insideBottom: CGFloat = 20
-    let radius: CGFloat = 18
     let rowRadius: CGFloat = 0
     let icon: CGFloat = 26
     let iconLeading: CGFloat = 10
 
-    init(settingsWidth: CGFloat, settingsHeight: CGFloat = 0, screenRecording: Bool = false) {
+    init(settingsWidth: CGFloat, screenRecording: Bool = false) {
       self.screenRecording = screenRecording
-      self.settingsHeight = settingsHeight
       let column = settingsWidth - PermissionPanel.settingsListLeading - PermissionPanel.settingsListTrailing
-      rowWidth = max(320, min(column, 640))
+      rowWidth = screenRecording ? 288 : max(320, min(column, 640))
     }
 
+    var fontSize: CGFloat { screenRecording ? 16 : 18 }
     var textLeading: CGFloat { iconLeading + icon + 10 }
     var rowY: CGFloat { top + instructionHeight + gap }
     var cardSize: NSSize {
-      // Cover the lower content region, not just the draggable app row.
-      // Keep the upper screen-recording list available as the drop destination.
-      let height = screenRecording ? max(rowY + rowHeight + padding, settingsHeight * 0.5 - 16) : rowY + rowHeight + padding
-      return NSSize(width: gutter + rowWidth + padding, height: height)
+      NSSize(width: gutter + rowWidth + padding, height: rowY + rowHeight + padding)
     }
   }
 }
@@ -332,6 +311,7 @@ extension PermissionPanel {
     @Published var phase = Phase.instruction
     @Published var hovering = false
     @Published var dragging = false
+    @Published var dropRejected = false
     @Published var contentOpacity: Double = 1
     @Published var contentScale: Double = 1
     @Published var contentBlur: Double = 0
@@ -340,7 +320,6 @@ extension PermissionPanel {
 
   struct CardContent: View {
     @ObservedObject var model: CardModel
-    let kind: Kind
     let layout: Layout
     let appName: String
     let icon: NSImage
@@ -361,7 +340,7 @@ extension PermissionPanel {
           .opacity(model.phase == .granted ? 0 : 1)
       }
       .frame(width: layout.cardSize.width, height: layout.cardSize.height, alignment: .topLeading)
-      .font(OnboardingBrand.font(18))
+      .font(OnboardingBrand.font(layout.fontSize))
       .foregroundStyle(OnboardingBrand.foreground)
       .tint(OnboardingBrand.signal)
       .scaleEffect(model.contentScale)
@@ -375,9 +354,10 @@ extension PermissionPanel {
     private var instruction: some View {
       HStack(spacing: 0) {
         ZStack {
-          Image(systemName: "arrow.up")
+          Image(systemName: layout.screenRecording ? (model.dropRejected ? "plus" : "hand.draw") : "arrow.up")
             .font(.system(size: 18, weight: .bold))
             .foregroundStyle(OnboardingBrand.signal)
+            .accessibilityHidden(true)
             .opacity(model.phase == .granted ? 0 : 1)
             .scaleEffect(model.phase == .granted ? 0.6 : 1)
           Image(systemName: "checkmark.circle.fill")
@@ -396,14 +376,15 @@ extension PermissionPanel {
             .opacity(model.phase == .granted ? 1 : 0)
             .blur(radius: model.phase == .granted ? 0 : 3)
         }
-        .font(OnboardingBrand.font(18))
         .lineLimit(1)
         Spacer(minLength: 0)
       }
     }
 
     private var dragText: Text {
-      Text(kind == .screenRecording ? "Drag up to Screen Recording." : "Drag into this list.")
+      Text(layout.screenRecording
+        ? (model.dropRejected ? "Turn on access or use Add (+)." : "Drag just above the upper +.")
+        : "Drag into this list.")
         .foregroundStyle(OnboardingBrand.foreground)
     }
 
@@ -418,7 +399,6 @@ extension PermissionPanel {
           .padding(.leading, layout.iconLeading)
           .padding(.trailing, layout.textLeading - layout.iconLeading - layout.icon)
         Text(appName)
-          .font(OnboardingBrand.font(18))
           .foregroundStyle(model.hovering && !lifted ? Color(nsColor: OnboardingBrand.carbon) : OnboardingBrand.foreground)
         Spacer(minLength: 0)
       }
@@ -450,6 +430,7 @@ extension PermissionPanel {
           .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
+      .accessibilityLabel("Back")
       .help("Back")
       .onHover { hovering = $0 }
       .animation(.easeOut(duration: 0.16), value: hovering)
@@ -462,21 +443,21 @@ extension PermissionPanel {
     func updateNSView(_: NSView, context _: Context) {}
   }
 
-  /// The draggable app row's hit area. SwiftUI draws the row; this view is the NSDraggingSource,
-  /// and its pasteboard item is the app bundle's file URL.
   final class DragSource: NSView, NSDraggingSource {
     let appURL: URL
     let appName: String
     let icon: NSImage
     let model: CardModel
+    let screenRecording: Bool
     var onEnded: (NSDragOperation) -> Void = { _ in }
     private var down: NSEvent?
 
-    init(appURL: URL, appName: String, icon: NSImage, model: CardModel) {
+    init(appURL: URL, appName: String, icon: NSImage, model: CardModel, screenRecording: Bool) {
       self.appURL = appURL
       self.appName = appName
       self.icon = icon
       self.model = model
+      self.screenRecording = screenRecording
       super.init(frame: .zero)
     }
 
@@ -503,11 +484,19 @@ extension PermissionPanel {
       guard distance >= 3 else { return }
       self.down = nil
       let item = NSDraggingItem(pasteboardWriter: appURL as NSURL)
-      item.setDraggingFrame(bounds, contents: dragImage())
+      if screenRecording {
+        let pointer = convert(down.locationInWindow, from: nil)
+        let size: CGFloat = 32
+        item.setDraggingFrame(
+          NSRect(x: pointer.x - size / 2, y: pointer.y - size / 2, width: size, height: size),
+          contents: icon
+        )
+      } else {
+        item.setDraggingFrame(bounds, contents: dragImage())
+      }
       let session = beginDraggingSession(with: [item], event: down, source: self)
       session.animatesToStartingPositionsOnCancelOrFail = true
       session.draggingFormation = .none
-      model.dragging = true
     }
 
     /// The row as the list will show it: opaque, so it reads over any window it crosses.
@@ -536,7 +525,20 @@ extension PermissionPanel {
 
     func draggingSession(_: NSDraggingSession, sourceOperationMaskFor _: NSDraggingContext) -> NSDragOperation { .copy }
 
+    func draggingSession(_: NSDraggingSession, willBeginAt _: NSPoint) {
+      model.dragging = true
+      model.dropRejected = false
+      if screenRecording {
+        window?.ignoresMouseEvents = true
+        window?.alphaValue = 0
+      }
+    }
+
     func draggingSession(_: NSDraggingSession, endedAt _: NSPoint, operation: NSDragOperation) {
+      if screenRecording {
+        window?.ignoresMouseEvents = false
+        model.dropRejected = operation.isEmpty
+      }
       model.dragging = false
       model.hovering = false
       onEnded(operation)
@@ -812,7 +814,7 @@ extension PermissionPanel {
     private func dock(_ id: CGWindowID, _ frame: CGRect) {
       settingsID = id
       settingsFrame = frame
-      layout = Layout(settingsWidth: frame.width, settingsHeight: frame.height, screenRecording: kind == .screenRecording)
+      layout = Layout(settingsWidth: frame.width, screenRecording: kind == .screenRecording)
       let target = dockFrame(settingsQuartz: frame, layout: layout)
       buildPanel(at: target)
       if reduceMotion || sourceQuartz == nil {
@@ -826,7 +828,7 @@ extension PermissionPanel {
       var event: [String: Any] = ["event": "docked", "permission": kind.rawValue]
       if let settingsFrame, let panel {
         // Where it went, in CGWindow coordinates, for checking placement in a log.
-        let card = quartz(fromAppKit: panel.frame.insetBy(dx: Controller.margin, dy: Controller.margin))
+        let card = quartz(fromAppKit: panel.frame.insetBy(dx: panelMargin, dy: panelMargin))
         let settings = appKit(fromQuartz: settingsFrame)
         let screen = NSScreen.screens.first { $0.frame.intersects(settings) } ?? NSScreen.main
         event["dock"] = PermissionPanel.dock(settings: settings, visible: screen?.visibleFrame ?? settings, layout: layout).dock.rawValue
@@ -841,10 +843,10 @@ extension PermissionPanel {
     // MARK: Panel
 
     private func makeSurface(model: CardModel, interactive: Bool) -> CardSurface {
-      let dragSource = DragSource(appURL: appURL, appName: appName, icon: icon, model: model)
+      let dragSource = DragSource(appURL: appURL, appName: appName, icon: icon, model: model, screenRecording: layout.screenRecording)
       dragSource.onEnded = { [weak self] operation in self?.dragEnded(operation) }
       let content = CardContent(
-        model: model, kind: kind, layout: layout, appName: appName, icon: icon,
+        model: model, layout: layout, appName: appName, icon: icon,
         interactive: interactive, dragView: { dragSource }
       )
       let host = NSHostingView(rootView: content)
@@ -852,15 +854,16 @@ extension PermissionPanel {
       return CardSurface(content: host, size: layout.cardSize)
     }
 
-    static let margin: CGFloat = 48
+    private var panelMargin: CGFloat { kind == .screenRecording ? 0 : 48 }
 
     private func buildPanel(at card: NSRect) {
       panelModel.onBack = { [weak self] in self?.cancel(reason: "back") }
       let surface = makeSurface(model: panelModel, interactive: true)
-      let frame = card.insetBy(dx: -Controller.margin, dy: -Controller.margin)
+      let frame = card.insetBy(dx: -panelMargin, dy: -panelMargin)
       let panel = OverlayPanel(frame: frame, level: .floating)
+      panel.hasShadow = kind == .screenRecording
       let root = NSView(frame: NSRect(origin: .zero, size: frame.size))
-      surface.frame.origin = NSPoint(x: Controller.margin, y: Controller.margin)
+      surface.frame.origin = NSPoint(x: panelMargin, y: panelMargin)
       root.addSubview(surface)
       panel.contentView = root
       self.panel = panel
@@ -868,7 +871,7 @@ extension PermissionPanel {
     }
 
     private func moveDock(to card: NSRect) {
-      panel?.setFrame(card.insetBy(dx: -Controller.margin, dy: -Controller.margin), display: true)
+      panel?.setFrame(card.insetBy(dx: -panelMargin, dy: -panelMargin), display: true)
     }
 
     private func fadeIn() {
@@ -904,7 +907,7 @@ extension PermissionPanel {
 
     private func flyBack(then done: @escaping () -> Void) {
       guard let panel, let surface = panelSurface else { return done() }
-      let card = NSRect(origin: NSPoint(x: panel.frame.minX + Controller.margin, y: panel.frame.minY + Controller.margin), size: surface.frame.size)
+      let card = NSRect(origin: NSPoint(x: panel.frame.minX + panelMargin, y: panel.frame.minY + panelMargin), size: surface.frame.size)
       guard !reduceMotion, let sourceQuartz else { return fadeOut(then: done) }
       let model = CardModel()
       model.phase = panelModel.phase
@@ -943,10 +946,8 @@ extension PermissionPanel {
       RunLoop.main.add(trackTimer!, forMode: .common)
     }
 
-    /// The panel follows Settings 1:1 (the user is moving it) and steps aside while another app
-    /// is in front.
     private func track() {
-      guard !finished, var panel = self.panel else { return }
+      guard !finished, let panel = self.panel else { return }
       var frame = settingsID.flatMap(SettingsWindow.frame(of:))
       if frame == nil, let window = SettingsWindow.main() {
         settingsID = window.id
@@ -960,19 +961,7 @@ extension PermissionPanel {
       missingSince = nil
       if frame != settingsFrame {
         settingsFrame = frame
-        let nextLayout = Layout(settingsWidth: frame.width, settingsHeight: frame.height, screenRecording: kind == .screenRecording)
-        if kind == .screenRecording && nextLayout != layout {
-          layout = nextLayout
-          let previousAlpha = panel.alphaValue
-          panel.close()
-          buildPanel(at: dockFrame(settingsQuartz: frame, layout: layout))
-          guard let replacement = self.panel else { return }
-          panel = replacement
-          panel.alphaValue = previousAlpha
-          panel.orderFrontRegardless()
-        } else {
-          moveDock(to: dockFrame(settingsQuartz: frame, layout: layout))
-        }
+        moveDock(to: dockFrame(settingsQuartz: frame, layout: layout))
       }
       if dropRace == nil, flight == nil {
         let front = NSWorkspace.shared.frontmostApplication
@@ -987,7 +976,7 @@ extension PermissionPanel {
           else { return false }
           return rect.width > 180 && rect.height > 100 && rect.intersects(main)
         }
-        let alpha: CGFloat = ours && !settingsPrompt ? 1 : 0
+        let alpha: CGFloat = ours && !settingsPrompt && !(layout.screenRecording && panelModel.dragging) ? 1 : 0
         if panel.alphaValue != alpha, !isFading {
           isFading = true
           NSAnimationContext.runAnimationGroup { context in
@@ -1067,6 +1056,7 @@ extension PermissionPanel {
     private func reshow() {
       guard !finished, let panel else { return }
       panelModel.phase = .instruction
+      panelModel.dropRejected = kind == .screenRecording
       NSAnimationContext.runAnimationGroup { context in
         context.duration = fadeDuration
         panel.animator().alphaValue = 1

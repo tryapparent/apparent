@@ -3,7 +3,7 @@ const pin = n => Number.isInteger(n) && n > 0 && n <= 100000;
 function validCommand(v) {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const fields = { draft: ['action', 'pin', 'text'], save: ['action', 'pin', 'text'],
-    delete: ['action', 'pin'], edit: ['action', 'pin'], dismiss: ['action'] }[v.action];
+    dismiss: ['action'] }[v.action];
   return fields && Object.keys(v).length === fields.length && Object.keys(v).every(k => fields.includes(k)) &&
     (!fields.includes('pin') || pin(v.pin)) && (!fields.includes('text') || text(v.text));
 }

@@ -1,4 +1,20 @@
 impl Session {
+    pub(crate) fn shortcut_policy(&self) -> ShortcutPolicy {
+        match self.frog_stage() {
+            1 => return ShortcutPolicy::Trial,
+            2 => return ShortcutPolicy::Block,
+            _ => (),
+        }
+        let policy = if self.electron_shortcut_step() {
+            if self.flow.shortcut_editing { ShortcutPolicy::Block } else { ShortcutPolicy::Trial }
+        } else { self.flow.shortcut_policy() };
+        if self.shortcut_choice_down && policy == ShortcutPolicy::Trial { ShortcutPolicy::Block } else { policy }
+    }
+
+    fn electron_shortcut_step(&self) -> bool {
+        self.fallback.is_some() && !self.fallback_pending && self.choosing_shortcut()
+    }
+
     #[cfg(target_os = "macos")]
     pub(crate) fn shortcut_editor_pid(&self) -> Option<i32> {
         match &self.transport {

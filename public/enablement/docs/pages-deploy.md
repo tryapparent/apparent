@@ -41,9 +41,11 @@ source build. Marketing analytics was subsequently removed; see Website analytic
 
 The homepage links to the static agent quickstart at `/agents/`. The Public
 package also admits the generated `/llms.txt`, `/llms-full.txt`, and `/skill.md`.
-The capture sitemap lists the homepage and quickstart on its own host. Previews
-and production use the same generated agent files and the Pages publisher
-checks each route and the sitemap byte-for-byte on both origins.
+The quickstart and `/llms.txt` link to guides for recording feedback, importing
+a recording and showing an agent the right UI element. The capture sitemap
+lists the homepage, quickstart and guides on its own host. Previews and
+production use the same agent files. The Pages publisher checks each route
+and the sitemap byte-for-byte on both origins.
 
 The sealed `.build/website` artifact contains only `dist-apparent`, the isolated
 Pages configuration and a revision/checksum manifest. The publisher revalidates its

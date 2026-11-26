@@ -8,6 +8,18 @@ Install the [capture-reading skill](skills/apparent/SKILL.md) or the
 [video-proof skill](skills/make-it-apparent/SKILL.md) from `agent/skills/`.
 Older install URLs forward to these guides.
 
+## Check video-tracing availability
+
+Check `apparent --version` and `apparent trace --help` before using a walkthrough that refers to experimental CLI tracing. If the installed CLI reports an unrecognized subcommand, keep the owned capture receipts and the driver's elapsed times in your private evidence directory. Inspect the saved local bundle using its exact path.
+
+```sh
+apparent inspect "$bundle"
+apparent frames "$bundle" --from 0 --to 2
+apparent zoom "$bundle" --at 0:01
+```
+
+For an existing local MP4 or MOV, use `apparent import "$movie" --out "$bundle"` first, with a new `.apparent` destination. These commands inspect recorded evidence. The private driver ledger records command timing and outcomes.
+
 ## Report feedback from the CLI
 
 Use `apparent feedback --help` for a copyable example. CLI argument errors and failed `inspect`, `fetch`, `frames` and `zoom` commands point to it after the original error. Send sanitized `apparent feedback` for even minor friction or workarounds, then continue the task.

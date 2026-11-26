@@ -136,6 +136,30 @@ function Pill() {
       onBeginPaste={() => window.apparentPill!.beginPaste(view.revision)}
       onCancelPaste={() => void window.apparentPill?.cancelPaste()}
     >
+      {view.copyFailed && (
+        <div className="destination-notification pill-completion-notification">
+          <StatusCard
+            tone="failure"
+            headline="Couldn’t copy the recording"
+            compact
+          >
+            <p>Your recording is saved.</p>
+            {view.actions.some(
+              (action) => action.id === "inspect" && action.enabled,
+            ) && (
+              <div className="destination-recovery">
+                <Button
+                  variant="outline"
+                  disabled={pending || sharing !== null}
+                  onClick={() => void act("inspect")}
+                >
+                  Inspect recording
+                </Button>
+              </div>
+            )}
+          </StatusCard>
+        </div>
+      )}
       {confirmation}
     </PillSurface>
   );

@@ -139,7 +139,7 @@ pub(crate) struct Presentation {
     pub(crate) actions: Vec<Control>,
     pub(crate) note_count: usize,
     pub(crate) no_words: bool,
-    pub(crate) completed_warning: bool,
+    pub(crate) copy_failed: bool,
     pub(crate) draggable: bool,
     pub(crate) share_indicator: ShareIndicator,
 }
@@ -153,7 +153,7 @@ impl Default for Presentation {
             actions: Vec::new(),
             note_count: 0,
             no_words: false,
-            completed_warning: false,
+            copy_failed: false,
             draggable: false,
             share_indicator: ShareIndicator::None,
         }

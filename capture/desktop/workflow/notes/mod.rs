@@ -27,12 +27,6 @@ pub enum CommandMessage {
         pin: u32,
         text: String,
     },
-    Delete {
-        pin: u32,
-    },
-    Edit {
-        pin: u32,
-    },
     Dismiss,
     Windows {
         ids: Vec<u32>,
@@ -178,8 +172,7 @@ impl Session {
                                 let mut admission = reader_lifecycle.lock().unwrap();
                                 match &action {
                                     CommandMessage::Ready => admission.observed_ready(),
-                                    CommandMessage::Draft { .. } | CommandMessage::Save { .. } |
-                                    CommandMessage::Delete { .. } | CommandMessage::Edit { .. } => admission.observed_note_request(),
+                                    CommandMessage::Draft { .. } | CommandMessage::Save { .. } => admission.observed_note_request(),
                                     _ => {},
                                 }
                             }
@@ -246,9 +239,7 @@ impl Session {
                     break;
                 }
                 let write_pin = match &message {
-                    Message::Action(
-                        CommandMessage::Save { pin, .. } | CommandMessage::Delete { pin },
-                    ) => Some(*pin),
+                    Message::Action(CommandMessage::Save { pin, .. }) => Some(*pin),
                     _ => None,
                 };
                 let finish_write = matches!(&message, Message::Finish);
@@ -310,19 +301,6 @@ impl Session {
                                 ensure!(admitted_pin == Some(pin), "Stale note");
                                 save_with_receipt(&mut store, pin, text, &saved_receipt)?;
                                 presentation_events.push(serde_json::json!({"kind": "save"}));
-                            }
-                            CommandMessage::Delete { pin } => {
-                                store.delete(pin)?;
-                                presentation_events.push(serde_json::json!({"kind": "delete"}));
-                            }
-                            CommandMessage::Edit { pin } => {
-                                ensure!(
-                                    store.drafts().iter().any(|n| n.pin == pin),
-                                    "Unknown note"
-                                );
-                                presentation_admission.requested();
-                                admitted_pin = Some(pin);
-                                presentation_events.push(serde_json::json!({"kind": "edit", "pin": pin}));
                             }
                             CommandMessage::Dismiss => {
                                 store.dismiss();
@@ -607,9 +585,7 @@ mod transport_tests {
                 }
             }
         }
-        session.show_list(303, 33);
-        session.sender.send(Message::Action(CommandMessage::Delete { pin: 1 })).unwrap();
-        wait(&|| session.saved_count() == 0);
+        assert_eq!(session.saved_count(), 1);
         assert_eq!(session.finish().recv_timeout(std::time::Duration::from_secs(10)).unwrap(), Ok(FinishOutcome::Drained));
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -662,7 +638,8 @@ mod transport_tests {
         assert!(!receipt.load(Ordering::Acquire));
         save_with_receipt(&mut store,1,"  ".into(),&receipt).unwrap();
         assert!(!receipt.load(Ordering::Acquire));
-        save_with_receipt(&mut store,1,"Move this button".into(),&receipt).unwrap();
+        store.open(2, 150, 0.5, 0.5).unwrap();
+        save_with_receipt(&mut store, 2, "Move this button".into(), &receipt).unwrap();
         assert!(receipt.load(Ordering::Acquire));
         assert_eq!(crate::capture::engine::runtime::recording::notes::read(&dir).unwrap()[0].text,"Move this button");
         std::fs::remove_file(dir.join("notes.json")).unwrap();std::fs::remove_dir(&dir).unwrap();

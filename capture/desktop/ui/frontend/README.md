@@ -638,18 +638,19 @@ Routing is unchanged and there is no second notes presentation. Roll back this
 slice by reverting the paired Rust event protocol, generated policy build and
 Electron consumer together; unrelated native control routing remains bounded.
 Do not remove native integration until packaged macOS and isolated Linux
-acceptance verifies focus, placement, hide/restore, save/delete/error recovery
+acceptance verifies focus, placement, hide/restore, attachment, read-only list, save recovery
 and finish receipts. A provider test must observe actual Ready before injecting
 requests; a pre-Ready child exit is a failed native gate, never a policy pass.
 
 A private inherited pipe carries click-time anchors and bounded note commands.
-Only trusted local main frames can submit draft/save/edit/delete/dismiss/list;
+Only trusted local main frames can submit draft, save and dismiss requests;
 no renderer paths, window IDs, IPC names, shell or network commands are accepted.
 Rust writes saved notes to `notes.json` before acknowledging/counting them;
-unsent drafts stay in the capture's Rust session rather than note metadata/summary. Linux display video still includes the visible popup and its text. Enter with no text closes the
-field and retains the pin. Escape keeps the in-capture draft; Shift+Enter adds
-a newline. Capture completion closes this capture-local surface. Restarting or
-ending a capture does not promise recovery of unsubmitted drafts.
+the pill opens a read-only list of attached notes. Unsubmitted text stays in the
+editor while it is open, including after a failed save. Dismissing the editor
+discards unsubmitted text. Linux display video still includes the visible popup
+and its text. Enter with no text closes the field and retains the pin. Shift+Enter
+adds a newline. Capture completion closes this capture-local surface.
 
 If the notes child exits before readiness and before Rust admits any note request,
 Rust seals admission and returns a distinct unavailable-before-admission outcome.
