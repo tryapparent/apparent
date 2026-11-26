@@ -524,14 +524,12 @@ After native prerequisites pass, the prepared Electron download-cache path is
 exported to subsequent job steps. Clean packaging installs reuse that archive
 while retaining the ordinary installer and its checksum/version checks.
 
-The development Mac installer stages Settings and popup assets through
-`packaging/frontend/stage.ts`. Settings performs its ordinary locked installs,
-full frontend/Connect builds and nested signing first; popups then consume that
-same fresh frontend output before outer app signing. There is no prepared flag,
-result cache or cross-run reuse. Standalone Notes/Settings packaging and other
-release/Linux packagers retain their cold paths. Native CI needs no additional
-frontend build after this installer; its packaged media tests and installed GUI
-assertions still run.
+The Mac development installer and Linux AppImage packager stage Settings and
+popups through `packaging/frontend/stage.ts`. Settings prepares locked
+dependencies, builds the frontend and Connect, and signs nested Mac code.
+Popups use that fresh build. Standalone Notes/Settings and the Mac release
+packager retain their cold paths. Native CI still runs packaged media and
+installed GUI checks.
 The installer and staging entrypoint share explicit Desktop, native, tooling and
 foreground consumers in the canonical map, retaining installation contracts.
 Executable uncertainty still selects the full conservative plan. Shared consumer

@@ -42,6 +42,7 @@ fn main() {
     compile_embedded_policy("agent/context/build.ts", &[
         "agent/context", "agent/enablement/ci/bend",
     ], "agent-handoff-line.mjs");
+    compile_video_worker();
     record_media_build::compile_record_media();
     sparkle_outcomes::compile();
     println!("cargo:rerun-if-env-changed=APPARENT_POSTHOG_TOKEN");
@@ -144,6 +145,21 @@ fn compile_embedded_policy(generator: &str, sources: &[&str], module: &str) {
 
 #[path = "engine/native/record_media_build.rs"]
 mod record_media_build;
+
+fn compile_video_worker() {
+    let generator = "agent/enablement/ci/bend/video.ts";
+    for input in [generator, "agent/video", "agent/enablement/ci/bend/modules.json", "shared/enablement/bend"] {
+        println!("cargo:rerun-if-changed={input}");
+    }
+    let destination = PathBuf::from(std::env::var_os("OUT_DIR").expect("Cargo output directory"))
+        .join("video-worker");
+    let result = Command::new("node")
+        .arg(generator)
+        .arg(destination)
+        .output()
+        .expect("Node 22 is required to compile the video worker");
+    assert!(result.status.success(), "Compile video worker: {}", String::from_utf8_lossy(&result.stderr));
+}
 
 fn emit_recording_permissions() {
     let generator = "record/enablement/permissions/native.ts";

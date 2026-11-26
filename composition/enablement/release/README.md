@@ -34,4 +34,8 @@ Linux Main and Stable also publish an `Apparent-CLI-VERSION-amazon-linux-2023-x8
 
 Download the ZIP and its `.sha256` from the same release. Run `sha256sum -c <archive>.sha256`, then `unzip <archive>` in a fresh directory. Run `./apparent-cli/apparent inspect ./capture.apparent`, and keep the binary beside its `lib/` directory. Fetching a hosted capture still requires outbound HTTPS and read approval.
 
+Use the full Linux AppImage on a [compatible Linux system](../../../capture/agent/docs/installation.md#linux-appimage-ubuntu-2404-x86_64-or-aarch64)
+to run `apparent zoom`. The headless ZIP omits the packaged Agent media worker
+that creates zoom contact sheets.
+
 On an x86-64 Linux machine with Docker, reproduce the build from the repository root with `node --experimental-strip-types composition/enablement/release/amazon-linux-cli/build.ts /path/to/output /path/to/producer.AppImage`.

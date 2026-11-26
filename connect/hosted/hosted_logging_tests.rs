@@ -121,3 +121,31 @@ fn hosted_upload_logging_omits_sensitive_paths_and_error_contents() {
         );
     }
 }
+
+#[test]
+fn hosted_inspect_and_zoom_shared_destinations_explain_private_retry() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let shared = root.join("shared");
+    std::fs::create_dir(&shared).unwrap();
+    std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o770)).unwrap();
+
+    let id = "0123456789abcdef0123456789abcdef";
+    for args in [&["inspect", id][..], &["zoom", id, "--at", "0:01"][..]] {
+        let output = super::hosted_tests::inspect_subprocess(&root.join("config.json"), &shared, args);
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let diagnostic = stderr.lines().next().unwrap_or_default();
+        for expected in [
+            "Connect download destination directory",
+            "Unsafe shared or unowned directory tree",
+            "group or other users have write permission",
+            "Retry from a private working directory",
+            "apparent inspect --out",
+        ] {
+            assert!(diagnostic.contains(expected), "{stderr}");
+        }
+        assert!(!stderr.contains(&*root.to_string_lossy()), "{stderr}");
+    }
+    assert!(std::fs::read_dir(&shared).unwrap().next().is_none());
+}

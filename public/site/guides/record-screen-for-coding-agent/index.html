@@ -39,6 +39,12 @@
 apparent zoom ./your-capture.apparent --at 0:20</code></pre>
         <blockquote><p>Check the frames around the moment the menu closes. Tell me which control I was pointing to and what should change before you edit.</p></blockquote>
       </section>
+
+      <section aria-labelledby="linux-codex-example">
+        <h2 id="linux-codex-example">Linux example with Codex</h2>
+        <p>On a Hyprland desktop, we clicked <strong>File actions</strong> in a test app, paused, then moved the pointer toward <strong>Rename</strong>. The menu closed before the pointer reached it. Apparent transcribed the generated narration and copied a handoff with the clicked moment and an <code>apparent inspect</code> command pointing to the local bundle.</p>
+        <p>The click appeared at 1:01. With the Linux desktop AppImage, <code>apparent zoom ./your-capture.apparent --at 1:01 --span 5</code> showed Rename at 1:03.386 and the closed menu at 1:03.840. Given the handoff and two frames, Codex identified which menu needed to stay open and why. Use the timestamp from your own handoff to ask Codex to compare frames before and after the problem.</p>
+      </section>
     </main>
     <footer class="shell">
       <nav aria-label="Related guides">

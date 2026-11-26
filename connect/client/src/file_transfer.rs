@@ -207,7 +207,7 @@ impl Client {
         ensure!(parent.is_dir(), "Output parent must already exist");
         trusted_directory_tree(parent, true).map_err(|error| {
             let message = format!(
-                "Connect download destination directory: {error}. Retry from a private working directory, or use apparent fetch --out to choose a private destination"
+                "Connect download destination directory: {error}. Retry from a private working directory, or use apparent inspect --out or apparent fetch --out to choose a private destination"
             );
             error.context(message)
         })?;
@@ -369,69 +369,6 @@ impl Client {
     }
 }
 
-impl Client {
-    pub fn style_source(&self, bundle: &Path) -> Option<String> {
-        if let Ok(bytes) = read_private(&bundle.join(".connect-style.json"), 256) {
-            let receipt: Value = serde_json::from_slice(&bytes).ok()?;
-            return receipt["captureId"].as_str().filter(|id| valid_id(id)).map(str::to_owned);
-        }
-        if !self.provider.experiment(SPEAKING_STYLE) || !self.enabled() {
-            return None;
-        }
-        let path = bundle.canonicalize().ok()?;
-        let job = self.jobs().ok()?.into_iter().find(|job| {
-            job.bundle == path && job.speaking_style && job.encrypted && self.active(job)
-        })?;
-        Some(job.id)
-    }
-
-    pub fn visit_style_transcripts(&self, id: &str, profile: Option<&str>, local: Option<&Path>, mut visit: impl FnMut(&str, usize) -> Result<bool>) -> Result<()> {
-        ensure!(valid_id(id), "Expected a Connect capture ID");
-        let base = format!("/v1/captures/{id}");
-        let reader = match profile {
-            Some("default") => self.clone(),
-            Some(name) => self.named_reader(name)?,
-            None => self.resolve_reader(&base, 0, Instant::now())?
-                .map(|(client, _, _)| client).unwrap_or_else(|| self.clone()),
-        };
-        let credential = reader.read_credential()?;
-        let current = || reader.read_credential().is_ok_and(|c| c.generation == credential.generation && c.server == credential.server);
-        let response = reader.json_request(&credential.server, Some(&credential), "GET",
-            &format!("{base}/style-history"), None, Duration::from_secs(15), &current)?;
-        let budget = response["tokenBudget"].as_u64().filter(|n| (1..=1024).contains(n))
-            .context("Invalid Connect transcript budget")? as usize;
-        let ids: Vec<String> = serde_json::from_value(response["ids"].clone())?;
-        ensure!(ids.len() <= 12 && ids.iter().all(|other| valid_id(other) && other != id), "Invalid Connect history");
-        let read = |source: &str| -> Result<Value> {
-            ensure!(current(), "Connect reader changed");
-            let scratch = Scratch::new(&reader.state)?;
-            let out = scratch.0.join("transcript");
-            reader.fetch_inner(source, &out, 0, Some(&["apparent.json".into()]), false)?;
-            ensure!(current(), "Connect reader changed");
-            let metadata = out.join("apparent.json");
-            if source == id && let Some(path) = local {
-                ensure!(digest_file(&metadata)? == digest_file(&path.join("apparent.json"))?, "Local recording does not match this Connect capture");
-            }
-            Ok(serde_json::from_reader(File::open(metadata)?)?)
-        };
-        if ids.is_empty() { return Ok(()); }
-        let anchor = read(id)?;
-        let current_id = anchor["id"].as_str().context("Missing recording ID")?;
-        for candidate in ids {
-            let manifest = match read(&candidate) {
-                Ok(value) => value,
-                Err(error) if matches!(error.to_string().as_str(), "Hosted API: not_found" | "encryption_decrypt_failed" | "encryption_sender_revoked_or_unapproved") => continue,
-                Err(error) => return Err(error),
-            };
-            let recording = manifest["id"].as_str().context("Missing recording ID")?;
-            if recording != current_id && let Some(text) = manifest["transcript"]["text"].as_str() && visit(text, budget)? {
-                break;
-            }
-        }
-        Ok(())
-    }
-}
-
 pub(super) fn publish_noreplace(from: &Path, to: &Path) -> Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -455,4 +392,76 @@ pub(super) fn publish_noreplace(from: &Path, to: &Path) -> Result<()> {
         std::io::Error::last_os_error()
     );
     Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn test_stalled_transport(client: &Client, id: &str, out: &Path, authorize: impl Fn(&str)) {
+    use std::net::TcpListener;
+
+    let stalled = TcpListener::bind("127.0.0.1:0").unwrap();
+    let origin = format!("http://{}", stalled.local_addr().unwrap());
+    authorize(&origin);
+    let error = client.fetch(id, out, 1).unwrap_err().to_string();
+    assert!(error.contains("stage=manifest, "), "{error}");
+    assert!(error.contains("curl_exit=28") || error.contains("client_deadline"), "{error}");
+    assert!(error.contains("https://app.tryapparent.com/connect/mcp"), "{error}");
+    for private in [origin.as_str(), id, &out.display().to_string()] {
+        assert!(!error.contains(private), "{error}");
+    }
+    assert!(!out.exists());
+    let asset_route = format!("/v1/captures/{id}/files/apparent.json");
+    for (method, route, stage) in [
+        ("GET", asset_route.as_str(), "file"),
+        ("GET", "/v1/encryption/peers", "peer_authorization"),
+        ("POST", "/v1/token/refresh", "credential_renewal"),
+    ] {
+        let scratch = Scratch::new(&client.state).unwrap();
+        let error = client.raw_request(
+            &origin, Some("synthetic-read-secret"), method, route, None,
+            &scratch.0.join("response"), 1024, Duration::from_millis(150), &|| true,
+        ).unwrap_err().to_string();
+        assert!(error.contains(&format!("stage={stage}, ")), "{error}");
+        assert!(error.contains("curl_exit=28") || error.contains("client_deadline"), "{error}");
+        for private in [route, origin.as_str(), "synthetic-read-secret"] {
+            assert!(!error.contains(private), "{error}");
+        }
+    }
+}
+
+#[cfg(any(test, feature = "test-support"))]
+#[cfg_attr(test, test)]
+pub fn hosted_transport_network_timeout_and_cancellation() {
+    use crate::test_support::{Fixture, Server};
+
+    let f = Fixture::new();
+    let server = Server::new("slow");
+    let stage = Scratch::new(&f.client.state).unwrap();
+    let start = Instant::now();
+    let capture = "a".repeat(32);
+    let secret = "synthetic-secret";
+    let error = f.client.raw_request(
+        &server.url, Some(secret), "GET", &format!("/v1/captures/{capture}/files/{secret}"),
+        None, &stage.0.join("timeout"), 100, Duration::from_millis(100), &|| true,
+    ).unwrap_err().to_string();
+    assert!(start.elapsed() < Duration::from_secs(1));
+    assert!(error.contains("[stage=file, "), "{error}");
+    assert!(error.contains("curl_exit=28, http_status=0") || error.contains("client_deadline"), "{error}");
+    assert!(error.contains("request_timeout_ms=100]"), "{error}");
+    for private in [server.url.as_str(), &capture, secret] {
+        assert!(!error.contains(private), "{error}");
+    }
+    let cancelled = stage.0.join("cancelled");
+    assert!(f.client.request(
+        &server.url, None, "GET", "/v1/account", None, &cancelled, 100,
+        Duration::from_secs(1), &|| false,
+    ).is_err());
+    assert!(!cancelled.exists());
+}
+
+pub(super) fn config_escape(value: &str) -> Result<String> {
+    ensure!(
+        !value.bytes().any(|b| b.is_ascii_control()),
+        "Invalid transport value"
+    );
+    Ok(value.replace('\\', "\\\\").replace('"', "\\\""))
 }
