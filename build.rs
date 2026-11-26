@@ -187,20 +187,46 @@ fn stage_transcribe_shared_objects() {
     // Cargo layouts include build/<package>-<hash>/out and, in newer Cargo,
     // build/<package>/<hash>/out. Locate the profile by its build directory,
     // rather than staging into build/ when the package adds another level.
-    let profile = out_dir
+    let build_dir = out_dir
         .ancestors()
         .find(|path| path.file_name().is_some_and(|name| name == "build"))
-        .and_then(|path| path.parent())
         .expect("Unexpected OUT_DIR layout");
+    let profile = build_dir.parent().expect("Missing Cargo profile directory");
     for key in [
         "DEP_TRANSCRIBE_CPP_RUNTIME_DIR",
         "DEP_TRANSCRIBE_CPP_MODULE_DIR",
     ] {
         println!("cargo:rerun-if-env-changed={key}");
-        let source =
+        let mut source =
             PathBuf::from(std::env::var_os(key).expect("dynamic transcribe runtime missing"));
+        if let Some((build, suffix)) = source.ancestors().find_map(|path| {
+            if path.file_name()? != "build" {
+                return None;
+            }
+            let suffix = source.strip_prefix(path).ok()?;
+            let mut parts = suffix.iter();
+            let package = parts.next()?.to_str()?;
+            let hash = if package == "transcribe-cpp-sys" {
+                parts.next()?.to_str()?
+            } else {
+                package.strip_prefix("transcribe-cpp-sys-")?
+            };
+            (!hash.is_empty()
+                && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+                && parts.next()? == "out")
+                .then_some((path, suffix))
+        }) && build != build_dir && std::env::var_os("TRANSCRIBE_DIR").is_none()
+        {
+            source = build_dir.join(suffix);
+        }
         let mut count = 0;
-        for entry in std::fs::read_dir(&source).expect("read transcribe runtime") {
+        let entries = std::fs::read_dir(&source).unwrap_or_else(|error| {
+            panic!(
+                "Cannot read transcribe runtime at {}: {error}. For an incomplete or moved Cargo cache, rebuild with a fresh CARGO_TARGET_DIR and CARGO_BUILD_BUILD_DIR.",
+                source.display()
+            )
+        });
+        for entry in entries {
             let path = entry.expect("read transcribe library").path();
             let name = path.file_name().unwrap();
             if !name.to_string_lossy().contains(".so") || !path.is_file() {
