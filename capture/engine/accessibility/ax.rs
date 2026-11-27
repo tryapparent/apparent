@@ -1,4 +1,4 @@
-#[path = "../../../engine/accessibility/macos_pin.rs"]
+#[path = "../../../engine/native/macos/desktop/macos_pin.rs"]
 pub(crate) mod pin_window;
 
 #[cfg(target_os = "macos")]
@@ -8,8 +8,6 @@ use core_foundation::string::{CFString, CFStringRef};
 #[path = "../../../engine/accessibility/macos_browser.rs"]
 mod browser;
 pub use browser::apply;
-#[cfg(target_os = "macos")]
-use browser::window_at;
 
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]
@@ -271,7 +269,7 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
     let system_owner = pid_of(element.0)?;
     let direct_browser_hit = system_owner != own && browser::is_browser(system_owner);
     let raw = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-    let front_window = window_at(&raw, x, y, own, direct_browser_hit);
+    let front_window = browser::window_at(&raw, x, y, own, direct_browser_hit);
     if system_owner == own {
         let pid = front_window?.pid;
         let app = Owned(unsafe { AXUIElementCreateApplication(pid) });
@@ -360,7 +358,7 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
         .and_then(|window| {
             let url = browser::browser_page(element.0, window.pid, started)?;
             let after = objc2::rc::autoreleasepool(|_| crate::shared::windows::raw_windows());
-            let current = window_at(&after, x, y, own, direct_browser_hit);
+            let current = browser::window_at(&after, x, y, own, direct_browser_hit);
             current.is_some_and(|current| current.id == window.id && current.pid == window.pid)
                 .then_some((window.id, url))
         });
