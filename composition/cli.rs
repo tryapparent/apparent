@@ -410,9 +410,7 @@ enum Command {
         /// The moment: a time (`0:12`, `12.5`) or a phrase from the narration ("width changes").
         #[arg(long, required_unless_present = "mark", conflicts_with = "mark")]
         at: Option<String>,
-        /// A mark, centred with its ink drawn: its number in the summary (`2` for ✎②) or its id
-        /// (`m2`). `apparent inspect --marks` lists them.
-        #[arg(long)]
+        #[arg(long, help = "Mark number within a keyframe (use --frame if it repeats), or a stable mark ID from apparent inspect --marks")]
         mark: Option<String>,
         #[arg(long, requires = "mark", help = "Keyframe timestamp or number for the mark")]
         frame: Option<String>,
