@@ -13,10 +13,10 @@
         "instructions": "Check the failed start JSON, then run apparent capture inspect <id> and repeat Start with the same ID. The portable receipt check is cargo test capture_start_reports_permission_blockers_on_wait_and_retry."
       },
       "expectedEvidence": [
-        "All three receipts contain the same ID, missing_permissions and the required permission names, with no bundle path. After granting permissions in the guest, use a new request ID and verify that capture can start normally."
+        "All three receipts contain the same ID, missing_permissions and the required permission names, with no bundle path. On macOS, dismiss the permission prompt with the Recording pane open, then verify capture control still answers. After granting permissions in the guest, use a new request ID and verify that capture can start normally."
       ],
       "limits": [
-        "The portable test replays permission decisions through the receipt and CLI wait code. Actual grant observation, permission repair and capture require the installed macOS check."
+        "The portable tests replay permission decisions through the receipt and CLI wait code and check that Recording settings synchronize without reading login-item status (cargo test recording_settings_sync_does_not_read_login_item_status). Actual grant observation, permission repair and capture require the installed macOS check."
       ]
     },
     {
