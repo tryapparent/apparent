@@ -1,11 +1,12 @@
-//! Capture-local typed explanations. Rust owns persistence and click-time anchors.
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+#[path = "../../../../engine/native/notes/lifecycle.rs"]
+pub(crate) mod lifecycle;
+
 pub const MAX_TEXT_BYTES: usize = 8_192;
 const MAX_NOTES: usize = 100;
-// JSON can escape one input byte as six bytes (e.g. a control character).
 const MAX_SAVED_BYTES: usize = MAX_NOTES * MAX_TEXT_BYTES * 6 + 65_536;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

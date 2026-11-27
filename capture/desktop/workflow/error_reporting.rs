@@ -1,6 +1,5 @@
 //! Desktop-only, content-free PostHog errors. Never forward log/error/panic text.
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::{io::{Read, Write}, path::{Path, PathBuf}};
 use std::process::{Command, Stdio};
 use std::sync::{OnceLock, mpsc};
 use std::time::{Duration, Instant};
@@ -179,7 +178,7 @@ impl Report {
     }
     fn finalization(error: &anyhow::Error, location: &std::panic::Location<'_>, consent: Consent) -> Self {
         let mut report = Self::new(Failure::FinalizeCapture, location, consent);
-        report.finalization = Some(finalization::Diagnostics::from_error(error));
+        report.finalization = Some(finalization::Diagnostics::from_error(error, source_file));
         report
     }
 
