@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { matchesSavedClipboard } from "../../../../record/enablement/performance/clipboard/payload.ts";
 import {
   type Interval,
   interval,
@@ -257,7 +258,6 @@ for (const id of fixtureIds) {
     receipt.status !== "saved" ||
     !leaf.endsWith(".apparent") ||
     !(start <= live && live < stop && stop < saved && stop < clipboard) ||
-    !read(id + "-clipboard.txt").includes(receipt.bundle_path) ||
     measured(id, "paste") !== clipboard - stop ||
     proof.actualInk !== fixture.strokes ||
     Math.abs(proof.durationMs - fixture.seconds * 1000) > 2250 ||
@@ -269,6 +269,16 @@ for (const id of fixtureIds) {
     readFileSync(resolve(bundle, "apparent.json"), "utf8"),
   );
   const transcript = manifest.transcript;
+  if (
+    !matchesSavedClipboard(
+      read(id + "-clipboard.txt"),
+      receipt.bundle_path,
+      transcript.text,
+      fixture.strokes > 0,
+    )
+  ) {
+    throw Error("Unqualified clipboard evidence for " + id);
+  }
   const clocks = transcript.words ?? [];
   if (fixture.audio === "spoken") {
     if (

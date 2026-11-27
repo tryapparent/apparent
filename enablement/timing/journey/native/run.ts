@@ -137,6 +137,7 @@ await Promise.all([
   source("record/enablement/performance/fixtures/config.ts"),
   source("shared/enablement/performance/measurement.ts"),
   source("record/enablement/performance/clipboard/guest.ts"),
+  source("record/enablement/performance/clipboard/payload.ts"),
   source("record/enablement/performance/fixture-clock.ts"),
   stageFile(join(kit, "sample.ts"), "sample.ts"),
   stageFile(
