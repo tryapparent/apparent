@@ -17,6 +17,7 @@
       "expectedEvidence": [
         "The Bend coverage check requires generated pane IDs, production bindings and round-trip samples. Negative fixtures reject invalid paths and writes.",
         "Electron fixtures report successful navigation, keyboard changes, save acknowledgement and recovery. The Recording smoke also exercises Settings → Handoff → Auto paste.",
+        "The shared-shell Electron smoke exercises Settings → Labs → Frog wardrobe. Keyboard actions enable, equip and remove through the Settings bridge. A capability refusal leaves the control unconfirmed until refresh.",
         "The native release check verifies discovery and direct CLI round trips with an isolated config."
       ],
       "limits": [

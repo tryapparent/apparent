@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkCompactFocus } from "./compact-focus.mts";
+import { checkWardrobe } from "./wardrobe.mts";
 
 const frontend = fileURLToPath(
   new URL("../../../../capture/desktop/ui/frontend/", import.meta.url),
@@ -78,6 +79,9 @@ test("Settings changes adopted panes in one live document and enforces the curre
   const actions: Record<string, unknown>[] = [];
   let holdLabs = false,
     heldLabs: Record<string, unknown> | undefined;
+  let wardrobeSupported = true;
+  let wardrobeEnabled = false;
+  let lilyPadEquipped = false;
   createInterface({ input: child.stdout! }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
@@ -96,6 +100,21 @@ test("Settings changes adopted panes in one live document and enforces the curre
         });
     }
     if (action.action === "labs-preference") {
+      const wardrobeWrite =
+        action.setting === "frogWardrobe" || action.wardrobe;
+      if (wardrobeWrite && !wardrobeSupported) {
+        send({
+          type: "labs-result",
+          request: action.request,
+          facts: { error: "config_write_failed" },
+        });
+        return;
+      }
+      if (action.setting === "frogWardrobe")
+        wardrobeEnabled = action.enabled === true;
+      if (action.wardrobe)
+        lilyPadEquipped =
+          (action.wardrobe as { action: string }).action === "equip";
       if (holdLabs) heldLabs = action;
       else
         send({
@@ -108,6 +127,22 @@ test("Settings changes adopted panes in one live document and enforces the curre
             autoPasteSupported: process.platform === "linux",
             wisprSaved: false,
             wisprSupported: process.platform === "darwin",
+            desktopFrogSaved: true,
+            frogWardrobe: wardrobeSupported
+              ? {
+                  enabled: wardrobeEnabled,
+                  count: 30,
+                  items: [
+                    { id: "sunglasses", threshold: 10, action: "equip" },
+                    {
+                      id: "lily-pad",
+                      threshold: 30,
+                      action: lilyPadEquipped ? "remove" : "equip",
+                    },
+                    { id: "unicorn-horn", threshold: 60, action: "" },
+                  ],
+                }
+              : null,
           },
         });
     }
@@ -288,6 +323,10 @@ test("Settings changes adopted panes in one live document and enforces the curre
       "same document",
     );
     assert.equal(loads, 0, "navigation never reloads Chromium");
+    await checkWardrobe(page, session, actions, () => {
+      wardrobeSupported = false;
+    });
+    wardrobeSupported = true;
     await openPane("General");
     await expect(
       page.getByRole("switch", { name: "Launch at login" }),
