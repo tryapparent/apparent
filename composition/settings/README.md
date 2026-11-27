@@ -85,7 +85,7 @@ leaves the saved value uncertain until the native state arrives.
 
 After the ordinary frontend bootstrap, run `npm run build` in
 `capture/desktop/ui/frontend` to rebuild the installed Settings renderer and
-Bend module on Linux. Run the existing `tests/settings/shared-shell.smoke.ts`
+Bend module on Linux. Run the `composition/settings/enablement/shell/shared-shell.smoke.mts`
 Electron test to verify navigation, keyboard operation, and save/refusal with a
 synthetic native parent. For a real-provider check, stage the same Settings
 package beside an unchanged native app built with the Recording bridge. Its
