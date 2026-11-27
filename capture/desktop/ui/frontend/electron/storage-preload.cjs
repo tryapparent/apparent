@@ -25,12 +25,10 @@ contextBridge.exposeInMainWorld('apparentHandoff', Object.freeze({
 }));
 
 contextBridge.exposeInMainWorld('apparentSettingsMounted', async () => {
-  // React has committed its DOM. Do not hold that fact behind hidden-page
-  // animation scheduling: Chromium may already have supplied first paint.
-  await ipcRenderer.invoke('apparent:settings-mounted');
-  // The hidden page gets a render opportunity between these callbacks. Keep
-  // this in the isolated preload, independent of the page's animation helpers.
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const committed = ipcRenderer.invoke('apparent:settings-mounted');
+  const frame = new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  if (await committed) return;
+  await frame;
   await ipcRenderer.invoke('apparent:settings-frame-ready');
 });
 

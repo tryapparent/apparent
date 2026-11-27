@@ -180,11 +180,11 @@ app.whenReady().then(() => {
     startupTimer = setTimeout(failSettings, 15000);
     startupTimer.unref();
     window.once('ready-to-show', () => {
+      if (settingsMounted) return;
       settingsPainted = true;
       showSettings();
     });
   }
-  // AppKit applies the inset titlebar metrics after constructor-time centering.
   if (settings && process.platform === 'darwin') window.center();
   followWindowTheme(nativeTheme, window);
   window.removeMenu();
@@ -208,7 +208,7 @@ app.whenReady().then(() => {
     if (!settings) throw new Error('Unavailable outside Settings');
     if (settingsClosing || window.isDestroyed()) return;
     settingsCommitted = true;
-    return showSettings();
+    return Promise.resolve(showSettings()).then(() => settingsMounted);
   });
   ipcMain.handle('apparent:settings-route', (event, ...args) => {
     validate(event, args);
@@ -218,8 +218,11 @@ app.whenReady().then(() => {
   ipcMain.handle('apparent:settings-frame-ready', (event, ...args) => {
     validate(event, args);
     if (!settings) throw new Error('Unavailable outside Settings');
+    if (settingsMounted) return;
     settingsPainted = true;
-    return showSettings();
+    return Promise.resolve(settingsFrame).then(() => {
+      if (!settingsMounted) return showSettings();
+    });
   });
   ipcMain.handle('apparent:general-read', (event, ...args) => {
     validate(event, args);
