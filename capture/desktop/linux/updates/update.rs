@@ -8,7 +8,7 @@ use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, TryLockError};
-use super::get;
+use super::{PublicReleaseLimit, get};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -393,14 +393,18 @@ fn latest_candidate_with(
     arch: &str,
     fetch: &impl Fn(&str) -> Result<Vec<u8>>,
 ) -> Result<Option<Candidate>> {
-    let candidate = candidate_from_history(&release_history(fetch)?, channel, arch, fetch)?;
+    let (releases, cap) = release_history(fetch)?;
+    let candidate = candidate_from_history(&releases, channel, arch, fetch)?;
+    if candidate.is_none() && let Some(error) = cap {
+        return Err(error);
+    }
     if channel == "main" {
         return candidate.context("no published Linux main preview yet").map(Some);
     }
     Ok(candidate)
 }
 
-fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Release>> {
+fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<(Vec<Release>, Option<anyhow::Error>)> {
     use std::sync::{OnceLock, atomic::{AtomicU32, Ordering}};
     static REQUESTS: AtomicU32 = AtomicU32::new(0);
     static START: OnceLock<Instant> = OnceLock::new();
@@ -413,7 +417,13 @@ fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Relea
             .map_err(|error| updates::discovery_failure(error, updates::ReleaseDiscovery {
                 page, requests_in_process: requests,
                 elapsed_seconds: start.elapsed().as_secs().min(u64::from(u32::MAX)) as u32,
-            })).stage(Stage::ReleaseListFetch)?;
+            })).stage(Stage::ReleaseListFetch);
+        let body = match body {
+            Err(error) if page == 11 && error.chain().any(|cause| cause.is::<PublicReleaseLimit>()) => {
+                return Ok((releases, Some(error)));
+            }
+            body => body?,
+        };
         let page_releases: Vec<Release> = serde_json::from_slice(&body).context("invalid release list").stage(Stage::ReleaseListParse)?;
         ensure_update!(page_releases.len() <= 100, "oversized release page");
         complete = page_releases.len() < 100;
@@ -421,7 +431,7 @@ fn release_history(fetch: &impl Fn(&str) -> Result<Vec<u8>>) -> Result<Vec<Relea
         if complete { break; }
     }
     ensure_update!(complete, "release discovery exceeded its page limit");
-    Ok(releases)
+    Ok((releases, None))
 }
 
 fn installed_id(image: &Path) -> Option<(String, String)> {
@@ -711,6 +721,10 @@ pub fn start() {
         std::thread::sleep(Duration::from_secs(3600));
     });
 }
+
+#[cfg(test)]
+#[path = "../../../../engine/native/desktop/updates/discovery_tests.rs"]
+mod discovery_tests;
 
 #[cfg(test)]
 mod tests {
@@ -1025,7 +1039,7 @@ mod tests {
         assert!(candidate.url.ends_with("-linux-aarch64.AppImage"));
     }
 
-    fn stable_release_fixture(tag: &str, arch: &str) -> serde_json::Value {
+    pub(super) fn stable_release_fixture(tag: &str, arch: &str) -> serde_json::Value {
         let name = format!("Apparent-{}-linux-{arch}.AppImage", tag.strip_prefix('v').unwrap_or(tag));
         let prefix = format!("https://github.com/{REPO}/releases/download/{tag}/");
         serde_json::json!({"tag_name": tag, "draft": false, "prerelease": false,
@@ -1145,34 +1159,6 @@ mod tests {
             Ok(b"invalid checksum".to_vec())
         });
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn main_channel_orders_publications_across_release_pages() {
-        let image = "Apparent-0.3.13-linux-x86_64.AppImage";
-        let release = |letter: &str, date: &str| {
-            let tag = format!("linux-main-v2-{}", letter.repeat(40));
-            let assets: Vec<_> = [image.to_owned(),format!("{image}.sha256")].into_iter().map(|name| {
-                serde_json::json!({"browser_download_url":format!("https://github.com/{REPO}/releases/download/{tag}/{name}"),"name":name})
-            }).collect();
-            serde_json::json!({"tag_name":tag,"prerelease":true,"draft":false,"published_at":date,
-                "assets":assets})
-        };
-        let candidate = latest_candidate_with("main", "x86_64", &|url| {
-            if url.ends_with("?per_page=100&page=11") {
-                return Ok(serde_json::to_vec(&vec![release("b", "2026-10-29T01:00:00Z")])?);
-            }
-            if url.contains("/releases?per_page=100&page=") {
-                return Ok(serde_json::to_vec(&vec![release("a", "2026-10-28T01:00:00Z"); 100])?);
-            }
-            assert!(url.ends_with(".sha256"), "stop after the final partial page");
-            Ok(format!("{}  {image}", "c".repeat(64)).into_bytes())
-        }).unwrap().unwrap();
-        assert_eq!(candidate.id, "b".repeat(40));
-        assert!(latest_candidate_with("main", "x86_64", &|url| {
-            assert!(url.contains("/releases?per_page=100&page="));
-            Ok(serde_json::to_vec(&vec![stable_release_fixture("recipient-component", "x86_64"); 100])?)
-        }).is_err(), "incomplete history must fail before fetching an asset");
     }
 
     #[test]

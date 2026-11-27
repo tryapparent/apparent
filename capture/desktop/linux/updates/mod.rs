@@ -10,19 +10,30 @@ use update::UpdateProgress;
 
 pub(super) const CURL_HTTP_STATUS: &str = "%{stderr}\nAPPARENT_RATE_REMAINING:%header{x-ratelimit-remaining}\nAPPARENT_RATE_LIMIT:%header{x-ratelimit-limit}\nAPPARENT_RATE_RESET:%header{x-ratelimit-reset}\nAPPARENT_RETRY_AFTER:%header{retry-after}\nAPPARENT_TRANSFER_SECONDS:%{time_total}\nAPPARENT_DOWNLOADED_BYTES:%{size_download}\nAPPARENT_HTTP_STATUS:%{http_code}\n";
 
+#[derive(Debug)]
+pub(super) struct PublicReleaseLimit;
+
+impl std::fmt::Display for PublicReleaseLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("GitHub limits public release discovery to 1000 results")
+    }
+}
+
+impl std::error::Error for PublicReleaseLimit {}
+
 pub(super) fn get(url: &str, download: Option<(&Path, u64, &dyn Fn(UpdateProgress))>) -> Result<Vec<u8>> {
     if !url.starts_with("https://") {
         return Err(updates::failure(Stage::Validation, anyhow::anyhow!("update URL must use HTTPS")));
     }
     let mut cmd = Command::new("curl");
-    cmd.args(["--fail", "--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10", "--user-agent", "Apparent", "--url", url]);
+    cmd.args(["--silent", "--show-error", "--location", "--proto", "=https", "--proto-redir", "=https", "--connect-timeout", "10", "--user-agent", "Apparent", "--url", url]);
     cmd.args(["--write-out", CURL_HTTP_STATUS]);
     let output = if let Some((path, total_bytes, progress)) = download {
-        cmd.args(["--max-time", "1800", "--speed-limit", "1024", "--speed-time", "45", "--max-filesize", "1073741824"])
+        cmd.args(["--fail", "--max-time", "1800", "--speed-limit", "1024", "--speed-time", "45", "--max-filesize", "1073741824"])
             .arg("--output").arg(path);
         receive_download(cmd, path, total_bytes, progress)?
     } else {
-        cmd.args(["--max-time", "15", "--max-filesize", "4194304"]);
+        cmd.args(["--fail-with-body", "--max-time", "15", "--max-filesize", "4194304"]);
         cmd.output().context("curl is required for updates")?
     };
     download_output(output)
@@ -55,6 +66,10 @@ pub(super) fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
         let http_status = stderr.lines().last().and_then(|line| line.strip_prefix("APPARENT_HTTP_STATUS:"))
             .filter(|value| value.len() == 3 && value.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|value| value.parse::<u16>().ok());
+        let public_release_limit = http_status == Some(422) && result.stdout.len() <= 4096
+            && serde_json::from_slice::<serde_json::Value>(&result.stdout).is_ok_and(|body| {
+                body["message"] == "Only the first 1000 results are available."
+            });
         let numeric = |prefix: &str| stderr.lines().rev().find_map(|line| line.strip_prefix(prefix))
             .filter(|value| !value.is_empty() && value.len() <= 10 && value.bytes().all(|b| b.is_ascii_digit()))
             .and_then(|value| value.parse::<u32>().ok());
@@ -72,8 +87,12 @@ pub(super) fn download_output(result: std::process::Output) -> Result<Vec<u8>> {
                 reset_after_seconds(reset, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())
             }),
             retry_after_seconds: numeric("APPARENT_RETRY_AFTER:")};
-        return Err(updates::command_failure(updates::Process::Curl, result.status, http,
-            anyhow::anyhow!("download failed: {stderr}")));
+        let cause = if public_release_limit {
+            anyhow::Error::new(PublicReleaseLimit)
+        } else {
+            anyhow::anyhow!("download failed: {stderr}")
+        };
+        return Err(updates::command_failure(updates::Process::Curl, result.status, http, cause));
     }
     Ok(result.stdout)
 }
@@ -83,35 +102,5 @@ pub(super) fn reset_after_seconds(reset: u32, now: u64) -> Option<u32> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::{Read, Write};
-
-    #[test]
-    fn asset_download_reports_partial_bytes_before_real_curl_exits() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("image.download");
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let (observed, finish) = mpsc::channel();
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            stream.set_read_timeout(Some(Duration::from_secs(4))).unwrap();
-            stream.read(&mut [0; 4096]).unwrap();
-            stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 16384\r\nConnection: close\r\n\r\n").unwrap();
-            stream.write_all(&[1; 8192]).unwrap();
-            assert_eq!(finish.recv_timeout(Duration::from_secs(4)).unwrap(),
-                UpdateProgress::Downloading { downloaded_bytes: 8192, total_bytes: 16384 });
-            stream.write_all(&[2; 8192]).unwrap();
-        });
-        let mut cmd = Command::new("curl");
-        cmd.args(["--silent", "--show-error", "--fail", "--noproxy", "*", "--max-time", "5", "--url", &url, "--output"]).arg(&path);
-        let result = receive_download(cmd, &path, 16384, &|event| { let _ = observed.send(event); }).unwrap();
-        assert!(result.status.success());
-        server.join().unwrap();
-        let bytes = fs::read(path).unwrap();
-        assert_eq!(bytes.len(), 16384);
-        assert!(bytes[..8192].iter().all(|&byte| byte == 1));
-        assert!(bytes[8192..].iter().all(|&byte| byte == 2));
-    }
-}
+#[path = "../../../../engine/native/desktop/updates/transfer_tests.rs"]
+mod tests;
