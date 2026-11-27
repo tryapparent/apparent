@@ -196,7 +196,7 @@ fn save_recording(path: &std::path::Path, key: &str, value: &serde_json::Value, 
     Ok(if key == "appleLocale" { Effect::SpeechModel } else { Effect::None })
 }
 
-fn recording_state(view: View, host: &dyn Host) -> serde_json::Value {
+fn recording_state(view: settings::RecordingView, path: &std::path::Path) -> serde_json::Value {
     use crate::capture::engine::runtime::audio::transcription::speech_model;
     let speech = speech_model::current();
     if view.transcriber.engine == "apple" && speech.state == speech_model::State::Unknown {
@@ -213,7 +213,7 @@ fn recording_state(view: View, host: &dyn Host) -> serde_json::Value {
         "platform":if cfg!(target_os="macos") {"macos"} else {"linux"},
         "microphone":view.microphone,"transcriber":view.transcriber,"speech":speech,
         "playback":cfg!(target_os = "macos").then(|| serde_json::json!({"enabled":view.lower_playback,"level":view.playback_level})),
-        "context":crate::recording_preferences::context_state(&host.config_path()),
+        "context":crate::recording_preferences::context_state(path),
         "mediaWarnings":warnings
     }})
 }

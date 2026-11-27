@@ -330,6 +330,7 @@
         "The saved summary retains individual browser page observations at their original times.",
         "The synthetic path, query and fragment are absent from the full handoff, including interaction labels.",
         "A circled synthetic input value stays in the image and is absent from the default handoff text.",
+        "On macOS, change the switch in Recording settings and verify the saved preference. Leave the pane open and start the next capture.",
         "The next recording omits browser site observations after disabling recording context."
       ],
       "limits": [

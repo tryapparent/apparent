@@ -60,5 +60,7 @@ with recording context off and on. Record frame drops, peak process memory
 and elapsed time from Stop to clipboard publication.
 Look for the test path, query and fragment in the full summary and clipboard text,
 including the button and circle labels.
-These markers should be absent from the added context. Repeat with the switch
-off to verify that the next recording omits browser site observations.
+These markers should be absent from the added context. Turn the switch off
+from Recording settings and confirm that the pane reflects the saved value.
+Start the next recording with the pane still open and check that its handoff
+omits browser site observations.
