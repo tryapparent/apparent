@@ -15,6 +15,11 @@ const ciArgs =
   "python3 /home/fixture/.hermes/scripts/gh_owned_wait.py 123 --repo example/repo --head " +
   "a".repeat(40) +
   " --attempt 1 --timeout 1800 --interval 60";
+const ciTemplate = ciArgs + " >${d}/observer.log 2>&1";
+const ciLaunch = (cmd = ciTemplate) =>
+  'const d="/tmp/apparent-dev-ci-fixture";text(await tools.exec_command({cmd:`' +
+  cmd +
+  "`,yield_time_ms:500}))";
 const ciSubshell = [
   "j=/tmp/apparent-dev-ci-fixture",
   "(umask 077; " + ciArgs + ' > "$j/main-ci.log" 2>&1)',
@@ -110,6 +115,50 @@ test("only exact-run observer envelopes with bounded same-job setup are collapse
   );
 });
 
+test("only the literal private log binding in the exact observer wrapper is classified", () => {
+  assert.deepEqual(operations("functions.exec", ciLaunch()), {
+    operations: ["CI observation"],
+    batched: false,
+  });
+  for (const unsupported of [
+    ciLaunch(ciTemplate.replace("${d}", "${other}")),
+    ciLaunch(ciTemplate.replace("${d}", "${d.toString()}")),
+    ciLaunch(ciTemplate.replace("${d}", "${d + '/more'}")),
+    ciLaunch(ciTemplate.replace("observer.log", "$(date).log")),
+    ciLaunch(ciTemplate.replace("observer.log", "${suffix}.log")),
+    ciLaunch(ciTemplate.replace("observer.log", "../observer.log")),
+    ciLaunch(
+      ciTemplate.replace(
+        "--head " + "a".repeat(40),
+        "--head $(git rev-parse HEAD)",
+      ),
+    ),
+    ciLaunch(ciTemplate.replace("--attempt 1", "--attempt $attempt")),
+    ciLaunch(ciTemplate.replace("--interval 60", "--interval 0")),
+    ciLaunch(ciTemplate.replace("gh_owned_wait.py", "other.py")),
+    ciLaunch(ciTemplate + " && git push"),
+    ciLaunch(ciTemplate + "\ncargo test"),
+    ciLaunch(ciTemplate + " < <(date)"),
+    ciLaunch().replace('"/tmp/apparent-dev-ci-fixture"', 'load("job")'),
+    ciLaunch().replace('"/tmp/apparent-dev-ci-fixture"', "getJob()"),
+    ciLaunch().replace("/tmp/apparent-dev-ci-fixture", "/tmp/other"),
+    ciLaunch()
+      .replace("const", "let")
+      .replace(";text", ';d = "/tmp/other";text'),
+    ciLaunch().replace(";text", ';{const d = "/tmp/other";text') + "}",
+    ciLaunch().replace(";text", ";store('job', d);text"),
+    ciLaunch().replace("yield_time_ms:500", "yield_time_ms:getWait()"),
+    ciLaunch().replace("yield_time_ms:500", "yield_time_ms:500, ...options"),
+    ciLaunch() + ";await compute()",
+  ]) {
+    assert.deepEqual(
+      operations("exec", unsupported).operations,
+      ["unknown"],
+      unsupported,
+    );
+  }
+});
+
 test("same producer clocks, process endpoints and overlaps survive relabeling", async () => {
   const dir = mkdtempSync(join(tmpdir(), "apparent-dev-operation-batch-"));
   try {
@@ -140,7 +189,7 @@ test("same producer clocks, process endpoints and overlaps survive relabeling", 
           }),
           start(1_000, "vm", launch(vm)),
           end(2_000, "vm", '{"session_id":123}'),
-          start(2_500, "ci", launch(ci)),
+          start(2_500, "ci", ci),
           end(3_000, "ci", '{"session_id":456}'),
           start(4_000, "ci-wait", poll(456)),
           start(5_000, "unrelated", poll(654)),
@@ -153,8 +202,11 @@ test("same producer clocks, process endpoints and overlaps survive relabeling", 
       return (await readRollout(file, () => true)).calls;
     };
     const vm = vmProof(vmTs, true);
-    const before = await read(vm + "\nls", ciWithLogRead + "\nls");
-    const after = await read(vm, ciWithLogRead);
+    const before = await read(
+      vm + "\nls",
+      ciLaunch().replace('"/tmp/apparent-dev-ci-fixture"', 'load("job")'),
+    );
+    const after = await read(vm, ciLaunch());
     const clocks = (calls: typeof after) =>
       calls.map(({ id, start, end, processObservedEnd }) => [
         id,
@@ -163,6 +215,7 @@ test("same producer clocks, process endpoints and overlaps survive relabeling", 
         processObservedEnd,
       ]);
     assert.deepEqual(clocks(after), clocks(before));
+    assert.deepEqual(before[2].waitedOperations, ["unknown"]);
     assert.deepEqual(
       after.map((c) => c.waitedOperations),
       [

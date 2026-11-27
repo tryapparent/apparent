@@ -55,6 +55,12 @@ helper with a literal run ID, repository, full SHA, attempt, finite timeout
 and interval. They route output to a log in a literal private job directory.
 One uses a subshell with `umask 077`. The other sets the same mask and reads
 one existing log from the job before starting the observer.
+The collector also recognizes the `exec` wrapper that declares a literal
+`const d` under `/tmp/apparent-dev-…` and prints one awaited `exec_command`
+with a numeric `yield_time_ms`. The exact-run command template uses `${d}`
+only as the directory of its `>${d}/name.log 2>&1` destination. The collector
+matches the recorded wrapper and command text offline. Other bindings,
+interpolations, or additional work receive no attribution from this rule.
 
 The isolated VM Start proof label covers the observed surface-enabled Bash
 and TypeScript benchmark runners with literal packaged inputs and image

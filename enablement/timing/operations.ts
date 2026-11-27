@@ -1,5 +1,5 @@
 /** Static inspection only: never evaluate tool arguments or historical commands. */
-import { wholeShellOperation } from "./shell/launch-shapes.ts";
+import { isExactRunObserverLogTemplate, wholeShellOperation } from "./shell/launch-shapes.ts";
 type Token = {value: string; literal?: boolean; dynamic?: boolean};
 type ShellWord = {value: string; dynamic?: boolean};
 
@@ -186,6 +186,8 @@ export function operations(tool: string, source: string): {operations:string[]; 
   try {direct = JSON.parse(source);} catch { /* Custom exec wrappers are code, not JSON. */ }
   if (/exec_command|shell|execute/.test(tool) && typeof direct?.cmd === 'string') return finish(shellOperations(direct.cmd), false);
   if (!/^(exec|functions\.exec)$/.test(tool)) return finish([toolOperation(tool)], false);
+  const observer = source.match(/^\s*const\s+d\s*=\s*"\/tmp\/apparent-dev-[A-Za-z0-9][\w.-]*"\s*;\s*text\(await\s+tools\.exec_command\(\{\s*cmd:\s*`([^`\\\r\n]*)`,\s*yield_time_ms:\s*[1-9]\d{0,8}\s*\}\)\)\s*;?\s*$/);
+  if (observer && isExactRunObserverLogTemplate(observer[1])) return finish(['CI observation'], false);
   const ts = tokens(source), found: string[] = []; let commands = 0, nested = 0;
   for (let i = 0; i + 3 < ts.length; i++) {
     if (ts[i].literal || ts[i].value !== 'tools' || ts[i+1].value !== '.' || ts[i+2].literal || ts[i+3].value !== '(') continue;

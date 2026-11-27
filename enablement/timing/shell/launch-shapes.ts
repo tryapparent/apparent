@@ -23,15 +23,32 @@ function isGuardedPrObserver(source: string): boolean {
   );
 }
 
+function exactRunObserverRedirect(command: string): string | undefined {
+  return command.match(
+    /^python3 \/home\/[\w-]+\/\.hermes\/scripts\/gh_owned_wait\.py [1-9]\d* --repo [\w-]+\/[\w.-]+ --head [a-fA-F0-9]{40} --attempt [1-9]\d* --timeout [1-9]\d{0,8} --interval [1-9]\d{0,8} ?(>[^\r\n]+)$/,
+  )?.[1];
+}
+
+export function isExactRunObserverLogTemplate(command: string): boolean {
+  const redirect = exactRunObserverRedirect(command);
+  return (
+    redirect !== undefined && /^>\$\{d\}\/[\w-]+\.log 2>&1$/.test(redirect)
+  );
+}
+
+function observerShellJob(command: string): string | undefined {
+  return exactRunObserverRedirect(command)?.match(
+    /^> "\$(j|job)\/[\w-]+\.log" 2>&1$/,
+  )?.[1];
+}
+
 function isExactRunObserver(lines: string[]): boolean {
-  const command =
-    /^python3 \/home\/[\w-]+\/\.hermes\/scripts\/gh_owned_wait\.py [1-9]\d* --repo [\w-]+\/[\w.-]+ --head [a-fA-F0-9]{40} --attempt [1-9]\d* --timeout [1-9]\d{0,8} --interval [1-9]\d{0,8} ?> "\$(?<job>j|job)\/[\w-]+\.log" 2>&1$/;
   const subshell = lines[1]?.match(/^\(umask 077; (.*)\)$/);
   if (
     lines.length === 2 &&
     /^j=\/tmp\/apparent-dev-[\w-][\w.-]*$/.test(lines[0])
   ) {
-    return !!subshell && command.exec(subshell[1])?.groups?.job === "j";
+    return !!subshell && observerShellJob(subshell[1]) === "j";
   }
   return (
     lines.length === 5 &&
@@ -39,7 +56,7 @@ function isExactRunObserver(lines: string[]): boolean {
     lines[1] === "umask 077" &&
     /^job=\/tmp\/apparent-dev-[\w-][\w.-]*$/.test(lines[2]) &&
     /^cat "\$job\/[\w-]+\.log"$/.test(lines[3]) &&
-    command.exec(lines[4])?.groups?.job === "job"
+    observerShellJob(lines[4]) === "job"
   );
 }
 
