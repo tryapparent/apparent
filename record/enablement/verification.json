@@ -329,6 +329,7 @@
         "The clipboard retains marks with missing labels and shows only a short nearby location when needed, with no unknown-window or unidentified-target placeholders.",
         "The saved summary retains individual browser page observations at their original times.",
         "The synthetic path, query and fragment are absent from the full handoff, including interaction labels.",
+        "A circled synthetic input value stays in the image and is absent from the default handoff text.",
         "The next recording omits browser site observations after disabling recording context."
       ],
       "limits": [

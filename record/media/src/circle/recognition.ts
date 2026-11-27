@@ -197,11 +197,11 @@ function subregion(crop: Crop, caption: boolean) {
 
 export async function recognizeCircle(
   crop: Crop,
-  ocr: Ocr,
+  ocr: Ocr | undefined,
   classify: Classify,
 ) {
   const [words, categories] = await Promise.all([
-    ocr(crop.rgba, crop.width, crop.height, "auto").catch(() => []),
+    ocr?.(crop.rgba, crop.width, crop.height, "auto").catch(() => []) ?? [],
     classify(selectedPixels(crop), crop.width, crop.height).catch(() => []),
   ]);
   const category = objectName(categories);
@@ -218,7 +218,7 @@ export async function recognizeCircle(
     hasCategory,
     crop.width >= 1.4 * crop.height,
   );
-  if (region) {
+  if (region && ocr) {
     const r = subregion(crop, region === 2);
     const retry = await ocr(r.pixels, r.width, r.height, "line").catch(
       () => [],

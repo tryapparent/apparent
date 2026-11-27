@@ -370,9 +370,8 @@ pub fn hit_test(x: f64, y: f64) -> Option<Hit> {
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn document_name(url: &str) -> Option<String> {
     let path = url.strip_prefix("file://").unwrap_or(url);
-    let name = path.trim_end_matches('/').rsplit('/').next()?;
-    let decoded = percent_decode(name);
-    (!decoded.is_empty()).then_some(decoded)
+    let name = path.strip_prefix('/')?.trim_end_matches('/').rsplit('/').next()?;
+    (!name.is_empty()).then(|| percent_decode(name))
 }
 
 pub(crate) fn percent_decode(raw: &str) -> String {

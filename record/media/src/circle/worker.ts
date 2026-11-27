@@ -14,10 +14,14 @@ try {
   const bytes = readFileSync(0);
   const start = bytes.readUInt32LE(0) + 4;
   if (start > 128 * 1024 || start >= bytes.length) throw Error();
-  const { width, height, points } = JSON.parse(
-    bytes.toString("utf8", 4, start),
-  );
+  const {
+    width,
+    height,
+    points,
+    readText = false,
+  } = JSON.parse(bytes.toString("utf8", 4, start));
   if (
+    typeof readText !== "boolean" ||
     ![width, height].every((n) => Number.isInteger(n) && n >= 8 && n <= 2048) ||
     bytes.length !== start + 4 * width * height ||
     !Array.isArray(points) ||
@@ -28,11 +32,11 @@ try {
     )
   )
     throw Error();
-  const ocr = import("./ocr/index.mjs");
+  const ocr = readText ? import("./ocr/index.mjs") : undefined;
   const vision = import("./vision/index.mjs");
   const result = await recognizeCircle(
     { rgba: bytes.subarray(start), width, height, points },
-    async (...args) => (await ocr).recognize(...args),
+    ocr && (async (...args) => (await ocr).recognize(...args)),
     async (...args) => (await vision).recognize(...args),
   );
   process.stdout.write(JSON.stringify(result), () => process.exit(0));

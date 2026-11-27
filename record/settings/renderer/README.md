@@ -6,9 +6,10 @@ The shared preference retains the CLI ID `labs.agentContext` and reads existing
 the next capture. Use `apparent settings set labs.agentContext false` to opt out
 or `apparent settings reset labs.agentContext` to restore the default.
 
-Local English OCR and object recognition use pixels captured before a circle and
-give app-provided labels priority. An ambiguous result keeps the timestamp and
-frame. Captured pixels can include visible text.
+Local object recognition uses pixels captured before a circle and gives
+app-provided labels priority. An ambiguous result keeps the timestamp and frame.
+English text recognition inside circles requires an explicit opt-in. It can read
+visible input values in the selected pixels. Captured images retain visible text.
 
 Choose **Enable desktop accessibility** for additional control details on a
 system where it is off. On Linux the button enables the desktop-wide AT-SPI
@@ -32,16 +33,17 @@ browser pages. Linux clicks can carry a site without an OS-derived control name.
 
 Use an installed candidate in a disposable desktop session. Open two local
 test pages on distinct origins with the same title and different paths. Include a test query and
-fragment in each URL. Enable Recording context for agents and grant the
-required accessibility and screen recording permissions.
+fragment in each URL. Reset Recording context for agents to its on-by-default
+state and grant the required accessibility and screen recording permissions.
 
 Start a screen recording. Click a labeled control and draw a Shift circle
 around it on each page. Switch back to the first page and repeat. In a private
 browser window, try a third origin with a distinct path, query and fragment.
-Use a synthetic password value and keep its field visible beside a labeled
-control. The added context should never contain the typed value. On macOS, repeat a take with a notification banner
-visible away from the control. Stop the recording and run `apparent copy <bundle>`
-for the saved bundle.
+Use synthetic password and ordinary input values and keep their fields visible
+beside a labeled control. Draw a circle around an input value as a control case.
+The added text should omit both typed values while the images retain the pixels.
+On macOS, repeat a take with a notification banner visible away from the control.
+Stop the recording and run `apparent copy <bundle>` for the saved bundle.
 
 Check that the clipboard text and bundle summary contain the correct site origin
 at each click and circle time. For consecutive actions on one page, the

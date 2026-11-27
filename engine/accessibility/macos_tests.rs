@@ -36,6 +36,7 @@ fn labels_are_one_short_line_and_name_the_element() {
         document_name("file:///Users/k/My%20Notes.md").as_deref(),
         Some("My Notes.md")
     );
+    assert_eq!(document_name("https://example.test/private?token=fixture"), None);
 }
 
 #[test]

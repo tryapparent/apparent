@@ -38,8 +38,9 @@ export function AgentContextPreference({
         </div>
       </div>
       <p id="recording-context-help" className="recording-note">
-        Add labels for circled items on this device. With desktop accessibility,
-        include available control details and browser sites. Applies to your
+        Label circled objects. Desktop accessibility adds control details and
+        browser sites. Explicitly turning this on also allows text from inside
+        circles and diagnostics from registered local pages. Applies to your
         next recording.
       </p>
       {enabled && (

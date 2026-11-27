@@ -1,13 +1,13 @@
 use crate::composition::worker;
 use std::{process::Command, time::Duration};
 
-pub(crate) fn circle_label(
+pub(crate) fn circle_label<const READ_TEXT: bool>(
     crop: &crate::shared::model::RgbaFrame,
     points: &[[f32; 2]],
 ) -> Option<String> {
     use std::io::{Seek, SeekFrom, Write};
     let header = serde_json::to_vec(
-        &serde_json::json!({ "width": crop.width, "height": crop.height, "points": points }),
+        &serde_json::json!({ "width": crop.width, "height": crop.height, "points": points, "readText": READ_TEXT }),
     )
     .ok()?;
     let mut input = worker::private_input(&[]).ok()?;
