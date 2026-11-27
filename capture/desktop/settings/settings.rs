@@ -29,6 +29,8 @@ include!("../../../engine/native/desktop/settings_action.rs");
 
 pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent";
 
+include!("../../../engine/native/desktop/settings/recording.rs");
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct View {
@@ -272,6 +274,7 @@ pub trait Host {
     fn set_shortcuts(&mut self, shortcuts: &Shortcuts) -> Result<(), ShortcutKind>;
     fn pause_shortcuts(&mut self, paused: bool);
     fn config_path(&self) -> PathBuf;
+    fn login_status(&self) -> LoginItem { login_item() }
     fn set_login_item(&mut self, on: bool) -> anyhow::Result<()>;
     /// Apparent's binary and the folders `apparent` may be linked into.
     fn command_line(&self) -> crate::composition::command_line::Places;
@@ -543,19 +546,11 @@ impl Panel {
     }
 
     pub fn view(&self, host: &dyn Host) -> View {
-        let config = crate::shared::handoff::load_config_from(&host.config_path());
+        let path = host.config_path();
+        let config = crate::shared::handoff::load_config_from(&path);
         let shortcuts = host.shortcuts();
-        let hex = crate::shared::hex::cached_status();
-        let engine = config
-            .transcriber
-            .as_deref()
-            .and_then(crate::capture::engine::runtime::audio::transcription::transcribe::Engine::parse)
-            .unwrap_or_default();
-        let menu = crate::capture::engine::runtime::audio::transcription::transcribe::menu_state(engine, hex.as_ref(), config.hex_model.as_deref());
-        let command = crate::capture::engine::runtime::audio::transcription::command_transcriber::Program::load_from(&host.config_path())
-            .ok()
-            .map(|program| program.name());
-        let login = login_item();
+        let recording = self.recording_view(&path, &config);
+        let login = host.login_status();
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
             hosted: crate::shared::handoff::experiment_preference_in(&config, crate::connect::hosted::HOSTED_SHARING)
@@ -582,31 +577,10 @@ impl Panel {
                     )
                 })
                 .collect(),
-            microphone: super::microphone_view(
-                crate::capture::engine::runtime::audio::mic::choice_in(&host.config_path()).as_ref(),
-                self.inputs.as_ref(),
-                self.status(Permission::Microphone) == Status::Granted,
-            ),
-            lower_playback: config.lower_playback.unwrap_or(false),
-            playback_level: config.recording_volume(),
-            transcriber: TranscriberView {
-                engine: match engine {
-                    crate::capture::engine::runtime::audio::transcription::transcribe::Engine::Command if command.is_some() => "command",
-                    _ if menu.hex_checked => "hex",
-                    _ => "apple",
-                },
-                hex_title: menu.hex_title,
-                hex_enabled: menu.hex_enabled,
-                language: crate::shared::handoff::hex_language_from(&config),
-                apple_locale: crate::shared::handoff::apple_locale_from(&config)
-                    .unwrap_or_else(|| "auto".into()),
-                models: menu
-                    .models
-                    .into_iter()
-                    .map(|(id, title, chosen)| ModelView { id, title, chosen })
-                    .collect(),
-                command,
-            },
+            microphone: recording.microphone,
+            lower_playback: recording.lower_playback,
+            playback_level: recording.playback_level,
+            transcriber: recording.transcriber,
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
@@ -993,7 +967,7 @@ impl Session {
         // Storage reads its narrow projected socket contract. Do not forward the
         // other pages' state to a renderer which does not present those pages.
         if self.pane == Some(Pane::Recording) {
-            self.sync_recording(host);
+            self.sync_recording(&host.config_path());
         }
         if self.pane == Some(Pane::Permissions) {
             self.sync_permissions(host);
@@ -1050,8 +1024,9 @@ impl Session {
         self.send_state(settings_permissions::state(self.panel.grants.as_ref(), &self.panel.requested, &host.config_path()));
     }
 
-    fn sync_recording(&mut self, host: &dyn Host) {
-        let view = self.panel.view(host);
+    fn sync_recording(&mut self, path: &Path) {
+        let config = crate::shared::handoff::load_config_from(path);
+        let view = self.panel.recording_view(path, &config);
         let wanted = view.microphone.meter.as_deref().filter(|_| self.meter_visible);
         if self.meter.as_ref().map(|(id, _)| id.as_str()) != wanted {
             self.meter.take();
