@@ -8,12 +8,12 @@ use crate::capture::desktop::linux::{self, hyprland};
 
 #[path = "pin_focus.rs"]
 mod pin_focus;
-pub use pin_focus::pin_focus;
+pub use pin_focus::{pin_focus, share_picker_clear};
 
 const REQUEST: Duration = Duration::from_millis(65);
 const EVENTS_LIMIT: usize = 16_384;
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Window {
     address: String,
@@ -29,7 +29,7 @@ pub struct Window {
     workspace: Workspace,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct Workspace {
     id: i64,
 }
@@ -63,16 +63,16 @@ pub fn stroke_focused() -> Option<Window> {
     if !window.is_ink() {
         return Some(window);
     }
-    previous_under_overlay(&window, read("j/clients")?)
+    previous_under_overlay(&window, &read::<Vec<Client>>("j/clients")?).cloned()
 }
 
-fn previous_under_overlay(ink: &Window, clients: Vec<Client>) -> Option<Window> {
+fn previous_under_overlay<'a>(ink: &Window, clients: &'a [Client]) -> Option<&'a Window> {
     if !clients.iter().any(|client| {
         client.window == *ink && client.focus_history == Some(0) && client.mapped && !client.hidden
     }) {
         return None;
     }
-    let mut previous = clients.into_iter().filter(|client| client.focus_history == Some(1));
+    let mut previous = clients.iter().filter(|client| client.focus_history == Some(1));
     let candidate = previous.next()?;
     (previous.next().is_none()
         && candidate.mapped
@@ -80,35 +80,11 @@ fn previous_under_overlay(ink: &Window, clients: Vec<Client>) -> Option<Window> 
         && candidate.window.workspace == ink.workspace
         && candidate.window.identified()
         && !candidate.window.is_ink())
-    .then_some(candidate.window)
+    .then_some(&candidate.window)
 }
 
 pub fn focused_for_mark(rect: [i32; 4]) -> Option<Window> {
     stroke_focused().filter(|window| window.pid != std::process::id() && window.contains(rect))
-}
-
-pub fn share_picker_clear(rect: [i32; 4]) -> Option<bool> {
-    #[derive(Deserialize)]
-    struct Layer {
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
-        namespace: String,
-    }
-    #[derive(Deserialize)]
-    struct Output {
-        levels: std::collections::HashMap<String, Vec<Layer>>,
-    }
-    let outputs: std::collections::HashMap<String, Output> = read("j/layers")?;
-    Some(!outputs.values().any(|output| {
-        ["2", "3"].into_iter().filter_map(|level| output.levels.get(level))
-            .flatten().any(|layer| {
-                matches!(layer.namespace.as_str(),
-                    "ch.wysbd.hyprland-preview-share-picker" | "xdg-desktop-portal-hyprland")
-                    && overlaps(rect, [layer.x, layer.y, layer.w, layer.h])
-            })
-    }))
 }
 
 fn read<T: serde::de::DeserializeOwned>(request: &str) -> Option<T> {
@@ -117,7 +93,10 @@ fn read<T: serde::de::DeserializeOwned>(request: &str) -> Option<T> {
 }
 
 pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
-    let monitors = read::<Vec<hyprland::Monitor>>("j/monitors")?;
+    layout_rect_in(rect, &read::<Vec<hyprland::Monitor>>("j/monitors")?)
+}
+
+fn layout_rect_in(rect: [i32; 4], monitors: &[hyprland::Monitor]) -> Option<[i32; 4]> {
     let outputs: Vec<_> = linux::monitors()
         .into_iter()
         .filter(|monitor| !monitor.name.is_empty() && monitor.outputs == 1)
@@ -133,7 +112,7 @@ pub fn layout_rect(rect: [i32; 4]) -> Option<[i32; 4]> {
     if matching != 1 {
         return None;
     }
-    hyprland::note_rect_in_layout(rect, &monitors, &outputs)
+    hyprland::note_rect_in_layout(rect, monitors, &outputs)
 }
 
 impl Window {
@@ -196,7 +175,15 @@ impl Window {
     }
 
     fn uncovered(&self, region: [i32; 4], ignore: impl Fn(&Window) -> bool) -> Option<bool> {
-        let clients = read::<Vec<Client>>("j/clients")?;
+        self.uncovered_in(region, ignore, &read::<Vec<Client>>("j/clients")?)
+    }
+
+    fn uncovered_in(
+        &self,
+        region: [i32; 4],
+        ignore: impl Fn(&Window) -> bool,
+        clients: &[Client],
+    ) -> Option<bool> {
         if !clients
             .iter()
             .any(|client| client.window.address == self.address && client.mapped && !client.hidden)
@@ -355,8 +342,9 @@ mod tests {
             target.as_object_mut().unwrap().extend(updates.as_object().unwrap().clone());
             previous_under_overlay(
                 &serde_json::from_value(ink.clone()).unwrap(),
-                serde_json::from_value(serde_json::json!([overlay, target])).unwrap(),
+                &serde_json::from_value::<Vec<Client>>(serde_json::json!([overlay, target])).unwrap(),
             )
+            .cloned()
         };
         assert_eq!(resolve(serde_json::json!({})).unwrap().title, "Synthetic heading");
         for changes in [

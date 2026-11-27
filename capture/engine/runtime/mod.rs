@@ -945,7 +945,7 @@ impl SharedCaptureTelemetry {
         {
             *self.circle_session.lock().unwrap_or_else(PoisonError::into_inner) =
                 (self.capture_mode.load(Ordering::Acquire) != 3 && agent_context)
-                .then(|| crate::circle_recognition::Session::start(crate::composition::assembly::circle_label)).flatten();
+                .then(crate::composition::assembly::start_circle_labels).flatten();
         }
         if agent_context {
             crate::capture::engine::accessibility::ax::Prober::shared().begin();

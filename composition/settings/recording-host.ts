@@ -126,6 +126,9 @@ function isChange(change: unknown): change is RecordingChange {
     return false;
   const { key, value } = change as { key: unknown; value: unknown };
   switch (key) {
+    case "contextAccessibility":
+      return value === true;
+    case "agentContext":
     case "lowerPlayback":
       return typeof value === "boolean";
     case "playbackLevel":

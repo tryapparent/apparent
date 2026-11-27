@@ -87,7 +87,7 @@ mod preferences {
             (true, "labs.agentContext") if requested == true => {
                 let access = crate::capture::desktop::settings::desktop_access(false);
                 system_status = Some(access);
-                json!(access == "enabled")
+                requested.clone()
             }
             _ => requested.clone(),
         };
@@ -120,7 +120,7 @@ mod preferences {
                 let config = read_preferences(&path)?;
                 let matched: Vec<_> = catalog.iter().filter(|entry| {
                     pane.as_deref().is_none_or(|pane| {
-                        entry["id"].as_str().unwrap().split_once('.').is_some_and(|(group, _)| group == pane)
+                        entry["pane"].as_str().or_else(|| entry["id"].as_str()?.split_once('.').map(|(group, _)| group)) == Some(pane)
                     })
                 }).map(|entry| state(entry, &config)).collect();
                 ensure!(pane.is_none() || !matched.is_empty(), "Unknown pane");

@@ -74,7 +74,7 @@ pub fn parse_url(url: &str) -> Option<WebUrl> {
 
 pub const BROWSER_PAGE_EVENT_PREFIX: &str = "browser page ";
 
-pub fn browser_page_url(raw: &str) -> Option<String> {
+fn browser_location(raw: &str) -> Option<(WebUrl, &str)> {
     let location = raw.split(['?', '#']).next()?;
     if location.len() > 2048 || location.bytes().any(|b| b <= b' ' || b >= 127 || b == b'\\') {
         return None;
@@ -85,7 +85,17 @@ pub fn browser_page_url(raw: &str) -> Option<String> {
     if authority.contains('@') {
         return None;
     }
-    Some(format!("{}/{}", url.origin(), path))
+    Some((url, path))
+}
+
+pub fn browser_page_url(raw: &str) -> Option<String> {
+    let (url, path) = browser_location(raw)?;
+    Some(format!("{}/{path}", url.origin()))
+}
+
+pub fn browser_site_url(raw: &str) -> Option<String> {
+    let (url, _) = browser_location(raw)?;
+    Some(format!("{}/", url.origin()))
 }
 
 /// `localhost`, `*.localhost`, `127.0.0.0/8`, `::1`, and `0.0.0.0` (which browsers send to this
@@ -109,12 +119,16 @@ mod tests {
     #[test]
     fn browser_context_drops_unshareable_url_components() {
         assert_eq!(
+            browser_site_url("https://Example.COM/settings/billing?secret=x#token").as_deref(),
+            Some("https://example.com/")
+        );
+        assert_eq!(
             browser_page_url("https://Example.COM/settings/billing?secret=x#token").as_deref(),
             Some("https://example.com/settings/billing")
         );
-        assert!(browser_page_url("https://user:pass@example.com/private").is_none());
-        assert!(browser_page_url("file:///tmp/private").is_none());
-        assert!(browser_page_url("https://example.com/line\nbreak").is_none());
+        assert!(browser_site_url("https://user:pass@example.com/private").is_none());
+        assert!(browser_site_url("file:///tmp/private").is_none());
+        assert!(browser_site_url("https://example.com/line\nbreak").is_none());
     }
 
     #[test]

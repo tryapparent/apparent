@@ -243,39 +243,32 @@ impl Work {
     }
 
     fn pin_window(&mut self, pin: PinRequest) -> Option<ActionContext> {
-        if pin.at.elapsed() > FRESHNESS {
+        let deadline = pin.at + FRESHNESS;
+        if Instant::now() > deadline {
             return None;
         }
         self.events.drain(None)?;
-        let rect = window::layout_rect([pin.x.floor() as i32, pin.y.floor() as i32, 1, 1])?;
-        let focus = window::pin_focus(rect, pin.note_pid)?;
+        let point = [pin.x.floor() as i32, pin.y.floor() as i32, 1, 1];
+        let focus = window::pin_focus(point, pin.note_pid, deadline)?;
         let window = focus.window;
-        if crate::capture::ui_process::owns(window.pid as i32)
-            || !window.pin_point_clear(rect, focus.editor.as_ref())?
-            || !window::share_picker_clear(rect)?
-            || pin.at.elapsed() > FRESHNESS
-        {
-            return None;
-        }
-        let unique_client = window.pin_tree_identity()?;
         let tree = self.accessibility.window_tree(window.pid, Some(&window.title))
             .or_else(|| {
                 focus.editor.is_none().then(|| self.accessibility.active_tree(window.pid)).flatten()
             })?;
         let sampled_after_ms = pin.release.saturating_sub(pin.t)
             .saturating_add(pin.at.elapsed().as_millis() as u64);
-        let browser_point = window.browser_attribute().and_then(|_| window.mark_point(rect));
+        let browser_point = window.browser_attribute().and_then(|_| window.mark_point(focus.rect));
         let (elements, truncated) = self.accessibility.pin_tree(
-            &tree, &window.title, window.size(), unique_client, browser_point,
+            &tree, &window.title, window.size(), focus.unique_client, browser_point,
         )?;
-        let after = window::pin_focus(rect, pin.note_pid)?;
+        let finish = deadline + DRAIN;
+        let after = window::pin_focus(point, pin.note_pid, finish)?;
         let editor = after.editor.as_ref().or(focus.editor.as_ref());
         if after.window != window
+            || after.rect != focus.rect
             || !self.accessibility.is_showing(&tree)
-            || !window.pin_point_clear(rect, editor)?
-            || !window::share_picker_clear(rect)?
             || self.events.drain_pin(&window, editor)?
-            || pin.at.elapsed() > FRESHNESS + DRAIN
+            || Instant::now() > finish
         {
             return None;
         }
@@ -381,7 +374,7 @@ pub fn apply(hits: &[Result], events: &mut Vec<InteractionEvent>, strokes: &mut 
             Result::Mark(time, raw) if strokes.iter().any(|stroke| stroke.t0 == *time && !stroke.laser) => (time, raw),
             _ => return None,
         };
-        let url = crate::shared::routing::browser_page_url(raw)?;
+        let url = crate::shared::routing::browser_site_url(raw)?;
         Some(InteractionEvent::AppEvent { t: *time, label: format!("{}{url}", crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX) })
     }).collect();
     events.extend(pages);

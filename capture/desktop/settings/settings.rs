@@ -26,6 +26,7 @@ pub(super) fn open_startup_settings_for_quit() {
 
 
 include!("../../../engine/native/desktop/settings_action.rs");
+include!("../../../engine/recording/preferences/desktop_view.rs");
 
 pub const SKILL_COMMAND: &str = "bunx skills add https://github.com/tryapparent/apparent/tree/main/agent/skills/apparent";
 
@@ -543,29 +544,21 @@ impl Panel {
     }
 
     pub fn view(&self, host: &dyn Host) -> View {
-        let config = crate::shared::handoff::load_config_from(&host.config_path());
+        let path = host.config_path();
+        let config = crate::shared::handoff::load_config_from(&path);
         let shortcuts = host.shortcuts();
-        let hex = crate::shared::hex::cached_status();
-        let engine = config
-            .transcriber
-            .as_deref()
-            .and_then(crate::capture::engine::runtime::audio::transcription::transcribe::Engine::parse)
-            .unwrap_or_default();
-        let menu = crate::capture::engine::runtime::audio::transcription::transcribe::menu_state(engine, hex.as_ref(), config.hex_model.as_deref());
-        let command = crate::capture::engine::runtime::audio::transcription::command_transcriber::Program::load_from(&host.config_path())
-            .ok()
-            .map(|program| program.name());
         let login = login_item();
+        let RecordingView { microphone, transcriber, lower_playback, playback_level } = self.recording_view(&path);
         View {
             version: env!("APPARENT_VERSION_LABEL").to_owned(),
             hosted: crate::shared::handoff::experiment_preference_in(&config, crate::connect::hosted::HOSTED_SHARING)
-                .then(|| crate::connect::hosted::account_view_in(&host.config_path())),
+                .then(|| crate::connect::hosted::account_view_in(&path)),
             login: LoginView {
                 on: matches!(login, LoginItem::On | LoginItem::NeedsApproval),
                 available: login != LoginItem::Unavailable,
                 needs_approval: login == LoginItem::NeedsApproval,
             },
-            error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&host.config_path()),
+            error_reporting: crate::capture::desktop::workflow::error_reporting::enabled_in(&path),
             shortcuts: ShortcutKind::ALL
                 .into_iter()
                 .map(|kind| {
@@ -582,31 +575,10 @@ impl Panel {
                     )
                 })
                 .collect(),
-            microphone: super::microphone_view(
-                crate::capture::engine::runtime::audio::mic::choice_in(&host.config_path()).as_ref(),
-                self.inputs.as_ref(),
-                self.status(Permission::Microphone) == Status::Granted,
-            ),
-            lower_playback: config.lower_playback.unwrap_or(false),
-            playback_level: config.recording_volume(),
-            transcriber: TranscriberView {
-                engine: match engine {
-                    crate::capture::engine::runtime::audio::transcription::transcribe::Engine::Command if command.is_some() => "command",
-                    _ if menu.hex_checked => "hex",
-                    _ => "apple",
-                },
-                hex_title: menu.hex_title,
-                hex_enabled: menu.hex_enabled,
-                language: crate::shared::handoff::hex_language_from(&config),
-                apple_locale: crate::shared::handoff::apple_locale_from(&config)
-                    .unwrap_or_else(|| "auto".into()),
-                models: menu
-                    .models
-                    .into_iter()
-                    .map(|(id, title, chosen)| ModelView { id, title, chosen })
-                    .collect(),
-                command,
-            },
+            microphone,
+            transcriber,
+            lower_playback,
+            playback_level,
             permissions: settings_permissions::rows(self.grants.as_ref(), &self.requested, &config, true).collect(),
             updates: updates_available(),
             update_check: self.update_check.clone(),
@@ -866,7 +838,7 @@ impl Session {
                 Effect::None
             }
             Event::Action(Action::PermissionAction { request, intent }) => {
-                if self.presents_permissions()
+                if self.pane == Some(Pane::Permissions)
                     && let Some(Outcome::Reply(request, error)) = self.permissions.begin(request, intent, &host.config_path())
                 {
                     self.sync_permissions(host);
@@ -1021,10 +993,6 @@ impl Session {
         }
     }
 
-    fn presents_permissions(&self) -> bool {
-        self.pane == Some(Pane::Permissions)
-    }
-
     pub(crate) fn note_grants(&mut self, grants: Grants, changed: bool) -> Option<Event> {
         if changed || self.permissions.waiting() {
             Some(Event::Grants(grants))
@@ -1051,7 +1019,8 @@ impl Session {
     }
 
     fn sync_recording(&mut self, host: &dyn Host) {
-        let view = self.panel.view(host);
+        let path = host.config_path();
+        let view = self.panel.recording_view(&path);
         let wanted = view.microphone.meter.as_deref().filter(|_| self.meter_visible);
         if self.meter.as_ref().map(|(id, _)| id.as_str()) != wanted {
             self.meter.take();
@@ -1068,7 +1037,7 @@ impl Session {
                 Some((id.to_owned(), meter))
             });
         }
-        self.send_state(super::recording_state(view));
+        self.send_state(super::recording_state(view, &path));
     }
 
     fn send_state(&mut self, message: serde_json::Value) {

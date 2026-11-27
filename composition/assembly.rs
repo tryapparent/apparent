@@ -3,9 +3,18 @@ use serde::Deserialize;
 use std::{process::Command, time::Duration};
 use crate::capture::engine::{keyframes::SelectionLimits, render::MAX_SHEET_TILES};
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[path = "../engine/recognition/worker.rs"]
 mod circle;
-pub(crate) use circle::circle_label;
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) fn start_circle_labels() -> Option<std::sync::Arc<crate::circle_recognition::Session>> {
+    crate::circle_recognition::Session::start(if crate::shared::handoff::sdk_context_enabled() {
+        circle::circle_label::<true>
+    } else {
+        circle::circle_label::<false>
+    })
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

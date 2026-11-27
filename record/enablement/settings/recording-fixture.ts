@@ -28,6 +28,7 @@ export function recordingFixture(
     },
     speech: { state: "ready", progress: 1 },
     playback: null,
+    context: { enabled: true, access: "disabled" },
     mediaWarnings: [],
   };
   const state = structuredClone(linuxState);
@@ -43,6 +44,7 @@ export function recordingFixture(
     },
     mac() {
       state.platform = "macos";
+      state.context = { enabled: true, access: "approval_required" };
       state.playback = { enabled: true, level: 20 };
       state.speech = {
         state: "downloading",
@@ -64,6 +66,14 @@ export function recordingFixture(
     },
     receive(action: Record<string, unknown>) {
       if (action.action === "recording-preference") {
+        if (!fixture.refuse && action.key === "agentContext") {
+          state.context.enabled = Boolean(action.value);
+          fixture.show();
+        }
+        if (!fixture.refuse && action.key === "contextAccessibility") {
+          state.context.access = "enabled";
+          fixture.show();
+        }
         if (
           !fixture.refuse &&
           action.key === "lowerPlayback" &&

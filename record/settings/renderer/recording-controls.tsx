@@ -10,6 +10,7 @@ import type {
   RecordingChange,
   RecordingState,
 } from "../recording-contract";
+import { AgentContextPreference } from "./agent-context-preference";
 import { RecordingLevelFeed } from "./recording-feed";
 import policy from "../recording-policy.mjs";
 
@@ -517,6 +518,14 @@ export function RecordingControls({
           target to open the note editor at the pointer. Hold Shift and move the
           pointer to draw.
         </p>
+      </Group>
+      <Group title="Agent handoff">
+        <AgentContextPreference
+          context={state.context}
+          mac={mac}
+          pending={pending}
+          save={save}
+        />
       </Group>
       <Group title="Export" sectionId="recording-video-export">
         <p className="recording-note">

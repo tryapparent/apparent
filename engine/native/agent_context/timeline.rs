@@ -3,12 +3,54 @@ use super::handoff::{
     open_handoff_policy, render_context_line, window_near_mark,
 };
 use super::{
-    DragRun, Item, SCRUB_MS, Timed, changed_regions, click_anchor, drag_text, event_context_kind,
-    event_text, frame_is_flagged, frame_starts, frame_words, interleave, interleave_unsplit,
+    DragRun, Item, SCRUB_MS, Timed, changed_regions, click_anchor, drag_text,
+    event_context_kind, event_text, frame_is_flagged, frame_starts, interleave, interleave_unsplit,
     marks_on, one_line, settled_events, window_changes, without_positions,
 };
-use crate::shared::model::{ActionKind, ApparentBundle, InteractionEvent, KeyframeReason};
+use crate::shared::model::{ActionKind, ApparentBundle, InteractionEvent, KeyframeReason, WordTiming};
 use crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX;
+
+pub(super) fn join_words(words: &[&WordTiming]) -> String {
+    let mut text = String::new();
+    for word in words {
+        let unit = word.text.trim();
+        let attached = unit.starts_with([',', '.', '!', '?', ';', ':', '’', '\'', ')', ']', '”']);
+        let open = text.ends_with(['(', '[', '“']);
+        if !text.is_empty() && !attached && !open {
+            text.push(' ');
+        }
+        text.push_str(unit);
+    }
+    text
+}
+
+fn frame_words(bundle: &ApparentBundle) -> Option<Vec<Vec<&WordTiming>>> {
+    let mut words: Vec<&WordTiming> = bundle
+        .transcript
+        .words
+        .iter()
+        .filter(|w| !w.text.trim().is_empty())
+        .collect();
+    if words.is_empty() {
+        return None;
+    }
+    words.sort_by_key(|w| w.t0);
+    let mut words = words.into_iter();
+    let mut out = Vec::with_capacity(bundle.keyframes.len());
+    for frame in &bundle.keyframes {
+        let target: String = frame.said.as_deref().unwrap_or("").split_whitespace().collect();
+        let mut remaining = target.as_str();
+        let mut taken = Vec::new();
+        while !remaining.is_empty() {
+            let word = words.next()?;
+            let token: String = word.text.split_whitespace().collect();
+            remaining = remaining.strip_prefix(&token)?;
+            taken.push(word);
+        }
+        out.push(taken);
+    }
+    words.next().is_none().then_some(out)
+}
 
 pub(super) fn handoff_frames(bundle: &ApparentBundle, compact: bool) -> Option<Vec<FrameText>> {
     let frames = &bundle.keyframes;

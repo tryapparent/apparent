@@ -1,8 +1,49 @@
-use super::{Client, Events, Window, previous_under_overlay, read};
+use std::time::{Duration, Instant};
+
+use serde::Deserialize;
+
+use super::{
+    Client, Events, Window, hyprland, layout_rect_in, overlaps, previous_under_overlay, read,
+};
+
+const PIN_REQUEST: Duration = Duration::from_millis(120);
 
 pub struct PinFocus {
     pub window: Window,
     pub editor: Option<Window>,
+    pub rect: [i32; 4],
+    pub unique_client: bool,
+}
+
+#[derive(Deserialize)]
+struct Layer {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    namespace: String,
+}
+
+#[derive(Deserialize)]
+struct OutputLayers {
+    levels: std::collections::HashMap<String, Vec<Layer>>,
+}
+
+type Layers = std::collections::HashMap<String, OutputLayers>;
+
+pub fn share_picker_clear(rect: [i32; 4]) -> Option<bool> {
+    Some(share_picker_clear_in(rect, &read("j/layers")?))
+}
+
+fn share_picker_clear_in(rect: [i32; 4], outputs: &Layers) -> bool {
+    !outputs.values().any(|output| {
+        ["2", "3"].into_iter().filter_map(|level| output.levels.get(level))
+            .flatten().any(|layer| {
+                matches!(layer.namespace.as_str(),
+                    "ch.wysbd.hyprland-preview-share-picker" | "xdg-desktop-portal-hyprland")
+                    && overlaps(rect, [layer.x, layer.y, layer.w, layer.h])
+            })
+    })
 }
 
 fn notes_surface(window: &Window, pid: u32) -> bool {
@@ -18,24 +59,56 @@ fn notes_surface(window: &Window, pid: u32) -> bool {
                 }))
 }
 
-pub fn pin_focus(rect: [i32; 4], note_pid: u32) -> Option<PinFocus> {
-    let foreground = read::<Window>("j/activewindow")?;
-    if !foreground.identified() {
+pub fn pin_focus(point: [i32; 4], note_pid: u32, deadline: Instant) -> Option<PinFocus> {
+    let timeout = deadline.checked_duration_since(Instant::now())?.min(PIN_REQUEST);
+    let reply = hyprland::request_with_timeout(
+        "[[BATCH]] j/monitors;j/activewindow;j/clients;j/layers",
+        timeout,
+    )
+    .ok()?;
+    let mut parts = reply.split("\n\n\n");
+    let monitors: Vec<hyprland::Monitor> = serde_json::from_str(parts.next()?).ok()?;
+    let foreground: Window = serde_json::from_str(parts.next()?).ok()?;
+    let clients: Vec<Client> = serde_json::from_str(parts.next()?).ok()?;
+    let layers: Layers = serde_json::from_str(parts.next()?).ok()?;
+    if parts.any(|part| !part.trim().is_empty()) || !foreground.identified() {
         return None;
     }
+    let rect = layout_rect_in(point, &monitors)?;
     let (window, editor) = if notes_surface(&foreground, note_pid) {
-        let source = previous_under_overlay(&foreground, read("j/clients")?)?;
-        (source, Some(foreground))
-    } else if foreground.is_ink() {
         (
-            previous_under_overlay(&foreground, read("j/clients")?)?,
-            None,
+            previous_under_overlay(&foreground, &clients)?.clone(),
+            Some(foreground),
         )
+    } else if foreground.is_ink() {
+        (previous_under_overlay(&foreground, &clients)?.clone(), None)
     } else {
         (foreground, None)
     };
-    (window.pid != std::process::id() && window.pid != note_pid && window.contains(rect))
-        .then_some(PinFocus { window, editor })
+    if window.pid == std::process::id()
+        || window.pid == note_pid
+        || crate::capture::ui_process::owns(window.pid as i32)
+        || !window.contains(rect)
+        || !window.uncovered_in(
+            rect,
+            |other| {
+                other.is_ink()
+                    || editor.as_ref().is_some_and(|editor| editor.address == other.address)
+            },
+            &clients,
+        )?
+        || !share_picker_clear_in(rect, &layers)
+        || Instant::now() > deadline
+    {
+        return None;
+    }
+    let unique_client = window.pin_tree_identity(&clients)?;
+    Some(PinFocus {
+        window,
+        editor,
+        rect,
+        unique_client,
+    })
 }
 
 impl Window {
@@ -43,12 +116,11 @@ impl Window {
         self.size
     }
 
-    pub fn pin_tree_identity(&self) -> Option<bool> {
-        let clients = read::<Vec<Client>>("j/clients")?;
+    fn pin_tree_identity(&self, clients: &[Client]) -> Option<bool> {
         let mut found = false;
         let mut unique = true;
         for client in clients
-            .into_iter()
+            .iter()
             .filter(|client| client.window.pid == self.pid && client.mapped && !client.hidden)
         {
             if client.window == *self {
@@ -61,12 +133,6 @@ impl Window {
             }
         }
         found.then_some(unique)
-    }
-
-    pub fn pin_point_clear(&self, rect: [i32; 4], editor: Option<&Window>) -> Option<bool> {
-        self.uncovered(rect, |other| {
-            other.is_ink() || editor.is_some_and(|editor| editor.address == other.address)
-        })
     }
 }
 

@@ -48,6 +48,10 @@ impl Bus {
             .method_timeout(REQUEST)
             .build()
             .ok()?;
+        let status = Proxy::new(&desktop, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Status").ok()?;
+        if !status.get_property::<bool>("IsEnabled").ok()? {
+            return None;
+        }
         let address: String = Proxy::new(&desktop, "org.a11y.Bus", "/org/a11y/bus", "org.a11y.Bus")
             .ok()?
             .call("GetAddress", &())

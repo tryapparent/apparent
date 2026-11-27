@@ -27,11 +27,9 @@ import { General } from "./general";
 import { ConnectCard, useConnectSettings } from "./connect";
 import type { ComponentType } from "react";
 import {
-  AgentContextPreference,
   PushToTalk,
   type PushToTalkProps,
   RecordingSection,
-  type AgentContextPreferenceProps,
 } from "../../../record/settings/renderer/recording-section";
 import { PermissionsSection } from "../../../record/settings/permissions/permissions-section";
 import type { PermissionBridge } from "../../../record/settings/permissions/permissions-contract";
@@ -96,7 +94,6 @@ declare module "react" {
           videoTracingExperiment?: typeof VideoTracing;
           desktopFrogExperiment?: typeof DesktopFrogWithWardrobe;
           frogExperiment?: ComponentType<FrogNudgePreferenceProps>;
-          agentContextExperiment?: ComponentType<AgentContextPreferenceProps>;
         };
       };
     }
@@ -265,7 +262,6 @@ function Settings() {
                     videoTracingExperiment: VideoTracing,
                     pushToTalkExperiment: PushToTalk,
                     openRouterExperiment: OpenRouterExperiment,
-                    agentContextExperiment: AgentContextPreference,
                     desktopFrogExperiment: DesktopFrogWithWardrobe,
                     frogExperiment: FrogNudgePreference,
                   }

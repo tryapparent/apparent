@@ -59,6 +59,20 @@ test("staged Recording opens directly, receives native facts and saves only on i
       "aria-valuenow",
       "45",
     );
+    const context = page.getByRole("switch", { name: "Recording context for agents" });
+    const access = page.getByRole("button", { name: "Enable desktop accessibility" });
+    await expect(context).toBeChecked();
+    await expect(access).toBeVisible();
+    assert.equal(actions.some((action) => action.key === "contextAccessibility"), false);
+    await context.press("Space");
+    await expect(context).not.toBeChecked();
+    await expect(access).toHaveCount(0);
+    await expect(context).toBeEnabled();
+    await context.press("Space");
+    await expect(context).toBeChecked();
+    await expect(context).toBeFocused();
+    assert.equal(actions.some((action) => action.key === "contextAccessibility"), false);
+    const contextSection = page.getByRole("region", { name: "Agent handoff" });
     const volumeSection = page.getByText("Other-app volume", { exact: true });
     const volumeSwitch = page.getByRole("switch", {
       name: "Lower volume while recording",
@@ -105,13 +119,21 @@ test("staged Recording opens directly, receives native facts and saves only on i
           true,
         );
         await screenshot(`recording-${width}-${colorScheme}`);
+        await contextSection.scrollIntoViewIfNeeded();
+        await expect(access).toBeInViewport({ ratio: 1 });
+        await screenshot(`agent-context-${width}-${colorScheme}`);
         await exportGuide.scrollIntoViewIfNeeded();
         await expect(exportGuide).toBeInViewport({ ratio: 1 });
         await expect(exportSection.getByRole("switch")).toHaveCount(0);
         await screenshot(`video-export-${width}-${colorScheme}`);
       }
     }
+    await access.press("Enter");
+    await expect(page.getByText("Desktop accessibility is on.")).toBeVisible();
+    await expect(context).toBeFocused();
+    assert.equal(actions.filter((action) => action.key === "contextAccessibility").length, 1);
     recording.mac();
+    await expect(page.getByText(/Allow Apparent in System Settings/)).toBeVisible();
     await expect(
       page.getByRole("combobox", { name: "Language" }),
     ).toBeVisible();

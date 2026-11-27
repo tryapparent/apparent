@@ -375,7 +375,7 @@ pub fn handle(stream: &mut TcpStream, header: &str) -> Result<bool> {
                 );
                 return Ok(true);
             };
-            let wanted = crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
+            let wanted = crate::shared::handoff::sdk_context_enabled();
             if wanted && let Ok(post) = serde_json::from_slice::<crate::capture::desktop::workflow::page::Post>(&bytes) {
                 crate::capture::desktop::workflow::page::record(&page_origin, post);
             }
@@ -413,7 +413,7 @@ pub fn handle(stream: &mut TcpStream, header: &str) -> Result<bool> {
                 Ok(reg) => {
                     // `context`: the page may send what it sees (`crate::page`); loopback only.
                     let context = origin.is_some_and(is_loopback_origin)
-                        && crate::shared::handoff::experiment(crate::shared::handoff::AGENT_CONTEXT);
+                        && crate::shared::handoff::sdk_context_enabled();
                     crate::capture::engine::runtime::apparent_log(format!(
                             "web: {} registered (session {}, directory {})",
                             reg.url,

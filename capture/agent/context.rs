@@ -4,7 +4,7 @@ mod handoff;
 #[path = "../../engine/native/agent_context/timeline.rs"]
 mod timeline;
 use handoff::{ContextLine, FrameText, WindowEvidence, line, stroke_suffix, window_near_mark};
-use timeline::handoff_frames;
+use timeline::{handoff_frames, join_words};
 pub(crate) use handoff::{append_frame, audio_notice, frame_is_flagged};
 use crate::shared::model::*;
 use crate::capture::engine::sketch::{
@@ -185,37 +185,6 @@ pub fn find_mark<'a>(
             many.iter().map(|e| e.line()).collect::<Vec<_>>().join("; ")
         )),
     }
-}
-
-/// Recovers which timed words each keyframe's `said` was built from (Record's transcript policy
-/// gives every frame a run of the time-sorted words). `None` when the transcript has no word
-/// times or the text doesn't line up, and the speech is then shown whole.
-fn frame_words(bundle: &ApparentBundle) -> Option<Vec<Vec<&WordTiming>>> {
-    let mut words: Vec<&WordTiming> = bundle
-        .transcript
-        .words
-        .iter()
-        .filter(|w| !w.text.trim().is_empty())
-        .collect();
-    if words.is_empty() {
-        return None;
-    }
-    words.sort_by_key(|w| w.t0);
-    let mut words = words.into_iter();
-    let mut out = Vec::with_capacity(bundle.keyframes.len());
-    for frame in &bundle.keyframes {
-        let target: String = frame.said.as_deref().unwrap_or("").split_whitespace().collect();
-        let mut remaining = target.as_str();
-        let mut taken = Vec::new();
-        while !remaining.is_empty() {
-            let word = words.next()?;
-            let token: String = word.text.split_whitespace().collect();
-            remaining = remaining.strip_prefix(&token)?;
-            taken.push(word);
-        }
-        out.push(taken);
-    }
-    words.next().is_none().then_some(out)
 }
 
 /// When each keyframe's stretch of the recording starts: its first word, first mark or own moment,
@@ -501,21 +470,6 @@ fn window_changes(snapshots: &[WindowSnapshot]) -> Vec<(u64, String)> {
         }
     }
     out
-}
-
-/// Joins recognizer words the way Record's transcript policy does.
-fn join_words(words: &[&WordTiming]) -> String {
-    let mut text = String::new();
-    for word in words {
-        let unit = word.text.trim();
-        let attached = unit.starts_with([',', '.', '!', '?', ';', ':', '’', '\'', ')', ']', '”']);
-        let open = text.ends_with(['(', '[', '“']);
-        if !text.is_empty() && !attached && !open {
-            text.push(' ');
-        }
-        text.push_str(unit);
-    }
-    text
 }
 
 fn action_line<'a>(policy: &EmbeddedPolicy, bundle: &'a ApparentBundle, timed: &Timed<'a>, compact: bool) -> Option<ContextLine<'a>> {

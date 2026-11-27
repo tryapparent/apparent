@@ -4,12 +4,6 @@ use crate::shared::handoff::{preference_value, read_preferences, write_preferenc
 use crate::capture::desktop::workflow::performance::{PREFERENCE, SETTING, generation, set_preference};
 
 const KEY: &str = "labs.localStreamingTranscription";
-const ACTIVATE_CONTEXT: [bool; 4] = include!("../../../../record/settings/permissions/agent-context-activation.json");
-
-#[cfg(not(test))]
-#[path = "../../../../engine/accessibility/desktop_access.rs"]
-mod native_access;
-
 #[cfg(target_os = "linux")]
 use crate::capture::desktop::settings::shortcut::push_to_talk_supported;
 #[cfg(not(target_os = "linux"))]
@@ -23,7 +17,6 @@ pub(in crate::capture::desktop) fn facts(path: &Path) -> serde_json::Value {
         "recordingPerformanceSaved": generation(&value).is_some(),
         "speakingStyleSaved": saved("labs.speakingStyle"),
         "videoTracingSaved": saved(crate::workflow_trace::PREFERENCE),
-        "agentContextSaved": saved("labs.agentContext"),
         "sharingSaved": saved("labs.hostedSharing"),
         "pushToTalkSaved": saved("labs.pushToTalk"),
         "pushToTalkSupported": push_to_talk_supported(),
@@ -38,7 +31,6 @@ pub(super) fn key(setting: Option<&str>) -> Option<(&'static str, bool)> {
     match setting {
         None | Some("streaming") => Some((KEY, true)),
         Some(SETTING) => Some((PREFERENCE, true)),
-        Some("agentContext") => Some(("labs.agentContext", true)),
         Some("speakingStyle") => Some(("labs.speakingStyle", true)),
         Some("videoTracing") => Some((crate::workflow_trace::PREFERENCE, true)),
         Some("sharing") => Some(("labs.hostedSharing", true)),
@@ -54,7 +46,7 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
     let Some((key, true)) = key(setting) else {
         return serde_json::json!({"type":"labs-result","request":request,"facts":{"error":"config_write_failed"}});
     };
-    let mut result = if enabled == Some(true) && key == "labs.pushToTalk" && !push_to_talk_supported() {
+    let result = if enabled == Some(true) && key == "labs.pushToTalk" && !push_to_talk_supported() {
         serde_json::json!({"error":"config_write_failed"})
     } else if let Some(on) = enabled {
         let saved = if key == PREFERENCE {
@@ -66,19 +58,9 @@ pub(super) fn request(path: &Path, request: u32, enabled: Option<bool>, setting:
             Ok(()) => facts(path), Err(_) => serde_json::json!({"error":"config_write_failed"}),
         }
     } else {facts(path)};
-    if result["agentContextSaved"] == true {
-        let index = usize::from(enabled == Some(true)) | (usize::from(key == "labs.agentContext") << 1);
-        result["agentContextAccess"] = serde_json::json!(desktop_access(ACTIVATE_CONTEXT[index]));
-    }
     serde_json::json!({"type":"labs-result","request":request,"facts":result})
 }
 
-#[cfg(not(test))]
-pub(crate) use native_access::desktop_access;
-#[cfg(test)]
-pub(crate) fn desktop_access(activate: bool) -> &'static str {
-    if activate { "activation_requested" } else { "read_only" }
-}
 #[cfg(test)] mod tests {
     use super::*;
     #[test]
@@ -119,30 +101,6 @@ pub(crate) fn desktop_access(activate: bool) -> &'static str {
         assert!(facts(&path).get("doubleShiftSaved").is_none());
         assert_eq!(request(&path, 5, Some(false), Some("doubleShiftNotes"))["facts"]["error"], "config_write_failed");
         assert_eq!(std::fs::read_to_string(path).unwrap(), original);
-    }
-    #[test]
-    fn agent_context_reads_existing_values_and_uses_the_shared_writer() {
-        let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("config.json");
-        assert!(facts(&path)["agentContextSaved"].is_null());
-        std::fs::write(&path, r#"{"secret":"private","experiments":{"agentContext":"yes","other":true}}"#).unwrap();
-        assert_eq!(facts(&path)["agentContextSaved"], true);
-        for enabled in [false, true] {
-            let response = request(&path, 1, Some(enabled), Some("agentContext"));
-            assert_eq!(response["facts"]["agentContextSaved"], enabled);
-            if enabled {
-                assert_eq!(response["facts"]["agentContextAccess"], "activation_requested");
-                assert_eq!(request(&path, 2, None, None)["facts"]["agentContextAccess"], "read_only");
-            } else {
-                assert!(response["facts"].get("agentContextAccess").is_none());
-            }
-            assert!(!response.to_string().contains("private"));
-            let stored = std::fs::read_to_string(&path).unwrap();
-            let saved: serde_json::Value = serde_json::from_str(&stored).unwrap();
-            assert_eq!(saved["labs"]["agentContext"], enabled);
-            assert_eq!(saved["experiments"]["other"], true);
-            assert_eq!(saved["secret"], "private");
-        }
     }
     #[test]
     fn retired_pill_effects_are_not_configurable() {

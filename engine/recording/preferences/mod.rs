@@ -8,6 +8,62 @@ use crate::capture::engine::runtime::audio::{
 };
 use crate::shared::handoff::{edit_preference, update_config_in, write_preference};
 
+#[cfg(not(test))]
+#[path = "../../accessibility/desktop_access.rs"]
+mod native_access;
+#[cfg(not(test))]
+pub(crate) use native_access::desktop_access;
+#[cfg(test)]
+pub(crate) fn desktop_access(activate: bool) -> &'static str {
+    if activate { "enabled" } else { "disabled" }
+}
+
+pub(crate) fn recording_key(key: &str, value: &serde_json::Value) -> bool {
+    match key {
+        "agentContext" => value.is_boolean(),
+        "contextAccessibility" => value.as_bool() == Some(true),
+        "lowerPlayback" => cfg!(target_os = "macos") && value.is_boolean(),
+        "playbackLevel" => cfg!(target_os = "macos") && value.as_u64().is_some_and(|level| level <= 100),
+        "microphone" | "transcriber" | "hexModel" | "hexLanguage" | "appleLocale" =>
+            value.as_str().is_some_and(|value| value.len() <= 16_384),
+        _ => false,
+    }
+}
+
+fn recording_context_enabled(path: &Path) -> bool {
+    use crate::shared::handoff::{AGENT_CONTEXT, experiment_enabled_in, load_config_from};
+    experiment_enabled_in(&load_config_from(path), AGENT_CONTEXT)
+}
+
+pub(crate) fn context_state(path: &Path) -> Value {
+    let enabled = recording_context_enabled(path);
+    json!({"enabled": enabled, "access": enabled.then(|| desktop_access(false))})
+}
+
+pub(crate) fn save_from_ui(path: &Path, key: &str, value: &Value, inputs: Option<&mic::Inputs>) -> Result<()> {
+    if key == "agentContext" {
+        use crate::shared::handoff::{AGENT_CONTEXT_PREFERENCE, write_preference};
+        write_preference(path, AGENT_CONTEXT_PREFERENCE, Some(value.clone()))?;
+        return Ok(());
+    }
+    if key == "contextAccessibility" {
+        const ACTIVATE: [bool; 4] = include!("../../../record/settings/permissions/agent-context-activation.json");
+        let enabled = usize::from(recording_context_enabled(path));
+        anyhow::ensure!(ACTIVATE[usize::from(value.as_bool() == Some(true)) | (enabled << 1)], "Recording context is off");
+        anyhow::ensure!(
+            matches!(desktop_access(true), "enabled" | "approval_required"),
+            "Desktop accessibility unavailable"
+        );
+        return Ok(());
+    }
+    let value = if key == "microphone" {
+        serde_json::json!({"id": value})
+    } else {
+        value.clone()
+    };
+    save(path, &format!("recording.{key}"), Some(&value), inputs)
+}
+
 pub(crate) fn save(
     path: &Path,
     id: &str,
@@ -110,4 +166,27 @@ pub(crate) fn apply_streaming(setting: Option<&str>, enabled: Option<bool>, repl
             speech_preview::release_cache();
         }
     }
+}
+
+#[test]
+fn recording_context_default_and_explicit_permissions() {
+    use crate::shared::{handoff::load_config_from, preferences::sdk_context_enabled_in};
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("config.json");
+    assert!(recording_context_enabled(&path));
+    assert!(!sdk_context_enabled_in(&load_config_from(&path)));
+
+    std::fs::write(&path, r#"{"unrelated":"keep","experiments":{"agentContext":"off"}}"#).unwrap();
+    assert!(!recording_context_enabled(&path));
+    assert!(save_from_ui(&path, "contextAccessibility", &true.into(), None).is_err());
+
+    save_from_ui(&path, "agentContext", &true.into(), None).unwrap();
+    assert!(sdk_context_enabled_in(&load_config_from(&path)));
+    assert_eq!(context_state(&path)["access"], "disabled");
+    save_from_ui(&path, "contextAccessibility", &true.into(), None).unwrap();
+    assert_eq!(crate::shared::handoff::read_preferences(&path).unwrap()["unrelated"], "keep");
+
+    crate::shared::handoff::write_preference(&path, crate::shared::handoff::AGENT_CONTEXT_PREFERENCE, None).unwrap();
+    assert!(recording_context_enabled(&path));
+    assert!(!sdk_context_enabled_in(&load_config_from(&path)));
 }

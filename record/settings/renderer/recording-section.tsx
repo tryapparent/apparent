@@ -6,11 +6,6 @@ import { RecordingControls } from "./recording-controls";
 import { RecordingFeed } from "./recording-feed";
 import "./recording-section.css";
 
-export {
-  AgentContextPreference,
-  type AgentContextPreferenceProps,
-} from "./agent-context-preference";
-
 export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
   const [feed] = useState(() => new RecordingFeed(bridge));
   const state = useSyncExternalStore(feed.subscribe, feed.snapshot);
@@ -21,8 +16,10 @@ export function RecordingSection({ bridge }: { bridge: RecordingBridge }) {
   const inFlight = useRef(false);
 
   useLayoutEffect(() => {
-    if (!pending && !failure && document.activeElement === document.body)
-      focused.current?.focus();
+    if (pending || failure || document.activeElement !== document.body) return;
+    if (focused.current?.isConnected) focused.current.focus();
+    else if (focused.current?.id === "recording-context-enable")
+      document.getElementById("recording-agent-context")?.focus();
   }, [pending, failure]);
 
   function rememberFocus() {

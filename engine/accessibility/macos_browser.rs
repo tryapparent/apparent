@@ -4,6 +4,10 @@ use core_foundation::string::CFString;
 use std::collections::HashMap;
 use std::time::Instant;
 
+pub(super) fn is_notification_surface(window: &crate::shared::windows::RawWindow) -> bool {
+    window.layer == 21 && window.owner == "Notification Center"
+}
+
 #[cfg(target_os = "macos")]
 pub(super) fn window_at(
     raw: &[crate::shared::windows::RawWindow],
@@ -22,7 +26,7 @@ pub(super) fn window_at(
             && y <= top + height
             && !(window.owner == "Dock" && window.layer == 20)
             && !(window.owner == "Window Server" && window.layer == 2_147_483_630)
-            && !(direct_browser_hit && window.owner == "Notification Center" && window.layer == 21)
+            && !(direct_browser_hit && is_notification_surface(window))
     })
 }
 
@@ -114,6 +118,6 @@ pub fn apply(
 }
 
 fn page_event(t: u64, page: Option<&(u32, String)>) -> Option<crate::shared::model::InteractionEvent> {
-    let url = crate::shared::routing::browser_page_url(&page?.1)?;
+    let url = crate::shared::routing::browser_site_url(&page?.1)?;
     Some(crate::shared::model::InteractionEvent::AppEvent { t, label: format!("{}{url}", crate::shared::routing::BROWSER_PAGE_EVENT_PREFIX) })
 }

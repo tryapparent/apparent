@@ -80,6 +80,16 @@ test("either local provider can succeed independently", async () => {
   assert.equal(await recognizeCircle(crop, unavailable, unavailable), "");
 });
 
+test("object-only recognition produces a label without a text provider", async () => {
+  assert.equal(
+    await recognizeCircle(crop, undefined, async () => [
+      { index: 281, label: "tabby", score: 0.9 },
+    ]),
+    "image “cat”",
+  );
+  assert.equal(await recognizeCircle(crop, undefined, async () => []), "");
+});
+
 test("a cut-off neighboring line cannot name the selected image", async () => {
   const result = await recognizeCircle(
     {

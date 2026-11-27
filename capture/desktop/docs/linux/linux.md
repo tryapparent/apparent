@@ -485,7 +485,7 @@ for lifecycle and same-process replay limits.
 
 ## Not on Linux
 
-The cabled iPhone, Sparkle and the dev-site tab URL are macOS features. Linux updates AppImages directly and supports registered Apparent SDK pages. On Hyprland, the Agent Context experiment adds AT-SPI names to eligible Shift marks. See [keyframes and text](../../../engine/docs/keyframes-and-text.md#experiment-agentcontext-srcagent_proofcontextrs).
+The cabled iPhone, Sparkle and the dev-site tab URL are macOS features. Linux updates AppImages directly and supports registered Apparent SDK pages. On Hyprland, Recording context for agents can add AT-SPI names to eligible Shift marks. See [keyframes and text](../../../engine/docs/keyframes-and-text.md#recording-context-for-agents).
 
 ## Packaging
 
