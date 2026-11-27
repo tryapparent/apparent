@@ -55,6 +55,8 @@ let window: BrowserWindow | undefined;
 let sequence = 0;
 let pending: { sequence: number; resolve: (paper: Paper) => void } | undefined;
 let closing = false;
+let canvasReady = false;
+let mountDeadline: NodeJS.Timeout | undefined;
 
 function send(message: object) {
   process.stdout.write(JSON.stringify(message) + "\n");
@@ -63,6 +65,8 @@ function send(message: object) {
 function close() {
   if (closing) return;
   closing = true;
+  clearTimeout(mountDeadline);
+  if (!canvasReady) window?.hide();
   send({ type: "edit", sequence: ++sequence, operation: "close" });
 }
 
@@ -125,6 +129,13 @@ async function prepare() {
   );
   board.webContents.once("render-process-gone", () => app.exit(1));
   board.on("page-title-updated", (event) => event.preventDefault());
+  board.once("ready-to-show", () => {
+    void initial.then(() => {
+      if (closing || board.isDestroyed()) return;
+      board.setBounds(boardBounds());
+      board.show();
+    });
+  });
   board.on("show", () => {
     const { x, y, width, height } = board.getBounds();
     send({ type: "ready", frame: [x, y, width, height] });
@@ -147,6 +158,8 @@ async function prepare() {
         close();
         return null;
       }
+      if (!canvasReady || !window?.isVisible())
+        throw Error("Whiteboard canvas unavailable");
       if (pending) throw Error("Whiteboard edit pending");
       if (operation === "begin" || operation === "move") {
         if (
@@ -171,8 +184,8 @@ async function prepare() {
   );
   ipcMain.on("whiteboard:ready", (event) => {
     if (initialized && valid(event)) {
-      board.setBounds(boardBounds());
-      board.show();
+      canvasReady = true;
+      clearTimeout(mountDeadline);
     }
   });
   await board.loadURL(page);
@@ -188,6 +201,7 @@ input.on("line", (line) => {
       case "initial":
         if (initialized) throw Error("Duplicate Whiteboard initialization");
         initialized = true;
+        mountDeadline = setTimeout(() => app.exit(1), 12_000);
         initialize(message);
         break;
       case "paper":

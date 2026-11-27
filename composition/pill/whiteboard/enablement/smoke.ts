@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,7 +29,12 @@ type Edit = {
 };
 type Ready = { type: "ready"; frame: number[] };
 
-async function launch(t: TestContext, practice: boolean, paper: Paper) {
+async function launch(
+  t: TestContext,
+  practice: boolean,
+  paper: Paper,
+  holdRenderer = false,
+) {
   const scratch = await mkdtemp(
     join(tmpdir(), "apparent-dev-whiteboard-render-"),
   );
@@ -38,6 +43,13 @@ async function launch(t: TestContext, practice: boolean, paper: Paper) {
   await cp(staged, join(scratch, "app"), {
     recursive: true,
   });
+  if (holdRenderer) {
+    const html = join(scratch, "app/index.html");
+    const page = await readFile(html, "utf8");
+    const renderer = '<script src="view.js" defer></script>';
+    assert.ok(page.includes(renderer));
+    await writeFile(html, page.replace(renderer, ""));
+  }
   const child = spawn(
     electron,
     [
@@ -96,15 +108,25 @@ async function launch(t: TestContext, practice: boolean, paper: Paper) {
     "Preparing the renderer must not open Whiteboard",
   );
   send({ type: "initial", practice, paper });
-  await expect(page.getByRole("heading", { name: "Whiteboard" })).toBeVisible();
   await expect.poll(() => received[0]?.type).toBe("ready");
+  if (!holdRenderer)
+    await expect(
+      page.getByRole("img", { name: "Whiteboard drawing canvas" }),
+    ).toBeVisible();
   const edits = () =>
     received.filter((message): message is Edit => message.type === "edit");
   async function reply(operation: Operation, paper: Paper) {
     await expect.poll(() => edits().at(-1)?.operation).toBe(operation);
     send({ type: "paper", sequence: edits().at(-1)?.sequence, paper });
   }
-  return { page, home, edits, reply, exit };
+  return {
+    page,
+    home,
+    edits,
+    reply,
+    exit,
+    releaseRenderer: () => page.addScriptTag({ url: "view.js" }),
+  };
 }
 
 const blank: Paper = { color: [59, 121, 189], strokes: [] };
@@ -117,6 +139,76 @@ const kept: Paper = {
     ],
   ],
 };
+
+test("admitted Open shows a cancellable status before the owned paper mounts", {
+  timeout: 30_000,
+}, async (t) => {
+  const { page, home, edits, releaseRenderer } = await launch(
+    t,
+    true,
+    kept,
+    true,
+  );
+  const status = page.getByRole("status");
+  const close = page.getByRole("button", { name: "Close whiteboard" });
+  await expect(status).toHaveText("Opening Whiteboard…");
+  await expect(
+    page.getByRole("img", { name: "Whiteboard drawing canvas" }),
+  ).toHaveCount(0);
+  await assert.rejects(
+    page.evaluate(() => window.apparentWhiteboard.edit("begin", [20, 20])),
+    /canvas unavailable/,
+  );
+  await page.keyboard.press("Tab");
+  await expect(close).toBeFocused();
+  assert.deepEqual(edits(), []);
+
+  const metrics = await home.newCDPSession(page);
+  for (const width of [720, 320]) {
+    await metrics.send("Emulation.setDeviceMetricsOverride", {
+      width,
+      height: width === 720 ? 540 : 280,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      await expect(status).toBeInViewport();
+      await expect(close).toBeInViewport();
+      const evidence = process.env.APPARENT_WHITEBOARD_EVIDENCE;
+      if (evidence)
+        await page.screenshot({
+          path: join(evidence, `opening-${width}-${colorScheme}.png`),
+        });
+    }
+  }
+
+  await releaseRenderer();
+  await expect(
+    page
+      .getByRole("img", { name: "Whiteboard drawing canvas" })
+      .locator("polyline"),
+  ).toHaveAttribute("points", "35,40 140,92");
+  await expect(close).toBeFocused();
+  await expect(status).toHaveText("Close when you’re done.");
+  assert.deepEqual(edits(), []);
+});
+
+test("Escape closes an opening Whiteboard before the renderer mounts", {
+  timeout: 20_000,
+}, async (t) => {
+  const { page, edits, releaseRenderer } = await launch(t, false, blank, true);
+  await page.keyboard.press("Escape");
+  await expect
+    .poll(() => edits().map(({ operation }) => operation))
+    .toEqual(["close"]);
+  await releaseRenderer();
+  await assert.rejects(
+    page.evaluate(() => window.apparentWhiteboard.edit("begin", [20, 20])),
+    /Invalid Whiteboard edit/,
+  );
+  await expect.poll(() => edits().length).toBe(1);
+});
 
 test("staged Whiteboard renders accepted ink and puts editing behind the parent channel", {
   timeout: 30_000,

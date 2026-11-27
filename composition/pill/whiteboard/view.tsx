@@ -32,7 +32,12 @@ function PracticeLesson({ drawing, hasInk }: Parameters<Lesson>[0]) {
 
 function ready(node: HTMLElement | null) {
   if (!node) return;
-  node.focus({ preventScroll: true });
+  const keepCloseFocus = document.activeElement?.id === "close-opening";
+  document.getElementById("opening")?.remove();
+  const focus = keepCloseFocus
+    ? node.querySelector<HTMLElement>('button[aria-label="Close whiteboard"]')
+    : node;
+  (focus ?? node).focus({ preventScroll: true });
   window.apparentWhiteboard.ready();
 }
 
@@ -51,12 +56,8 @@ const root = createRoot(document.getElementById("root")!);
 void window.apparentWhiteboard.initial().then(
   (initial) => root.render(<Surface {...initial} />),
   () => {
-    root.render(
-      <p role="alert">
-        Whiteboard unavailable. Close this window and reopen Whiteboard from the
-        recording controls.
-      </p>,
-    );
-    window.apparentWhiteboard.ready();
+    const status = document.getElementById("opening-status")!;
+    status.setAttribute("role", "alert");
+    status.textContent = "Whiteboard unavailable. Close and reopen Whiteboard.";
   },
 );
