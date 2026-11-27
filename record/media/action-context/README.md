@@ -103,3 +103,6 @@ points. Allow Accessibility in Privacy & Security before recording.
 4. On macOS, repeat the enabled case in Safari with the Dock visible and
    then with it hidden. Keep the cursor at the pin through the read. Expect
    the same named control states in both handoffs.
+5. While a synthetic macOS notification is visible, pin an unobstructed
+   control in Safari and then pin the visible banner. Check that the first
+   pin keeps Safari context and the second keeps its ordinary annotation.

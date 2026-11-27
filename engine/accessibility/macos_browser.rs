@@ -4,6 +4,10 @@ use core_foundation::string::CFString;
 use std::collections::HashMap;
 use std::time::Instant;
 
+pub(super) fn is_notification_surface(window: &crate::shared::windows::RawWindow) -> bool {
+    window.layer == 21 && window.owner == "Notification Center"
+}
+
 #[cfg(target_os = "macos")]
 pub(super) fn window_at(
     raw: &[crate::shared::windows::RawWindow],
@@ -22,7 +26,7 @@ pub(super) fn window_at(
             && y <= top + height
             && !(window.owner == "Dock" && window.layer == 20)
             && !(window.owner == "Window Server" && window.layer == 2_147_483_630)
-            && !(direct_browser_hit && window.owner == "Notification Center" && window.layer == 21)
+            && !(direct_browser_hit && is_notification_surface(window))
     })
 }
 
