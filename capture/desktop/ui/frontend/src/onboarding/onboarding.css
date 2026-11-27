@@ -73,7 +73,7 @@ html.native-onboarding-shell body { background: transparent !important; margin: 
 .native-explain { min-height: 240px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; }
 .native-explain img { width: 176px; }
 .native-granted { font-size: 1.125rem; color: var(--apparent-success); background: var(--apparent-paper); padding: 8px; }
-.native-shortcut { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 24px; margin: 48px 0; }
+.native-practice-keys { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
 .native-setup[data-shortcut-state=true] section { display: flex; flex-direction: column; }
 .native-setup[data-shortcut-state=true] .native-shortcut { flex: 1; margin: 0; }
 .native-shortcut .apparent-key { --key-size:40px; min-width:96px; min-height:84px; padding:20px 28px; }

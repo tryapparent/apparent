@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {useCallback} from "react";
 import { Button } from '@apparent/ui/button';
+import { Keycap } from '@apparent/ui/keycap';
 import { recordKeys } from './shortcut/keys';
 import frog from '../../../../assets/onboarding/frog.png';
 import './onboarding.css';
@@ -114,7 +115,6 @@ export function NativeOnboarding(){
   const editing=Boolean(state.shortcutEditing||listening);
   const goAgain=state.step==='try-it'&&(!state.practice||state.practice==='start');
   const practice=state.step==='try-it'&&!goAgain,penPage=state.step==='welcome'&&state.penPicker;
-  const practiceStage=state.practice==='note'?'screen-ink':state.practice;
   document.title=state.testInstance?'apparent onboarding preview 9':'apparent setup';
   function finishSetup() {
     const area = coachFrog.current?.getBoundingClientRect();
@@ -128,7 +128,7 @@ export function NativeOnboarding(){
       ? () => void action(`${practiceCommand}:${state.practiceAttempt}`)
       : undefined;
     const control = ['whiteboard','stop','locate'].includes(state.practice??'')&&<ControlGuide kind={state.practice==='locate'?'locate':state.practice==='stop'?'finish':'whiteboard'} onTarget={practiceAction} />;
-    return <PracticeCoach view={state} stage={practiceStage} wide={wideCoach} frog={frog} canvasRef={coachFrog}
+    return <PracticeCoach view={state} stage={state.practice==='note'?'screen-ink':state.practice} wide={wideCoach} frog={frog} canvasRef={coachFrog}
       recordKeys={recordKeys(state.shortcut)} control={control} error={error} onAction={action} finishSetup={finishSetup} />;
   }
   return <main className="native-setup" data-agent-setup={state.step==='welcome'&&!state.penPicker} data-wispr={wispr.visible} data-shortcut-state={state.step==='shortcut'||goAgain}><header><span>{state.testInstance?'apparent · onboarding preview 9':shortcutStep?'apparent':'apparent · setup'}</span><Button variant="ghost" size="icon" aria-label="Close setup" onClick={()=>void action('close')}>×</Button></header><section ref={wispr.attach}>
@@ -164,7 +164,7 @@ export function NativeOnboarding(){
         },
       }}/>}
     {state.frogNaming&&<MeetFrog submit={name=>sendAction({action:'frog-name',name})} saveError={Boolean(state.frogError)}/>}
-    {goAgain&&!state.frogNaming&&<><h1 className="native-shortcut-prompt">Try a practice capture.</h1><p>Use your recording shortcut to begin.</p></>}
+    {goAgain&&!state.frogNaming&&<><h1 className="native-shortcut-prompt">Try a practice capture.</h1>{state.shortcut&&<div className="native-practice-keys" role="group" aria-label="Recording shortcut">{recordKeys(state.shortcut).map(key=><Keycap key={key}>{key}</Keycap>)}</div>}</>}
     {state.step==='done'&&<><h1>Ready for your next idea.</h1><div className="native-explain"><img src={frog} alt=""/></div><p>apparent stays in the menu bar, ready when you are.</p></>}
     {error&&!penPage&&!shortcutStep&&<p role="alert">{error}</p>}
     </>}
