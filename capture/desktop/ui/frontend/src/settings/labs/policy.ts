@@ -63,7 +63,7 @@ export class LabsPreferences {
 export function admitLabsRequest(pane: string | undefined, args: unknown[], platform: string): boolean {
   const [enabled, setting, intent] = args;
   if (pane !== 'labs' || setting === 'autoPaste') return false;
-  if (args.length === 3) return platform === 'darwin' && enabled === undefined && setting === undefined && !!intent && typeof intent === 'object' && !Array.isArray(intent);
+  if (args.length === 3) return enabled === undefined && setting === undefined && !!intent && typeof intent === 'object' && !Array.isArray(intent);
   return args.length <= 2 && (!args.length || typeof enabled === 'boolean') &&
-    (platform === 'darwin' || setting !== 'wisprFlow' && setting !== 'frogWardrobe');
+    (platform === 'darwin' || setting !== 'wisprFlow');
 }

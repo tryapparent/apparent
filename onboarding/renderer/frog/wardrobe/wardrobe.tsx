@@ -65,13 +65,19 @@ function project(value: unknown): Snapshot | undefined {
 
 type View = {
   snapshot?: Snapshot;
+  loaded: boolean;
   busy: boolean;
   error: boolean;
   unconfirmed: boolean;
 };
 
 function controller(bridge: WardrobeBridge) {
-  let view: View = { busy: false, error: false, unconfirmed: false };
+  let view: View = {
+    loaded: false,
+    busy: false,
+    error: false,
+    unconfirmed: false,
+  };
   let current: (() => void) | undefined;
   let generation = 0;
   const publish = (next: Partial<View>) => {
@@ -82,6 +88,7 @@ function controller(bridge: WardrobeBridge) {
     if (receipt.error) throw Error("Wardrobe state unavailable");
     publish({
       snapshot: project(receipt.frogWardrobe),
+      loaded: true,
       error: false,
       unconfirmed: false,
     });
@@ -124,10 +131,20 @@ function controller(bridge: WardrobeBridge) {
   };
 }
 
-export function FrogWardrobe({ bridge }: { bridge: WardrobeBridge }) {
+function inactiveSubscription() {
+  return () => {};
+}
+
+export function FrogWardrobe({
+  bridge,
+  frogEnabled,
+}: {
+  bridge: WardrobeBridge;
+  frogEnabled: boolean;
+}) {
   const [wardrobe] = useState(() => controller(bridge));
-  const { snapshot, busy, error, unconfirmed } = useSyncExternalStore(
-    wardrobe.subscribe,
+  const { snapshot, loaded, busy, error, unconfirmed } = useSyncExternalStore(
+    frogEnabled ? wardrobe.subscribe : inactiveSubscription,
     wardrobe.view,
   );
   const focus = useRef<HTMLElement | null>(null);
@@ -149,7 +166,6 @@ export function FrogWardrobe({ bridge }: { bridge: WardrobeBridge }) {
     });
   }
 
-  if (!snapshot && !error && !unconfirmed) return null;
   const act = (
     event: React.MouseEvent<HTMLElement>,
     operation: () => Promise<Receipt>,
@@ -163,28 +179,36 @@ export function FrogWardrobe({ bridge }: { bridge: WardrobeBridge }) {
       aria-labelledby="frog-wardrobe-label"
     >
       <div className="agent-preference-row">
-        <h2 className="settings-preference-label" id="frog-wardrobe-label">
+        <h3 className="settings-preference-label" id="frog-wardrobe-label">
           Frog wardrobe
-        </h2>
-        <Switch
-          id="frog-wardrobe-switch"
-          className="agent-switch"
-          checked={snapshot?.enabled}
-          disabled={busy || unconfirmed}
-          aria-busy={busy}
-          aria-labelledby="frog-wardrobe-label"
-          aria-describedby="frog-wardrobe-help"
-          onClickCapture={(event) => {
-            focus.current = event.currentTarget;
-          }}
-          onCheckedChange={(enabled) => {
-            void request(() => bridge.enable(enabled));
-          }}
-        />
+        </h3>
+        {snapshot && (
+          <Switch
+            id="frog-wardrobe-switch"
+            className="agent-switch"
+            checked={snapshot?.enabled}
+            disabled={busy || unconfirmed}
+            aria-busy={busy}
+            aria-labelledby="frog-wardrobe-label"
+            aria-describedby="frog-wardrobe-help"
+            onClickCapture={(event) => {
+              focus.current = event.currentTarget;
+            }}
+            onCheckedChange={(enabled) => {
+              void request(() => bridge.enable(enabled));
+            }}
+          />
+        )}
       </div>
-      <p id="frog-wardrobe-help">
-        Rewards equip automatically when you earn them.
-      </p>
+      {!frogEnabled && <p>Turn on Desktop frog to use the wardrobe.</p>}
+      {frogEnabled && loaded && !snapshot && !unconfirmed && (
+        <p>Finish setup in the welcome tour to unlock the wardrobe.</p>
+      )}
+      {snapshot && (
+        <p id="frog-wardrobe-help">
+          Rewards equip automatically when you earn them.
+        </p>
+      )}
       {snapshot?.enabled && (
         <div className="frog-wardrobe-layout">
           <ul className="frog-wardrobe-items" aria-busy={busy}>

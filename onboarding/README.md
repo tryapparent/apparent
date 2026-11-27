@@ -125,7 +125,8 @@ the frog starts in the display corner again.
 
 ### Frog wardrobe
 
-After adopting a frog, turn on **Frog wardrobe** in Settings → Labs.
+In **Settings → Labs**, find **Frog wardrobe** under **Desktop frog**.
+After adopting the frog, turn on its wardrobe here.
 The frog earns and equips sunglasses at 10 eligible saves. The flowering
 lily pad follows after 20 more saves (30 total). The unicorn horn follows
 after another 30 (60 total). The desktop frog shows the achievement and

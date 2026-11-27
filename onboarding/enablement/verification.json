@@ -1,6 +1,26 @@
 {
   "scenarios": [
     {
+      "id": "desktop-frog-labs-wardrobe",
+      "description": "Find the wardrobe in the Desktop frog section of the main Settings Labs page.",
+      "platforms": ["linux-x11-xvfb"],
+      "userEntryPoint": "Open Settings → Labs and find Desktop frog. Enable the frog and finish setup to open its wardrobe controls.",
+      "prerequisites": [
+        "The built Desktop frontend, its locked Electron runtime and Xvfb."
+      ],
+      "runner": {
+        "path": "composition/settings/enablement/shell/shared-shell.smoke.mts",
+        "instructions": "After building the Desktop frontend, run xvfb-run -a node --experimental-strip-types --test composition/settings/enablement/shell/shared-shell.smoke.mts from the repository root."
+      },
+      "expectedEvidence": [
+        "The wardrobe is visible under Desktop frog while off and while awaiting adoption, with instructions appropriate to the current state.",
+        "After adoption, the wardrobe switch and compact equipment rows appear within the same Desktop frog section."
+      ],
+      "limits": [
+        "The parent settings receipts are fixtures. The test covers the Settings shell and preload, while real adoption and recording are verified through their owning workflows."
+      ]
+    },
+    {
       "id": "desktop-frog-electron",
       "description": "Drive the production desktop frog renderer, preload and stdio peer under sandboxed Linux Electron.",
       "platforms": ["linux-x11-xvfb"],

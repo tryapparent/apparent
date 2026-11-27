@@ -78,6 +78,29 @@ test("Settings changes adopted panes in one live document and enforces the curre
   const actions: Record<string, unknown>[] = [];
   let holdLabs = false,
     heldLabs: Record<string, unknown> | undefined;
+  let desktopFrogSaved = false;
+  let adoptedFrog = false;
+  let wardrobeEnabled = false;
+  let sunglassesEquipped = true;
+  const frogFacts = () => ({
+    desktopFrogSaved,
+    frogWardrobe:
+      adoptedFrog && desktopFrogSaved
+        ? {
+            enabled: wardrobeEnabled,
+            count: 10,
+            items: [
+              {
+                id: "sunglasses",
+                threshold: 10,
+                action: sunglassesEquipped ? "remove" : "equip",
+              },
+              { id: "lily-pad", threshold: 30, action: "" },
+              { id: "unicorn-horn", threshold: 60, action: "" },
+            ],
+          }
+        : null,
+  });
   createInterface({ input: child.stdout! }).on("line", (line) => {
     const action = JSON.parse(line);
     actions.push(action);
@@ -96,6 +119,18 @@ test("Settings changes adopted panes in one live document and enforces the curre
         });
     }
     if (action.action === "labs-preference") {
+      if (
+        action.setting === "desktopFrog" &&
+        typeof action.enabled === "boolean"
+      )
+        desktopFrogSaved = action.enabled;
+      if (
+        action.setting === "frogWardrobe" &&
+        typeof action.enabled === "boolean"
+      )
+        wardrobeEnabled = action.enabled;
+      if (action.wardrobe?.item === "sunglasses")
+        sunglassesEquipped = action.wardrobe.action === "equip";
       if (holdLabs) heldLabs = action;
       else
         send({
@@ -108,6 +143,7 @@ test("Settings changes adopted panes in one live document and enforces the curre
             autoPasteSupported: process.platform === "linux",
             wisprSaved: false,
             wisprSupported: process.platform === "darwin",
+            ...frogFacts(),
           },
         });
     }
@@ -282,6 +318,44 @@ test("Settings changes adopted panes in one live document and enforces the curre
     await openPane("Labs");
     await expect(streaming).toBeEnabled();
     await expect(streaming).toHaveAttribute("aria-checked", "false");
+    const desktopFrog = page.getByRole("region", {
+      name: "Desktop frog",
+      exact: true,
+    });
+    const frogToggle = desktopFrog.getByRole("switch", {
+      name: "Desktop frog",
+      exact: true,
+    });
+    const wardrobe = desktopFrog.getByRole("region", {
+      name: "Frog wardrobe",
+      exact: true,
+    });
+    await expect(
+      wardrobe.getByText("Turn on Desktop frog to use the wardrobe."),
+    ).toBeVisible();
+    await expect(wardrobe.getByRole("switch")).toHaveCount(0);
+    await frogToggle.click();
+    await expect(
+      wardrobe.getByText(
+        "Finish setup in the welcome tour to unlock the wardrobe.",
+      ),
+    ).toBeVisible();
+    await expect(wardrobe.getByRole("switch")).toHaveCount(0);
+    adoptedFrog = true;
+    send({ type: "labs-state", facts: { saved: false, ...frogFacts() } });
+    const wardrobeToggle = wardrobe.getByRole("switch", {
+      name: "Frog wardrobe",
+    });
+    await expect(wardrobeToggle).not.toBeChecked();
+    await wardrobeToggle.click();
+    await expect(wardrobeToggle).toBeChecked();
+    const removeSunglasses = wardrobe.getByRole("button", {
+      name: "Remove sunglasses",
+    });
+    await removeSunglasses.click();
+    await expect(
+      wardrobe.getByRole("button", { name: "Equip sunglasses" }),
+    ).toBeVisible();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     assert.equal(
       await page.evaluate(() => Reflect.get(window, "shellIdentity")),
