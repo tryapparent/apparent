@@ -1,3 +1,8 @@
+#[path = "macos_pin/window.rs"]
+mod window;
+
+use window::{notification_surface, system_hits_window, window_at};
+
 use super::{
     AXUIElementCreateApplication, AXUIElementGetTypeID, AXUIElementSetMessagingTimeout, AxElement,
     CFArrayGetCount, CFArrayGetTypeID, CFArrayGetValueAtIndex, Owned, attribute, element_at,
@@ -114,20 +119,6 @@ pub fn finish() -> Vec<ActionContext> {
     std::iter::from_fn(|| results.recv_deadline(deadline).ok()).collect()
 }
 
-fn window_at<'a>(raw: &'a [RawWindow], request: &Request, own: i32) -> Option<&'a RawWindow> {
-    let windows = raw.iter().find(|window| {
-        let [x, y, w, h] = window.bounds;
-        window.pid != own
-            && window.pid as u32 != request.note_pid
-            && window.alpha > 0.01
-            && request.x >= x
-            && request.y >= y
-            && request.x < x + w
-            && request.y < y + h
-    })?;
-    (windows.layer == 0 && !crate::capture::ui_process::owns(windows.pid)).then_some(windows)
-}
-
 fn window_stack(dock: Option<[f64; 4]>) -> Vec<RawWindow> {
     let mut windows = raw_windows_now();
     constrain_dock(&mut windows, dock);
@@ -140,7 +131,7 @@ fn observe(request: Request) -> Option<ActionContext> {
     }
     let own = std::process::id() as i32;
     let raw = window_stack(request.dock);
-    let window = window_at(&raw, &request, own)?;
+    let (window, verify_system_hit) = window_at(&raw, &request, own, notification_surface)?;
     let app = Owned(unsafe { AXUIElementCreateApplication(window.pid) });
     if app.0.is_null() {
         return None;
@@ -175,6 +166,7 @@ fn observe(request: Request) -> Option<ActionContext> {
         .all(|(observed, expected)| (observed - expected).abs() <= 2.0)
         || (!window.title.is_empty()
             && string_attribute(root.0, "AXTitle").as_deref() != Some(window.title.as_str()))
+        || (verify_system_hit && !system_hits_window(&request, root.0, window.pid))
         || request.at.elapsed() > FRESH
     {
         return None;
@@ -201,8 +193,12 @@ fn observe(request: Request) -> Option<ActionContext> {
     tree.visit(root.0, None, 0);
     if tree.elements.is_empty()
         || Instant::now() >= deadline + Duration::from_millis(100)
-        || window_at(&window_stack(request.dock), &request, own) != Some(window)
+        || window_at(&window_stack(request.dock), &request, own, notification_surface)
+            != Some((window, verify_system_hit))
         || rect(root.0) != Some(geometry)
+        || (verify_system_hit
+            && (!system_hits_window(&request, root.0, window.pid)
+                || Instant::now() >= deadline + Duration::from_millis(100)))
     {
         return None;
     }
@@ -428,35 +424,6 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn pin_resolves_past_only_its_own_editor() {
-        let window = |pid, layer| RawWindow {
-            pid,
-            layer,
-            id: pid as u32,
-            owner: String::new(),
-            title: String::new(),
-            alpha: 1.0,
-            bounds: [0.0, 0.0, 100.0, 100.0],
-        };
-        let request = Request {
-            pin: 1,
-            t: 0,
-            release: 0,
-            x: 10.0,
-            y: 20.0,
-            note_pid: 2,
-            dock: None,
-            at: Instant::now(),
-        };
-        let raw = [window(1, 2), window(2, 2), window(3, 0)];
-        assert_eq!(
-            window_at(&raw, &request, 1).map(|window| window.pid),
-            Some(3)
-        );
-        assert!(window_at(&[window(4, 2), window(3, 0)], &request, 1).is_none());
-    }
 
     #[test]
     fn pin_bounds_are_window_relative_and_reject_outside_geometry() {

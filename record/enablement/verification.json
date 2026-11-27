@@ -351,7 +351,8 @@
       "expectedEvidence": [
         "A disabled button and checked checkbox appear in the pinWindow observation and the relevant keyframe handoff.",
         "The password value is absent. The pin still saves with the lab off or when the target has no accessibility tree.",
-        "On macOS, Safari pins capture both control states with the cursor at the pin and the Dock either visible or hidden."
+        "On macOS, Safari pins capture both control states with the cursor at the pin and the Dock either visible or hidden.",
+        "With the display-sized Notification Center surface present, a pin outside a synthetic notification retains verified Safari context. A pin inside the notification still saves and contains no underlying Safari context."
       ],
       "limits": [
         "Bounds are best-effort, window-relative coordinates. This check exercises Accessibility on macOS or AT-SPI on Hyprland."

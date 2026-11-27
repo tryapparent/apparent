@@ -102,3 +102,10 @@ points. Allow Accessibility in Privacy & Security before recording.
 4. On macOS, repeat the enabled case in Safari with the Dock visible and
    then with it hidden. Keep the cursor at the pin through the read. Expect
    the same named control states in both handoffs.
+
+5. In the isolated macOS desktop, repeat while a synthetic notification is visible
+   and WindowServer reports Notification Center's display-sized surface. Place
+   one pin on a verified Safari control outside the notification and one inside
+   the notification. Only the first pin should contain Safari control context.
+   Check the saved bundle as well as the summary and clipboard. If the display-sized
+   surface is absent, record that the notification case was unexercised.
