@@ -325,13 +325,12 @@ test('onboarding fixed window shrinks to coach and restores setup', { timeout: 9
   await expect(page.locator('.native-setup')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>innerWidth)).toBeLessThan(760);
   send({step:'try-it',practice:null,firstCaptureRequired:true});
-  await expect(page.getByRole('heading',{name:'Try a practice capture.',exact:true})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>[innerWidth,innerHeight])).toEqual([760,600]);
   await page.setViewportSize({width:320,height:520});
   for(const scheme of schemes){
     await page.emulateMedia({colorScheme:scheme,reducedMotion:'reduce'});
     await expect(page.getByRole('heading',{name:'Try a practice capture.',exact:true})).toBeInViewport();
-    await expect(page.locator('.native-shortcut kbd')).toHaveCount(0);
+    await expect(page.getByRole('group',{name:'Recording shortcut'}).locator('kbd')).toHaveText(['⌃','⌥','⇧','9']);
     assert.equal(await page.locator('.native-shortcut-prompt').evaluate(el=>getComputedStyle(el).animationName),'none');
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
     await page.keyboard.press('Tab');
